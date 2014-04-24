@@ -1,0 +1,12 @@
+#!/usr/bin/python3
+
+import sys
+import os.path as path
+
+binpath = sys.path[0]
+rootpath = path.dirname(path.abspath(binpath))
+sys.path.insert(0, rootpath)
+
+import dpy.compiler
+
+dpy.compiler.main()

@@ -1,0 +1,30 @@
+
+class Pong(process):
+    def setup(): pass
+
+    def main():
+        await(False)
+
+    def recv(msg=Ping(), src=_p):
+        output("Pinged")
+        send(Pong(), to=p)
+
+class Ping(process):
+    def setup(p): pass
+
+    def main():
+        while True:
+            clk = logical_clock()
+            send(Ping(), to=p)
+            await(some(rcvd(Pong(), clk=_rclk) | (rclk > clk)))
+            work()
+
+    def recv(msg=Pong()):
+        output("Ponged.")
+
+def main():
+    pong = createprocs(Pong, 1)
+    ping = createprocs(Ping, 3)
+    setupprocs(ping, [pong])
+    startprocs(pong)
+    startprocs(ping)
