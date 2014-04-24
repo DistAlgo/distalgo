@@ -231,6 +231,7 @@ class NamedVar(DistNode):
     """
 
     _fields = []
+    _attributes = ["name"]
 
     def __init__(self, name, ast=None):
         super().__init__(ast)
@@ -1100,6 +1101,7 @@ class Function(BlockStatement, ArgumentsContainer):
 
     _fields = ['decorators'] + \
               ArgumentsContainer._fields + BlockStatement._fields
+    _attributes = ['name']
 
     def __init__(self, name, parent, ast=None):
         super().__init__(parent, ast)
@@ -1221,7 +1223,7 @@ class TryFinallyStmt(Statement):
 
 class AwaitStmt(Statement):
 
-    _fields = ['condition', 'timeout']
+    _fields = ['branches', 'timeout']
 
     def __init__(self, parent, ast=None):
         super().__init__(parent, ast)
@@ -1425,7 +1427,7 @@ class Event(DistNode):
 
 class EventHandler(Function):
 
-    _fields = ['name', 'arguments', 'body']
+    _fields = ['name'] + Function._fields
     _index = 0
 
     def __init__(self, name, parent, events=[],
@@ -1445,7 +1447,7 @@ class EventHandler(Function):
 
 class Process(BlockStatement, ArgumentsContainer):
 
-    _fields = ['name', 'bases', 'initializers', 'methods', 'events', 'body']
+    _fields = ['name', 'bases', 'initializers', 'methods', 'events', 'body'] + ArgumentsContainer._fields
 
     def __init__(self, name, parent, bases, ast=None):
         super().__init__(parent, ast)
