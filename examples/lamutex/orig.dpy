@@ -13,8 +13,10 @@ class P(process):
         bcast(Request(reqc), to=ps)
 
         --sync
-        if await(each(((_c2, _p2) in q) | ((reqc, self) <= (c2, p2))) and
-                 each((_p3 in ps) | some(rcvd(Reply(_c3), src=p3) | (c3 > reqc)))):
+        if await(each(((_c2, _p2) in q) |
+                      ((reqc, self) <= (c2, p2))) and
+                 each((_p3 in ps) |
+                      some(rcvd(Reply(_c3), src=p3) | (c3 > reqc)))):
             output("witness: c2:%r p2:%r p3:%r" %(c2, p2, p3))
          # critical section
             task()
@@ -31,15 +33,6 @@ class P(process):
             bcast(Release(reqc), to=ps)
             output("timed out!")
 
-    def main():
-        def anounce():
-            output("In cs!")
-        for i in range(n):
-            cs(anounce)
-        bcast(Done(), to=ps)
-        await(each((_p in ps) | rcvd(Done(), src=p)))
-        output("Terminating...")
-
     def recv(msg=Request(_reqts), src=_source):
         """When receiving requests from others, enque and reply
         """
@@ -51,11 +44,22 @@ class P(process):
         if ((time, source) in q):
           q.remove((time, source))
 
+    def main():
+        def anounce():
+            output("In cs!")
+        for i in range(n):
+            cs(anounce)
+        bcast(Done(), to=ps)
+        await(each((_p in ps) | rcvd(Done(), src=p)))
+        output("Terminating...")
+
+
 def main():
     nprocs = int(sys.argv[1]) if len(sys.argv) > 1 else 10
     nrounds = int(sys.argv[2]) if len(sys.argv) > 2 else 1
     timeout = int(sys.argv[3]) if len(sys.argv) > 3 else 10
 
+    use_channel("tcp")
     ps = createprocs(P, nprocs)
     # setup the processes
     for p in ps: setupprocs({p}, [ps-{p}, nrounds, timeout])
