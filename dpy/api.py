@@ -206,7 +206,6 @@ def create_root_logger(options, logfile, logdir):
         log = Null()
 
 def entrypoint(options, args, cmdl):
-    global ProcessIds
     target = args[0]
     source_dir = os.path.dirname(target)
     basename = os.path.basename(target)
@@ -243,14 +242,13 @@ def entrypoint(options, args, cmdl):
         for i in range(0, niters):
             log.info("Running iteration %d ..." % (i+1))
 
-            ProcessIds = []
             module.main()
 
             print("Waiting for remaining child processes to terminate..."
                   "(Press \"Ctrl-C\" to force kill)")
 
-            for pid in ProcessIds:
-                os.waitpid(pid, 0)
+            for p in ProcessIds:
+                p.join()
 
             log_performance_statistics()
             r = aggregate_statistics()
@@ -281,9 +279,10 @@ def entrypoint(options, args, cmdl):
         log.error("Caught unexpected global exception: %r", e)
         traceback.print_tb(err_info[2])
 
-    for pid in ProcessIds:      # Make sure we kill all sub procs
+    for p in ProcessIds:      # Make sure we kill all sub procs
         try:
-            os.kill(pid, signal.SIGTERM)
+            if p.is_live():
+                p.terminate()
         except Exception:
             pass
 
@@ -327,7 +326,7 @@ def createprocs(pcls, power, args=None):
         pipes.append((i, childp, ownp, p))
         # We need to start proc right away to obtain EndPoint and pid for p:
         p.start()
-        ProcessIds.append(p.pid)
+        ProcessIds.append(p)
         procs.add(p)
 
     log.info("%d instances of %s created.", len(procs), pcls.__name__)
@@ -371,7 +370,7 @@ def createnamedprocs(pcls, names, args=None):
         pipes.append((n, childp, ownp))      # Buffer the pipe
         p.start()               # We need to start proc right away to obtain
                                 # EndPoint and pid for p
-        ProcessIds.append(p.pid)
+        ProcessIds.append(p)
 
     log.info("%d instances of %s created."%(len(names), pcls.__name__))
     result = dict()
