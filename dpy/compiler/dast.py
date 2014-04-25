@@ -1,4 +1,4 @@
-from ast import AST, dump
+from ast import AST
 from itertools import chain
 
 class DistNode(AST):
@@ -15,6 +15,15 @@ class DistNode(AST):
     _attributes = ['lineno', 'col_offset']
 
     def __init__(self, parent=None, ast=None):
+        """Instantiate a node.
+
+        Params:
+
+        parent - The parent node
+
+        ast - The original Python AST node used to generate this node.
+
+        """
         self._ast = ast
         self._parent = parent
         self.lineno = 0
@@ -31,11 +40,17 @@ class DistNode(AST):
     def replace_child(self, oldnode, newnode):
         """Replace all occurances of 'oldnode' with 'newnode' in the tree
         rooted at this node.
+
+        This is mainly used to implement Python 'global' and 'nonlocal'
+        statements, which has the ability to retroactively rebind local names
+        to NamedVar defined in outer scopes.
+
         """
         pass
 
     @property
     def scope(self):
+        """The local scope containing this node."""
         return None
 
     @property
@@ -56,20 +71,27 @@ class DistNode(AST):
 class NameScope(DistNode):
     """Implements a binding scope for variable names.
 
+    NameScope maps names to NamedVar objects. Each NameScope has a local
+    mapping that contains names defined in the local scope. The 'parent_scope'
+    property forms a reverse tree structure of NameScope hierachy up to the
+    global scope, which can be recursively traversed to resolve non-local
+    names. Names defined in the local scope shadow names in the outer scopes.
+
     """
 
     _fields = []
 
     def __init__(self, parent=None, ast=None):
         super().__init__(parent, ast)
+        # Map names to corresponding NamedVar instances:
         self._names = dict()
 
     def find_name(self, name, local=False):
         """Looks up a name from this scope.
 
         Returns the NamedVar object corresponding to 'name', or None if 'name'
-        is not found. If 'local' is True then do not recursively search parent
-        scopes.
+        is not found. If 'local' is True then search only the local bindings
+        and do not recursively search parent scopes.
 
         """
         assert isinstance(name, str)
@@ -83,9 +105,10 @@ class NameScope(DistNode):
             return None
 
     def add_name(self, name):
-        """Adds a name to the local scope.
+        """Adds a name to this scope if it doesn't yet exist.
 
         Return the NamedVar object for this name.
+
         """
         obj = self.find_name(name, local=True)
         if obj is not None:
@@ -101,7 +124,7 @@ class NameScope(DistNode):
         If the name already exists in the current scope, the info from the
         existing name object is merged into the new object and all pointers to
         the old name is updated to the new name. This method is mainly used to
-        implement "global" and "nonlocal" declarations.
+        implement Python rules for "global" and "nonlocal" declarations.
 
         """
         assert isinstance(namedvar, NamedVar)
@@ -119,6 +142,9 @@ class NameScope(DistNode):
     def skip(self):
         """True if this scope should be skipped in the parent-child scope hierachy.
 
+        According to Python naming rules, Class scopes are not included when
+        resolving names from child scopes.
+
         """
         return False
 
@@ -128,6 +154,10 @@ class NameScope(DistNode):
 
     @property
     def parent_scope(self):
+        """Returns the immediate parent scope, or None if this is the top-level
+    (global) scope.
+
+        """
         p = self.parent
         while p is not None:
             if isinstance(p, NameScope) and not p.skip:
@@ -138,24 +168,33 @@ class NameScope(DistNode):
 
     @property
     def local_names(self):
-        return self._names.keys()
+        return set(self._names.keys())
 
     @property
     def local_nameobjs(self):
-        return self._names.values()
+        return set(self._names.values())
 
 class LockableNameScope(NameScope):
+    """A special type of NameScope that only accepts new names when it's
+       'unlocked'.
+
+    When this scope is in the 'unlocked' state, it behaves like a normal
+    NameScope; when this scope is in the 'locked' state, it behaves like a
+    transparent scope where all name creation requests are passed on to the
+    parent scope. This is mainly used to implement generator expressions.
+
+    """
+
     def __init__(self, parent=None, ast=None):
         super().__init__(parent, ast)
         self.locked = False
 
-    def get_name(self, name):
+    def add_name(self, name):
         if not self.locked:
-            entity = NamedVar(name)
-            self._names[name] = entity
-            return entity
+            return super().add_name(name)
         else:
-            return super().get_name(name)
+            assert self.parent_scope is not None
+            return self.parent_scope.add_name(name)
 
     def lock(self):
         self.locked = True
@@ -165,6 +204,9 @@ class LockableNameScope(NameScope):
 
 
 class ArgumentsContainer(NameScope):
+    """A special type of NameScope that takes arguments.
+
+    """
 
     _fields = ["args", "defaults", "vararg", "kwonlyargs", "kw_defaults",
                "kwarg"]
@@ -224,9 +266,9 @@ class NamedVar(DistNode):
     """Node representing a named variable.
 
     Unlike other node types, a NamedVar instance may have multiple parents.
-    This is because the same names that refer to the same variable (those that
-    occur in the same naming scope) in the program are represented by a shared
-    NamedVar instance.
+    This is because the same names that refer to the same variable (those
+    that occur in the same naming scope) in the program are represented by
+    the same NamedVar instance.
 
     """
 
@@ -242,7 +284,8 @@ class NamedVar(DistNode):
         self.aliases = []
 
     def merge(self, target):
-        """Merges all info from 'target'.
+        """Merges all info from another NamedVar.
+
         """
         assert isinstance(target, NamedVar)
         self.assignments.extend(target.assignments)
@@ -293,6 +336,14 @@ class NamedVar(DistNode):
 
     @property
     def scope(self):
+        """Returns the scope that this name is defined in, or None if this name was
+        never defined.
+
+        The defining scope of a NamedVar is the scope in which this variable was
+        first assigned to or updated.
+
+        """
+
         if len(self.assignments) > 0:
             return self.assignments[0][0].scope
         elif len(self.updates) > 0:
@@ -302,10 +353,11 @@ class NamedVar(DistNode):
 
     @property
     def is_arg(self):
-        """True if this variable is an argument of a function or lamba expression.
+        """True if this variable is an argument of an ArgumentsContainer.
+
         """
-        if (len(self.updates) > 0 and
-            isinstance(self.updates[0], ArgumentsContainer)):
+        if (len(self.assignments) > 0 and
+            isinstance(self.assignments[0], ArgumentsContainer)):
             return True
         else:
             return False
@@ -854,6 +906,7 @@ class PatternElement(DistNode):
 
     @property
     def boundvars(self):
+        """A set containing all bound variables in the pattern."""
         return set(self.ordered_boundvars)
 
     @property
@@ -870,6 +923,7 @@ class PatternElement(DistNode):
 
     @property
     def freevars(self):
+        """A set containing all free variables in the pattern."""
         return set(self.ordered_freevars)
 
     def match(self, target):
