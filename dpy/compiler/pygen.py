@@ -661,11 +661,12 @@ class PythonGenerator(NodeVisitor):
 
     def visit_AwaitStmt(self, node):
         conds = []
+        body = []
         if node.timeout is None:
-            body = [pyLabel(node.unique_label, block=True)]
+            label = pyLabel(node.unique_label, block=True)
         else:
-            body = [pyLabel(node.unique_label, block=True,
-                            timeout=self.visit(node.timeout))]
+            label = pyLabel(node.unique_label, block=True,
+                            timeout=self.visit(node.timeout))
         for br in node.branches:
             cond = self.visit(br.condition)
             conds.append(cond)
@@ -675,6 +676,8 @@ class PythonGenerator(NodeVisitor):
             cond = pyAttr("self", "_timer_expired")
             ifbody = self.body(node.orelse)
             body.append(If(cond, ifbody + [Break()], []))
+        # Label call must come after the If tests:
+        body.append(label)
         if node.timeout is not None:
             main = [pyCall(pyAttr("self", "_timer_start")),
                     While(pyTrue(), body, []),
