@@ -1175,6 +1175,7 @@ class Function(BlockStatement, ArgumentsContainer):
         super().__init__(parent, ast)
         self._name = name
         self.process = None
+        # List of decorator expressions:
         self.decorators = []
 
     @property
@@ -1183,7 +1184,7 @@ class Function(BlockStatement, ArgumentsContainer):
 
 class ClassStmt(BlockStatement, NameScope):
 
-    _fields = ['decorators', 'bases', 'body']
+    _fields = ['bases', 'decorators', 'body']
 
     def __init__(self, name, parent, bases=[], ast=None):
         super().__init__(parent, ast)
@@ -1192,6 +1193,7 @@ class ClassStmt(BlockStatement, NameScope):
         self.keywords = []
         self.starargs = None
         self.kwargs = None
+        # List of decorator expressions:
         self.decorators = []
 
     @property
@@ -1465,6 +1467,14 @@ class Event(DistNode):
         return set(self.ordered_boundvars)
 
     @property
+    def ordered_nameobjs(self):
+        return self.ordered_boundvars
+
+    @property
+    def nameobjs(self):
+        return self.boundvars
+
+    @property
     def ordered_freevars(self):
         if self.pattern is not None:
             result = self.pattern.ordered_freevars
@@ -1495,7 +1505,6 @@ class Event(DistNode):
 
 class EventHandler(Function):
 
-    _fields = ['name'] + Function._fields
     _index = 0
 
     def __init__(self, name, parent, events=[],
@@ -1515,18 +1524,24 @@ class EventHandler(Function):
 
 class Process(BlockStatement, ArgumentsContainer):
 
-    _fields = ['name', 'bases', 'initializers', 'methods', 'events', 'body'] + ArgumentsContainer._fields
+    _fields = ['bases', 'decorators', 'initializers', 'methods',
+               'events', 'body'] + ArgumentsContainer._fields
 
     def __init__(self, name, parent, bases, ast=None):
         super().__init__(parent, ast)
         self.name = name
+        # List of base classes (other than dpy.DistProcess):
         self.bases = bases
+        # List of decorator expressions:
+        self.decorators = []
+        # Body of the 'setup' function:
         self.initializers = []
+        # List of member methods:
         self.methods = []
+        # 'main' method:
         self.entry_point = None
+        # List of event handlers:
         self.events = []
-        self.labels = []
-        self.queries = []
 
     @property
     def methodnames(self):

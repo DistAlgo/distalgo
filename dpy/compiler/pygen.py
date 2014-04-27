@@ -262,7 +262,7 @@ class PythonGenerator(NodeVisitor):
                    self.generate_setup(node)]
         if node.entry_point is not None:
             cd.body.extend(self.visit(node.entry_point))
-        cd.decorator_list = node.ast.decorator_list
+        cd.decorator_list = [self.visit(d) for d in node.decorators]
         cd.body.extend(self.body(node.methods))
         cd.body.extend(self.generate_handlers(node))
         return [cd]
@@ -274,7 +274,7 @@ class PythonGenerator(NodeVisitor):
         if type(node.parent) is dast.Process:
             fd.args.args.insert(0, arg("self", None))
         fd.body = self.body(node.body)
-        fd.decorator_list = node.decorators
+        fd.decorator_list = [self.visit(d) for d in node.decorators]
         fd.returns = None
         return [fd]
 
@@ -282,6 +282,13 @@ class PythonGenerator(NodeVisitor):
         cd = pyClassDef(name=node.name,
                         bases=self.bases(node.bases),
                         body=self.body(node.body))
+        # ########################################
+        # TODO: just pass these through until we figure out a use for them:
+        cd.keywords = node.ast.keywords
+        cd.starargs = node.ast.starargs
+        cd.kwargs = node.ast.kwargs
+        # ########################################
+        cd.decorator_list = [self.visit(d) for d in node.decorators]
         return [cd]
 
     def visit_PythonExpr(self, node):
@@ -465,7 +472,7 @@ class PythonGenerator(NodeVisitor):
         # Bound values that are defined in a containing comprehension need to
         # be explicitly passed in
         params = set(nobj for nobj in chain(node.boundvars,
-                                            node.predicate.names)
+                                            node.predicate.nameobjs)
                      if isinstance(nobj.scope, dast.ComprehensionExpr)
                      if nobj not in nameset)
 

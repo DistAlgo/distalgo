@@ -15,7 +15,7 @@ KW_EVENT_SOURCE = "src"
 KW_EVENT_DESTINATION = "dst"
 KW_EVENT_TIMESTAMP = "clk"
 KW_EVENT_LABEL = "at"
-KW_EVENT_LABEL_DESC = "labels"
+KW_DECORATOR_LABEL = "labels"
 KW_EXISTENTIAL_QUANT = "some"
 KW_UNIVERSAL_QUANT = "each"
 KW_AGGREGATE_SIZE = "len"
@@ -319,7 +319,10 @@ class Parser(NodeVisitor):
         contxtproc = dast.Process()
         self.node_stack.append(contxtproc)
 
-    def bases(self, node):
+
+    # Helpers:
+
+    def parse_bases(self, node):
         """Scans a ClassDef's bases list and checks whether the class defined by
            'node' is a DistProcess.
 
@@ -340,53 +343,22 @@ class Parser(NodeVisitor):
         self.node_stack.pop()
         return expr
 
-
-    # Top-level blocks:
-
-    def visit_ClassDef(self, node):
-        prevblock = self.current_block
-
-        isproc, bases = self.bases(node)
-        if isproc:
-            if type(self.current_parent) is not dast.Program:
-                self.error("Process definition must be at top level.", node)
-                return
-            if not is_setup(node.body[0]):
-                self.error("The first method of a Process must be 'setup'.",
-                           node.body[0])
-                self.errcnt += 1
-                return
-
-            proc = dast.Process(node.name, self.current_parent, bases, node)
-            n = self.current_scope.add_name(node.name)
-            n.add_assignment(self.current_parent)
-            self.node_stack.append(proc)
-            self.program.processes.append(proc)
-
-            initfun = node.body[0]
-            self.current_block = proc.initializers
-            self.signature(initfun.args)
-            self.body(initfun.body)
-            self.current_block = proc.body
-            self.proc_body(node.body[1:])
-            self.node_stack.pop()
-
-        else:
-            clsobj = dast.ClassStmt(node.name, self.current_parent, bases,
-                                    node)
-            if self.current_block is None or self.current_parent is None:
-                self.error("Statement not allowed in this context.", ast)
+    def parse_decorators(self, node):
+        assert hasattr(node, 'decorator_list')
+        labels = set()
+        notlabels = set()
+        decorators = []
+        for exp in node.decorator_list:
+            if isinstance(exp, Call) and exp.func.id == KW_DECORATOR_LABEL:
+                for arg in exp.args:
+                    l, negated = self.parse_label_spec(arg)
+                    if negated:
+                        notlabels |= l
+                    else:
+                        labels |= l
             else:
-                self.current_block.append(clsobj)
-                n = self.current_scope.add_name(node.name)
-                n.add_assignment(self.current_parent)
-            self.current_context = Read()
-            self.node_stack.append(clsobj)
-            self.current_block = clsobj.body
-            self.body(node.body)
-            self.node_stack.pop()
-
-        self.current_block = prevblock
+                decorators.append(self.visit(exp))
+        return decorators, labels, notlabels
 
     def parse_event_descriptors(self, node):
         dl = node.decorator_list
@@ -480,52 +452,6 @@ class Parser(NodeVisitor):
                 events[-1].timestamps.append(pat)
         return events, labels, notlabels
 
-    def visit_FunctionDef(self, node):
-        prevblock = self.current_block
-
-        if (self.current_process is None or
-                node.name not in {KW_SENT_EVENT, KW_RECV_EVENT}):
-            # This is a normal method
-            s = dast.Function(node.name, self.current_parent, node)
-            n = self.current_scope.add_name(node.name)
-            n.add_assignment(self.current_parent)
-            s.decorators = node.decorator_list
-            s.process = self.current_process
-            if type(self.current_parent) is dast.Process:
-                if s.name == "main":
-                    self.current_process.entry_point = s
-                else:
-                    self.current_process.methods.append(s)
-            elif (type(self.current_parent) is dast.Program and
-                  s.name == "main"):
-                self.current_parent.entry_point = s
-            else:
-                self.current_block.append(s)
-            self.node_stack.append(s)
-            self.current_block = s.body
-            self.signature(node.args)
-            self.body(node.body)
-            self.node_stack.pop()
-
-        else:
-            h = dast.EventHandler(None, self.current_parent, node)
-            self.node_stack.append(h)
-            events, labels, notlabels = self.parse_event_handler(node)
-            events = self.current_process.add_events(events)
-            h.events = events
-            h.labels = labels if len(labels) > 0 else None
-            h.notlabels = notlabels if len(notlabels) > 0 else None
-            for evt in events:
-                evt.handlers.append(h)
-            for v in evt.freevars:
-                if v is not None:
-                    h.add_arg(v.name)
-            self.current_block = h.body
-            self.body(node.body)
-            self.node_stack.pop()
-
-        self.current_block = prevblock
-
     def body(self, statements):
         """Process a block of statements.
         """
@@ -565,6 +491,7 @@ class Parser(NodeVisitor):
             self.create_stmt(dast.NoopStmt, statements[-1])
 
     def signature(self, node):
+        """Process the argument lists."""
         assert isinstance(self.current_parent, dast.ArgumentsContainer)
         padding = len(node.args) - len(node.defaults)
         container = self.current_parent
@@ -578,6 +505,111 @@ class Parser(NodeVisitor):
             container.add_kwarg(node.kwarg.arg)
         for kwarg, val in zip(node.kwonlyargs, node.kw_defaults):
             container.add_kwonlyarg(kwarg.arg, self.visit(val))
+
+
+    # Top-level blocks:
+
+    def visit_ClassDef(self, node):
+        prevblock = self.current_block
+
+        isproc, bases = self.parse_bases(node)
+        if isproc:
+            if type(self.current_parent) is not dast.Program:
+                self.error("Process definition must be at top level.", node)
+                return
+            if not is_setup(node.body[0]):
+                self.error("The first method of a Process must be 'setup'.",
+                           node.body[0])
+                self.errcnt += 1
+                return
+
+            proc = dast.Process(node.name, self.current_parent, bases, node)
+            n = self.current_scope.add_name(node.name)
+            n.add_assignment(self.current_parent)
+            proc.decorators, _, _ = self.parse_decorators(node)
+            self.node_stack.append(proc)
+            self.program.processes.append(proc)
+
+            initfun = node.body[0]
+            self.current_block = proc.initializers
+            self.signature(initfun.args)
+            self.body(initfun.body)
+            self.current_block = proc.body
+            self.proc_body(node.body[1:])
+            self.node_stack.pop()
+
+        else:
+            clsobj = dast.ClassStmt(node.name, self.current_parent, bases,
+                                    node)
+            if self.current_block is None or self.current_parent is None:
+                self.error("Statement not allowed in this context.", ast)
+            else:
+                self.current_block.append(clsobj)
+                n = self.current_scope.add_name(node.name)
+                n.add_assignment(self.current_parent)
+            self.current_context = Read()
+            clsobj.decorators, _, _ = self.parse_decorators(node)
+            self.node_stack.append(clsobj)
+            self.current_block = clsobj.body
+            self.body(node.body)
+            self.node_stack.pop()
+
+        self.current_block = prevblock
+
+    def visit_FunctionDef(self, node):
+        prevblock = self.current_block
+
+        if (self.current_process is None or
+                node.name not in {KW_SENT_EVENT, KW_RECV_EVENT}):
+            # This is a normal method
+            s = dast.Function(node.name, self.current_parent, node)
+            n = self.current_scope.add_name(node.name)
+            n.add_assignment(self.current_parent)
+            s.process = self.current_process
+            if type(self.current_parent) is dast.Process:
+                if s.name == "main":
+                    self.current_process.entry_point = s
+                else:
+                    self.current_process.methods.append(s)
+            elif (type(self.current_parent) is dast.Program and
+                  s.name == "main"):
+                self.current_parent.entry_point = s
+            else:
+                self.current_block.append(s)
+            # Ignore the label decorators:
+            s.decorators, _, _ = self.parse_decorators(node)
+            self.node_stack.append(s)
+            self.current_block = s.body
+            self.signature(node.args)
+            self.body(node.body)
+            self.node_stack.pop()
+
+        else:
+            # This is an event handler:
+            h = dast.EventHandler(None, self.current_parent, node)
+            # Parse decorators before adding h to node_stack, since decorators
+            # should belong to the outer scope:
+            h.decorators, h.labels, h.notlabels = self.parse_decorators(node)
+            self.node_stack.append(h)
+            events, labels, notlabels = self.parse_event_handler(node)
+            events = self.current_process.add_events(events)
+            h.events = events
+            h.labels |= labels
+            h.notlabels |= notlabels
+            if len(h.labels) == 0:
+                h.labels = None
+            if len(h.notlabels) == 0:
+                h.notlabels = None
+            for evt in events:
+                evt.handlers.append(h)
+            for v in evt.freevars:
+                if v is not None:
+                    h.add_arg(v.name)
+            self.current_block = h.body
+            self.body(node.body)
+            self.node_stack.pop()
+
+        self.current_block = prevblock
 
     def check_await(self, node):
         if (isinstance(node, Call) and
