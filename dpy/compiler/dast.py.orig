@@ -41,9 +41,7 @@ class DistNode(AST):
         """Replace all occurances of 'oldnode' with 'newnode' in the tree
         rooted at this node.
 
-        This is mainly used to implement Python 'global' and 'nonlocal'
-        statements, which has the ability to retroactively rebind local names
-        to NamedVar defined in outer scopes.
+        This is mainly used to implement 'global' and 'nonlocal' statements.
 
         """
         pass
@@ -71,12 +69,6 @@ class DistNode(AST):
 class NameScope(DistNode):
     """Implements a binding scope for variable names.
 
-    NameScope maps names to NamedVar objects. Each NameScope has a local
-    mapping that contains names defined in the local scope. The 'parent_scope'
-    property forms a reverse tree structure of NameScope hierachy up to the
-    global scope, which can be recursively traversed to resolve non-local
-    names. Names defined in the local scope shadow names in the outer scopes.
-
     """
 
     _fields = []
@@ -90,8 +82,8 @@ class NameScope(DistNode):
         """Looks up a name from this scope.
 
         Returns the NamedVar object corresponding to 'name', or None if 'name'
-        is not found. If 'local' is True then search only the local bindings
-        and do not recursively search parent scopes.
+        is not found. If 'local' is True then do not recursively search parent
+        scopes.
 
         """
         assert isinstance(name, str)
@@ -124,7 +116,7 @@ class NameScope(DistNode):
         If the name already exists in the current scope, the info from the
         existing name object is merged into the new object and all pointers to
         the old name is updated to the new name. This method is mainly used to
-        implement Python rules for "global" and "nonlocal" declarations.
+        implement "global" and "nonlocal" declarations.
 
         """
         assert isinstance(namedvar, NamedVar)
@@ -142,9 +134,6 @@ class NameScope(DistNode):
     def skip(self):
         """True if this scope should be skipped in the parent-child scope hierachy.
 
-        According to Python naming rules, Class scopes are not included when
-        resolving names from child scopes.
-
         """
         return False
 
@@ -154,10 +143,6 @@ class NameScope(DistNode):
 
     @property
     def parent_scope(self):
-        """Returns the immediate parent scope, or None if this is the top-level
-    (global) scope.
-
-        """
         p = self.parent
         while p is not None:
             if isinstance(p, NameScope) and not p.skip:
@@ -285,7 +270,7 @@ class NamedVar(DistNode):
 
     def merge(self, target):
         """Merges all info from another NamedVar.
-
+        
         """
         assert isinstance(target, NamedVar)
         self.assignments.extend(target.assignments)
@@ -336,14 +321,6 @@ class NamedVar(DistNode):
 
     @property
     def scope(self):
-        """Returns the scope that this name is defined in, or None if this name was
-        never defined.
-
-        The defining scope of a NamedVar is the scope in which this variable was
-        first assigned to or updated.
-
-        """
-
         if len(self.assignments) > 0:
             return self.assignments[0][0].scope
         elif len(self.updates) > 0:
@@ -353,11 +330,10 @@ class NamedVar(DistNode):
 
     @property
     def is_arg(self):
-        """True if this variable is an argument of an ArgumentsContainer.
-
+        """True if this variable is an argument of a function or lamba expression.
         """
-        if (len(self.assignments) > 0 and
-            isinstance(self.assignments[0], ArgumentsContainer)):
+        if (len(self.updates) > 0 and
+            isinstance(self.updates[0], ArgumentsContainer)):
             return True
         else:
             return False
@@ -403,16 +379,8 @@ class Expression(DistNode):
         return list(chain(*[e.ordered_names for e in self.subexprs]))
 
     @property
-    def ordered_nameobjs(self):
-        return list(chain(*[e.ordered_nameobjs for e in self.subexprs]))
-
-    @property
     def names(self):
         return set(self.ordered_names)
-
-    @property
-    def nameobjs(self):
-        return set(self.ordered_nameobjs)
 
     @property
     def parent_statement(self):
@@ -444,16 +412,10 @@ class SimpleExpr(Expression):
     @property
     def ordered_names(self):
         if isinstance(self.value, NamedVar):
-            return [self.value.name]
-        else:
-            return []
-
-    @property
-    def ordered_nameobjs(self):
-        if isinstance(self.value, NamedVar):
             return [self.value]
         else:
             return []
+
 
 class AttributeExpr(SimpleExpr):
 
@@ -920,7 +882,6 @@ class PatternElement(DistNode):
 
     @property
     def boundvars(self):
-        """A set containing all bound variables in the pattern."""
         return set(self.ordered_boundvars)
 
     @property
@@ -937,7 +898,6 @@ class PatternElement(DistNode):
 
     @property
     def freevars(self):
-        """A set containing all free variables in the pattern."""
         return set(self.ordered_freevars)
 
     def match(self, target):

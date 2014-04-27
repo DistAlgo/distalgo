@@ -99,10 +99,7 @@ class EndPoint:
             return self._name
 
     def __repr__(self):
-        if self._address is not None:
-            return str(self._address[1])
-        else:
-            return self._name
+        return "<process " + str(self) + ">"
 
     def __hash__(self):
         return hash(self._address)

@@ -163,8 +163,9 @@ class PythonGenerator(NodeVisitor):
     def __init__(self, filename=""):
         self.filename = filename
         self.processed_patterns = set()
+        self.active_target = None
         self.preambles = list(PREAMBLE)
-        self.postambles = list(POSTAMBLE)
+        self.postambles = list()
 
     def visit(self, node):
         if isinstance(node, dast.DistNode):
@@ -486,7 +487,9 @@ class PythonGenerator(NodeVisitor):
         generators = []
         for tgt, it in zip(node.targets, node.iters):
             tast = self.visit(tgt)
+            self.active_target = tgt
             iast = self.visit(it)
+            self.active_target = None
             comp = comprehension(tast, iast, [])
             generators.append(propagate_attributes((tast, iast), comp))
         generators[-1].ifs = [self.visit(cond) for cond in node.conditions]
@@ -575,14 +578,19 @@ class PythonGenerator(NodeVisitor):
 
     def visit_HistoryExpr(self, node):
         assert node.event is not None
-        if len(node.boundvars) == 0:
+        if len(node.boundvars) == 0 and self.active_target is None:
             return pyAttr("self", node.event.name)
         else:
             ctx = [(v.name, self.visit(v)) for v in node.boundvars]
+            if self.active_target is not None:
+                order = pyTuple([Str(n)
+                                 for n in self.active_target.ordered_names])
+            else:
+                order = pyNone()
             pat = pySubscr(pyAttr("self", "_events"),
                                   Num(node.evtidx))
             gen = pyCall(pyAttr(pat, "filter"),
-                         args=[pyAttr("self", node.event.name)],
+                         args=[pyAttr("self", node.event.name), order],
                          keywords=ctx)
             return pySetC([gen])
 
@@ -636,7 +644,9 @@ class PythonGenerator(NodeVisitor):
 
     def visit_ForStmt(self, node):
         target = self.visit(node.target)
+        self.active_target = node.target
         it = self.visit(node.iter)
+        self.active_target = None
         body = self.body(node.body)
         orelse = self.body(node.elsebody)
         ast = For(target, it, body, orelse)
