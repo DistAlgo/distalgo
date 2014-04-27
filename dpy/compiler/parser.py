@@ -500,9 +500,17 @@ class Parser(NodeVisitor):
         for arg, val in zip(node.args[padding:], node.defaults):
             container.add_defaultarg(arg.arg, self.visit(val))
         if node.vararg is not None:
-            container.add_vararg(node.vararg.arg)
+            # Python 3.4 compatibility:
+            if type(node.vararg) is str:
+                container.add_vararg(node.vararg)
+            else:
+                container.add_vararg(node.vararg.arg)
         if node.kwarg is not None:
-            container.add_kwarg(node.kwarg.arg)
+            # Python 3.4 compatibility:
+            if type(node.kwarg) is str:
+                container.add_kwarg(node.kwarg)
+            else:
+                container.add_vararg(node.kwarg.arg)
         for kwarg, val in zip(node.kwonlyargs, node.kw_defaults):
             container.add_kwonlyarg(kwarg.arg, self.visit(val))
 
@@ -1147,31 +1155,16 @@ class Parser(NodeVisitor):
             if not self.ensure_one_arg(node.func.id, node):
                 return
             if node.func.id == KW_AGGREGATE_SIZE:
-                expr = dast.SizeExpr(self.current_parent, node)
+                expr = self.create_expr(dast.SizeExpr, node)
             elif node.func.id == KW_AGGREGATE_MAX:
-                expr = dast.MaxExpr(self.current_parent, node)
+                expr = self.create_expr(dast.MaxExpr, node)
             elif node.func.id == KW_AGGREGATE_SUM:
-                expr = dast.SumExpr(self.current_parent, node)
+                expr = self.create_expr(dast.SumExpr, node)
             else:
-                expr = dast.MinExpr(self.current_parent, node)
+                expr = self.create_expr(dast.MinExpr, node)
             expr.value = self.visit(node.args[0])
+            self.node_stack.pop()
             return expr
-
-        if self.call_check(TypeConstructors, 0, 1, node):
-            if node.func.id == KW_TYPE_SET:
-                expr = dast.SetExpr(self.current_parent, node)
-            elif node.func.id == KW_TYPE_LIST:
-                expr = dast.ListExpr(self.current_parent, node)
-            elif node.func.id == KW_TYPE_TUPLE:
-                expr = dast.TupleExpr(self.current_parent, node)
-            else:
-                expr = dast.DictExpr(self.current_parent, node)
-            if len(node.args) == 0:
-                return expr
-            elif len(node.args) == 1 and hasattr(node.args[0], "elts"):
-                expr.subexprs = [self.visit(e) for e in node.args[0].elts]
-                return expr
-            # else fall through
 
         if self.call_check(ApiMethods, None, None, node):
             self.debug("Api method call: " + node.func.id)
@@ -1182,14 +1175,22 @@ class Parser(NodeVisitor):
             expr = self.create_expr(dast.BuiltinCallExpr, node)
             expr.func = node.func.id
         else:
-            if isinstance(node.func, Name):
+            if self.call_check(TypeConstructors, 0, 1, node):
+                self.debug("Built-in %s type construction:" % node.func.id )
+            elif isinstance(node.func, Name):
                 self.debug("Method call: " + str(node.func.id))
             expr = self.create_expr(dast.CallExpr, node)
             self.current_context = FunCall()
             expr.func = self.visit(node.func)
+
         self.current_context = Read()
-        for arg in node.args:
-            expr.args.append(self.visit(arg))
+        expr.args = [self.visit(a) for a in node.args]
+        expr.keywords = [(kw.arg, self.visit(kw.value))
+                         for kw in node.keywords]
+        expr.starargs = self.visit(node.starargs) \
+                        if node.starargs is not None else None
+        expr.kwargs = self.visit(node.kwargs) \
+                      if node.kwargs is not None else None
         self.node_stack.pop()
         return expr
 
@@ -1282,7 +1283,7 @@ class Parser(NodeVisitor):
         for key in node.keys:
             expr.keys.append(self.visit(key))
         for value in node.values:
-            expr.values.append(self.visit(values))
+            expr.values.append(self.visit(value))
         self.node_stack.pop()
         return expr
 

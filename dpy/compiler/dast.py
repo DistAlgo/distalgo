@@ -273,7 +273,7 @@ class NamedVar(DistNode):
     """
 
     _fields = []
-    _attributes = ["name"]
+    _attributes = ["name"] + DistNode._attributes
 
     def __init__(self, name, ast=None):
         super().__init__(ast)
@@ -427,8 +427,6 @@ class PythonExpr(Expression):
 
 class SimpleExpr(Expression):
 
-    _fields = ['value']
-
     def __init__(self, parent, ast=None, value=None):
         super().__init__(parent, ast)
         self.subexprs = [value]
@@ -457,15 +455,13 @@ class SimpleExpr(Expression):
 
 class AttributeExpr(SimpleExpr):
 
-    _fields = ['value', 'attr']
+    _attributes = ['attr'] + SimpleExpr._attributes
 
     def __init__(self, parent, ast=None):
         super().__init__(parent, ast)
         self.attr = None
 
 class SubscriptExpr(SimpleExpr):
-
-    _fields = ['value', 'index']
 
     def __init__(self, parent, ast=None):
         super().__init__(parent, ast)
@@ -480,8 +476,6 @@ class SubscriptExpr(SimpleExpr):
         self.subexprs[1] = idx
 
 class SliceExpr(Expression):
-
-    _fields = ['lower', 'upper', 'step']
 
     def __init__(self, parent, ast=None):
         super().__init__(parent, ast)
@@ -541,8 +535,6 @@ class DictExpr(Expression):
 
 class IfExpr(Expression):
 
-    _fields = ['condition', 'body', 'orbody']
-
     def __init__(self, parent, ast=None):
         super().__init__(parent, ast)
         self.subexprs = [None, None, None]
@@ -573,12 +565,55 @@ class IfExpr(Expression):
 
 class CallExpr(Expression):
 
-    _fields = ['func', 'args']
-
     def __init__(self, statement, ast=None):
         super().__init__(statement, ast)
-        self.func = None
-        self.args = []
+        self.subexprs = [None for i in range(5)]
+
+    @property
+    def func(self):
+        return self.subexprs[0]
+
+    @property
+    def args(self):
+        return self.subexprs[1]
+
+    @property
+    def keywords(self):
+        return self.subexprs[2]
+
+    @property
+    def starargs(self):
+        return self.subexprs[3]
+
+    @property
+    def kwargs(self):
+        return self.subexprs[4]
+
+    @func.setter
+    def func(self, func):
+        assert isinstance(func, Expression)
+        self.subexprs[0] = func
+
+    @args.setter
+    def args(self, args):
+        assert isinstance(args, list)
+        self.subexprs[1] = args
+
+    @keywords.setter
+    def keywords(self, keywords):
+        assert isinstance(keywords, list)
+        self.subexprs[2] = keywords
+
+    @starargs.setter
+    def starargs(self, starargs):
+        assert starargs is None or isinstance(starargs, Expression)
+        self.subexprs[3] = starargs
+
+    @kwargs.setter
+    def kwargs(self, kwargs):
+        assert kwargs is None or isinstance(kwargs, Expression)
+        self.subexprs[4] = kwargs
+
 
     @property
     def ordered_names(self):
@@ -591,10 +626,29 @@ class CallExpr(Expression):
 
 class ApiCallExpr(CallExpr):
     @property
+    def func(self):
+        return self.subexprs[0]
+
+    @func.setter
+    def func(self, func):
+        assert isinstance(func, str)
+        self.subexprs[0] = func
+
+    @property
     def ordered_names(self):
         return list(chain(*[a.ordered_names for a in self.args]))
 
 class BuiltinCallExpr(CallExpr):
+    @property
+    def func(self):
+        return self.subexprs[0]
+
+
+    @func.setter
+    def func(self, func):
+        assert isinstance(func, str)
+        self.subexprs[0] = func
+
     @property
     def ordered_names(self):
         return list(chain(*[a.ordered_names for a in self.args]))
@@ -621,13 +675,6 @@ class LogicalExpr(BooleanExpr):
             return self.subexprs[0]
         else:
             return None
-
-    @left.setter
-    def left(self, val):
-        if len(self.subexprs) > 0:
-            self.subexprs[0] = val
-        else:
-            self.subexprs.append(val)
 
 class KeyValue(DistNode):
     def __init__(self, parent, ast=None):
@@ -719,6 +766,8 @@ class HistoryDomainSpec(DomainSpec):
 
 class QuantifiedExpr(BooleanExpr):
 
+    _fields = ['domains', 'operator'] + BooleanExpr._fields
+
     _index = 0
 
     def __init__(self, parent, op, ast=None):
@@ -727,7 +776,7 @@ class QuantifiedExpr(BooleanExpr):
         # List of DomainSpec:
         self.domains = []
         # Quantifier operator, ExistentialOp or UniversalOp:
-        self.op = op
+        self.operator = op
         # Single element - Predicate expression:
         self.subexprs = [None]
         # Index for unique name generation:
@@ -744,7 +793,7 @@ class QuantifiedExpr(BooleanExpr):
 
     @property
     def name(self):
-        return self.op.__name__ + ("Expr_%d" % self.index)
+        return self.operator.__name__ + ("Expr_%d" % self.index)
 
     @property
     def predicate(self):
@@ -777,8 +826,6 @@ class DictCompExpr(ComprehensionExpr): pass
 
 class AggregateExpr(Expression):
 
-    _fields = ['value']
-
     def __init__(self, statement, ast=None):
         super().__init__(statement, ast)
         self.subexprs = [None]
@@ -810,7 +857,7 @@ class NotInOp(ComparisonOperator): pass
 
 class ComparisonExpr(BooleanExpr):
 
-    _fields = ['left', 'right', 'comparator']
+    _fields = ['left', 'comparator', 'right']
 
     def __init__(self, statement, ast=None):
         super().__init__(statement, ast)
@@ -854,7 +901,7 @@ class USubOp(UnaryOperator): pass
 
 class ArithmeticExpr(Expression):
 
-    _fields = ['operator', 'left', 'right']
+    _fields = ['left', 'operator', 'right']
 
     def __init__(self, statement, ast=None, op=None):
         super().__init__(statement, ast)
@@ -888,7 +935,8 @@ class PatternElement(DistNode):
     """A tree-structure representing a sub-component of a pattern.
     """
 
-    _fields = ['type', 'value']
+    _fields = ['value']
+    _attributes = ['type'] + DistNode._attributes
 
     def __init__(self, elemtype, value, ast=None):
         assert issubclass(elemtype, PatternElementType)
@@ -968,7 +1016,6 @@ class PatternElement(DistNode):
 
 class PatternExpr(Expression):
 
-    _fields = ['pattern']
     _index = 0
 
     def __init__(self, parent, ast=None):
@@ -1067,7 +1114,7 @@ class SentExpr(HistoryExpr): pass
 
 class LambdaExpr(Expression, ArgumentsContainer):
 
-    _fields = ["subexprs"] + ArgumentsContainer._fields
+    _fields = Expression._fields + ArgumentsContainer._fields
 
     def __init__(self, parent, ast=None):
         super().__init__(parent ,ast)
@@ -1091,6 +1138,7 @@ class Statement(DistNode):
 
     _index = 0
     _fields = []
+    _attributes = ['label'] + DistNode._attributes
 
     def __init__(self, parent, ast=None):
         super().__init__(parent, ast)
@@ -1139,7 +1187,8 @@ class Program(BlockStatement, NameScope):
     """The global NameScope.
     """
 
-    _fields = ['processes', 'entry_point', 'body']
+    _fields = ['processes', 'entry_point'] + \
+              BlockStatement._fields
 
     def __init__(self, ast=None):
         super().__init__(None, ast)
@@ -1169,7 +1218,7 @@ class Function(BlockStatement, ArgumentsContainer):
 
     _fields = ['decorators'] + \
               ArgumentsContainer._fields + BlockStatement._fields
-    _attributes = ['name']
+    _attributes = ['name'] + BlockStatement._attributes
 
     def __init__(self, name, parent, ast=None):
         super().__init__(parent, ast)
@@ -1184,7 +1233,9 @@ class Function(BlockStatement, ArgumentsContainer):
 
 class ClassStmt(BlockStatement, NameScope):
 
-    _fields = ['bases', 'decorators', 'body']
+    _fields = ['bases', 'decorators', 'keywords', 'starargs', 'kwargs'] + \
+              BlockStatement._fields
+    _attributes = ['name'] + BlockStatement._attributes
 
     def __init__(self, name, parent, bases=[], ast=None):
         super().__init__(parent, ast)
@@ -1215,11 +1266,11 @@ class AssignmentStmt(Statement):
 
 class OpAssignmentStmt(AssignmentStmt):
 
-    _fields = ['target', 'value']
+    _fields = ['operator'] + AssignmentStmt._fields
 
     def __init__(self, parent, op=None, ast=None):
         super().__init__(parent, ast)
-        self.op = op
+        self.operator = op
         self.targets = [None]
 
     @property
@@ -1263,7 +1314,7 @@ class ForStmt(Statement):
 
 class TryStmt(Statement):
 
-    _fields = ['body', 'excepthandlers', 'elsebody']
+    _fields = ['body', 'excepthandlers', 'elsebody', 'finalbody']
 
     def __init__(self, scope, ast=None):
         super().__init__(scope, ast)
@@ -1274,12 +1325,13 @@ class TryStmt(Statement):
 
 class ExceptHandler(DistNode):
 
-    _fields = ['type', 'name', 'body']
+    _fields = ['type', 'body']
+    _attributes = ['name'] + DistNode._attributes
 
     def __init__(self, parent, ast=None):
         super().__init__(parent, ast)
-        self.type = None
         self.name = None
+        self.type = None
         self.body = []
 
 class TryFinallyStmt(Statement):
@@ -1293,7 +1345,7 @@ class TryFinallyStmt(Statement):
 
 class AwaitStmt(Statement):
 
-    _fields = ['branches', 'timeout']
+    _fields = ['branches', 'orelse', 'timeout']
 
     def __init__(self, parent, ast=None):
         super().__init__(parent, ast)
@@ -1433,8 +1485,8 @@ class SentEvent(EventType): pass
 
 class Event(DistNode):
 
-    _fields = ['type', 'pattern', 'sources', 'destinations',
-               'timestamps', 'handlers']
+    _fields = ['pattern', 'sources', 'destinations', 'timestamps', 'handlers']
+    _attributes = ['type'] + DistNode._attributes
 
     def __init__(self, process, event_type, pattern=None, ast=None):
         super().__init__(ast)
@@ -1505,6 +1557,7 @@ class Event(DistNode):
 
 class EventHandler(Function):
 
+    _attributes = ['labels', 'notlabels'] + Function._attributes
     _index = 0
 
     def __init__(self, name, parent, events=[],
@@ -1526,6 +1579,7 @@ class Process(BlockStatement, ArgumentsContainer):
 
     _fields = ['bases', 'decorators', 'initializers', 'methods',
                'events', 'body'] + ArgumentsContainer._fields
+    _attributes = ['name'] + BlockStatement._attributes
 
     def __init__(self, name, parent, bases, ast=None):
         super().__init__(parent, ast)

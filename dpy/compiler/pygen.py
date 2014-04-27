@@ -239,10 +239,10 @@ class PythonGenerator(NodeVisitor):
     def generate_args(self, node):
         assert isinstance(node, dast.ArgumentsContainer)
         args = [arg(ident.name, None) for ident in node.args]
-        vararg = node.vararg.name if node.vararg is not None else None
+        vararg = node.vararg
         kwonlyargs = [arg(ident.name, None) for ident in node.kwonlyargs]
         kw_defaults = [self.visit(expr) for expr in node.kw_defaults]
-        kwarg = node.kwarg.name if node.vararg is not None else None
+        kwarg = node.kwarg
         defaults = [self.visit(expr) for expr in node.defaults]
         return arguments(args, vararg, None, kwonlyargs, kwarg,
                          None, defaults, kw_defaults)
@@ -372,7 +372,12 @@ class PythonGenerator(NodeVisitor):
 
     def visit_CallExpr(self, node):
         ast = pyCall(self.visit(node.func),
-                     [self.visit(a) for a in node.args])
+                     [self.visit(a) for a in node.args],
+                     [(key, self.visit(value)) for key, value in node.keywords],
+                     self.visit(node.starargs)
+                     if node.starargs is not None else None,
+                     self.visit(node.kwargs)
+                     if node.kwargs is not None else None)
         return propagate_attributes([ast.func] + ast.args, ast)
 
     def visit_ApiCallExpr(self, node):
@@ -447,14 +452,14 @@ class PythonGenerator(NodeVisitor):
         if hasattr(ifcond, "postbody"):
             postbody.extend(cnode.postbody)
 
-        if node.op is dast.UniversalOp:
+        if node.operator is dast.UniversalOp:
             ifcond = UnaryOp(Not(), ifcond)
             ifbody = [Return(pyFalse())]
         else:                   # ExistentialExpr
             ifbody = [Return(pyTrue())]
         body.append(If(ifcond, ifbody, []))
         body.extend(postbody)
-        if node.op is dast.UniversalOp:
+        if node.operator is dast.UniversalOp:
             funcbody.append(Return(pyTrue()))
         else:
             funcbody.append(Return(pyFalse()))
@@ -632,7 +637,7 @@ class PythonGenerator(NodeVisitor):
     def visit_OpAssignmentStmt(self, node):
         target = self.visit(node.target)
         val = self.visit(node.value)
-        ast = AugAssign(target, OperatorMap[node.op](), val)
+        ast = AugAssign(target, OperatorMap[node.operator](), val)
         return concat_bodies([target, val], [ast])
 
     def visit_IfStmt(self, node):
