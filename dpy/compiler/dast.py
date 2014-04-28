@@ -48,6 +48,16 @@ class DistNode(AST):
         """
         pass
 
+
+    def first_parent_of_type(self, nodetype):
+        node = self.parent
+        while node is not None:
+            if isinstance(node, nodetype):
+                return node
+            else:
+                node = node.parent
+        return None
+
     @property
     def scope(self):
         """The local scope containing this node."""
@@ -416,10 +426,18 @@ class Expression(DistNode):
 
     @property
     def parent_statement(self):
-        p = self.parent
-        while p is not None and not isinstance(p, Statement):
-            p = p.parent
-        return p
+        return self.first_parent_of_type(Statement)
+
+    def __eq__(self, target):
+        if target is None:
+            return False
+        elif type(target) is not type(self):
+            return False
+        elif len(self.subexprs) != len(target.subexprs):
+            return False
+        else:
+            return self.subexprs == target.subexprs
+
 
 class PythonExpr(Expression):
     """This is placeholder for unsupported Python expressions."""
@@ -508,6 +526,7 @@ class SliceExpr(Expression):
 
 class StarredExpr(SimpleExpr): pass
 class EllipsisExpr(SimpleExpr): pass
+
 class ConstantExpr(SimpleExpr): pass
 class SelfExpr(ConstantExpr): pass
 class TrueExpr(ConstantExpr): pass
@@ -924,13 +943,6 @@ class ArithmeticExpr(Expression):
     def right(self, val):
         self.subexprs[1] = val
 
-class PatternElementType: pass
-class ConstantVar(PatternElementType): pass
-class BoundVar(PatternElementType): pass
-class FreeVar(PatternElementType): pass
-class TupleVar(PatternElementType): pass
-class ListVar(PatternElementType): pass
-
 class PatternElement(DistNode):
     """A tree-structure representing a sub-component of a pattern.
     """
@@ -938,10 +950,8 @@ class PatternElement(DistNode):
     _fields = ['value']
     _attributes = ['type'] + DistNode._attributes
 
-    def __init__(self, elemtype, value, ast=None):
-        assert issubclass(elemtype, PatternElementType)
-        super().__init__(ast)
-        self.type = elemtype
+    def __init__(self, value, parent=None, ast=None):
+        super().__init__(parent, ast)
         self.value = value
 
     def replace_child(self, oldnode, newnode):
@@ -953,18 +963,12 @@ class PatternElement(DistNode):
         elif self.value is not None:
             self.value.replace_child(oldnode, newnode)
 
-
     @property
     def ordered_boundvars(self):
         """Returns a list of bound variables, in left-to-right order.
-        """
 
-        if self.type is BoundVar:
-            return [self.value]
-        elif self.type in {FreeVar, ConstantVar}:
-            return []
-        else:
-            return list(chain(*[v.boundvars for v in self.value]))
+        """
+        raise NotImplementedError
 
     @property
     def boundvars(self):
@@ -974,19 +978,18 @@ class PatternElement(DistNode):
     @property
     def ordered_freevars(self):
         """Returns a list of free variables, in left-to-right order.
-        """
 
-        if self.type is FreeVar:
-            return [self.value] if self.value is not None else []
-        elif self.type in {BoundVar, ConstantVar}:
-            return []
-        else:
-            return list(chain(*[v.ordered_freevars for v in self.value]))
+        """
+        raise NotImplementedError
 
     @property
     def freevars(self):
         """A set containing all free variables in the pattern."""
         return set(self.ordered_freevars)
+
+    @property
+    def parent_expression(self):
+        return self.first_parent_of_type(Expression)
 
     def match(self, target):
         """Compare two Elements to see if they describe the same pattern.
@@ -997,13 +1000,13 @@ class PatternElement(DistNode):
 
         assert isinstance(target, PatternElement)
 
-        if self.type is not target.type:
+        if type(self) is not type(target):
             return False
-        elif self.type is FreeVar or self.type is BoundVar :
+        elif type(self) is FreePattern or type(self) is BoundPattern:
             return True
-        elif self.type is ConstantVar:
+        elif type(self) is ConstantPattern:
             return target.value == self.value
-        elif self.type is TupleVar or self.type is ListVar:
+        elif type(self) is TuplePattern or type(self) is ListPattern:
             if len(self.value) != len(target.value):
                 return False
             for v, t in zip(self.value, target.value):
@@ -1013,6 +1016,79 @@ class PatternElement(DistNode):
 
     def __eq__(self, target):
         return self.match(target)
+
+class ConstantPattern(PatternElement):
+    def __init__(self, value, parent=None, ast=None):
+        assert isinstance(value, DistNode)
+        super().__init__(value, parent, ast)
+        value._parent = self
+
+    @property
+    def ordered_boundvars(self):
+        return []
+
+    @property
+    def ordered_freevars(self):
+        return []
+
+class FreePattern(PatternElement):
+    def __init__(self, value, parent, ast=None):
+        if value is not None:
+            assert isinstance(value, NamedVar)
+        super().__init__(value, parent, ast)
+
+    @property
+    def ordered_boundvars(self):
+        return []
+
+    @property
+    def ordered_freevars(self):
+        return [self.value] if self.value is not None else []
+
+class BoundPattern(PatternElement):
+    def __init__(self, value, parent, ast=None):
+        assert isinstance(value, NamedVar)
+        super().__init__(value, parent, ast)
+
+    @property
+    def ordered_boundvars(self):
+        return [self.value] if self.value is not None else []
+
+    @property
+    def ordered_freevars(self):
+        return []
+
+class TuplePattern(PatternElement):
+    def __init__(self, value, parent, ast=None):
+        assert isinstance(value, list)
+        for pat in value:
+            assert isinstance(pat, PatternElement)
+            pat._parent = self
+        super().__init__(value, parent, ast)
+
+    @property
+    def ordered_boundvars(self):
+        return list(chain(*[v.ordered_boundvars for v in self.value]))
+
+    @property
+    def ordered_freevars(self):
+        return list(chain(*[v.ordered_freevars for v in self.value]))
+
+class ListPattern(PatternElement):
+    def __init__(self, value, parent, ast=None):
+        assert isinstance(value, list)
+        for pat in value:
+            assert isinstance(pat, PatternElement)
+            pat._parent = self
+        super().__init__(value, parent, ast)
+
+    @property
+    def ordered_boundvars(self):
+        return list(chain(*[v.ordered_boundvars for v in self.value]))
+
+    @property
+    def ordered_freevars(self):
+        return list(chain(*[v.ordered_freevars for v in self.value]))
 
 class PatternExpr(Expression):
 
@@ -1533,7 +1609,7 @@ class Event(DistNode):
         else:
             result = []
         for vs in chain(self.sources, self.destinations, self.timestamps):
-            result += vs.freevars
+            result += vs.ordered_freevars
         return result
 
     @property
@@ -1541,6 +1617,10 @@ class Event(DistNode):
         return set(self.ordered_freevars)
 
     def match(self, target):
+        if target is None:
+            return False
+        if type(target) is not type(self):
+            return False
         if (not self.pattern.match(target.pattern) or
                 not len(self.sources) == len(target.sources) or
                 not len(self.destinations) == len(target.destinations) or
@@ -1553,6 +1633,9 @@ class Event(DistNode):
             if not sp.match(tp):
                 return False
         return True
+
+    def __eq__(self, target):
+        return self.match(target)
 
 
 class EventHandler(Function):

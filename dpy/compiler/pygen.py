@@ -158,6 +158,7 @@ if __name__ == "__main__":
 
 class PythonGenerator(NodeVisitor):
     """Transforms DistPy AST into Python AST.
+
     """
 
     def __init__(self, filename=""):
@@ -168,6 +169,12 @@ class PythonGenerator(NodeVisitor):
         self.postambles = list()
 
     def visit(self, node):
+        """Generic visit method.
+
+        If the Incrementalization interface generated code for this node, then
+        returns the generated code. Otherwise, call the normal visit method.
+
+        """
         if isinstance(node, dast.DistNode):
             if hasattr(node, "incr_override"):
                 return node.incr_override
@@ -568,17 +575,23 @@ class PythonGenerator(NodeVisitor):
             return propagate_attributes((ast.left, ast.right), ast)
 
     def visit_PatternElement(self, node):
-        if node.type is dast.FreeVar:
+        if type(node) is dast.FreePattern:
             val = Str(node.value.name) if node.value is not None else pyNone()
-        elif node.type is dast.BoundVar:
+        elif type(node) is dast.BoundPattern:
             val = Str(node.value.name)
-        elif node.type is dast.ConstantVar:
+        elif type(node) is dast.ConstantPattern:
             val = self.visit(node.value)
         else:
             val = pyList([self.visit(v) for v in node.value])
 
-        return pyCall(func=pyAttr(pyAttr("dpy", "pat"), "PatternElement"),
-                      args=[pyAttr(pyAttr("dpy", "pat"), node.type.__name__), val])
+        return pyCall(func=pyAttr(pyAttr("dpy", "pat"), type(node).__name__),
+                      args=[val])
+
+    visit_FreePattern = visit_PatternElement
+    visit_BoundPattern = visit_PatternElement
+    visit_ConstantPattern = visit_PatternElement
+    visit_TuplePattern = visit_PatternElement
+    visit_ListPattern = visit_PatternElement
 
     def visit_PatternExpr(self, node):
         if node.name not in self.processed_patterns:

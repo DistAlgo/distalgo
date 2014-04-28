@@ -172,30 +172,25 @@ class PatternParser(NodeVisitor):
         self.parent_node = parser.current_parent
         self.namescope = parser.current_scope
 
-    def visit_arg(self, node):
-        return dast.PatternElement(dast.FreeVar, node.arg, node)
 
     def visit_Name(self, node):
-        if node.id == KW_SELF:
-            return dast.PatternElement(
-                dast.ConstantVar,
+        if self._parser.current_process is not None and \
+           node.id == KW_SELF:
+            return dast.ConstantPattern(
                 dast.SelfExpr(self.parent_node, node),
-                node)
+                self.parent_node, node)
         elif node.id == KW_TRUE:
-            return dast.PatternElement(
-                dast.ConstantVar,
+            return dast.ConstantPattern(
                 dast.TrueExpr(self.parent_node, node),
-                node)
+                self.parent_node, node)
         elif node.id == KW_FALSE:
-            return dast.PatternElement(
-                dast.ConstantVar,
+            return dast.ConstantPattern(
                 dast.FalseExpr(self.parent_node, node),
-                node)
+                self.parent_node, node)
         elif node.id == KW_NULL:
-            return dast.PatternElement(
-                dast.ConstantVar,
+            return dast.ConstantPattern(
                 dast.NoneExpr(self.parent_node, node),
-                node)
+                self.parent_node, node)
 
         name = node.id
         if name.startswith("_"):
@@ -206,7 +201,7 @@ class PatternParser(NodeVisitor):
             else:
                 n = self.namescope.add_name(name)
                 n.add_assignment(self.parent_node)
-            return dast.PatternElement(dast.FreeVar, n, node)
+            return dast.FreePattern(n, self.parent_node, node)
         else:
             # Bound variable:
             n = self.namescope.find_name(name)
@@ -216,48 +211,42 @@ class PatternParser(NodeVisitor):
                      "pattern." % name), node)
                 n = self.namescope.add_name(name)
             n.add_read(self.parent_node)
-            return dast.PatternElement(dast.BoundVar, n, node)
+            return dast.BoundPattern(n, self.parent_node, node)
 
     def visit_Str(self, node):
-        return dast.PatternElement(
-            dast.ConstantVar,
+        return dast.ConstantPattern(
             dast.ConstantExpr(self.parent_node, node, node.s),
-            node)
+            self.parent_node, node)
 
     def visit_Bytes(self, node):
-        return dast.PatternElement(
-            dast.ConstantVar,
+        return dast.ConstantPattern(
             dast.ConstantExpr(self.parent_node, node, node.s),
-            node)
+            self.parent_node, node)
 
     def visit_Num(self, node):
-        return dast.PatternElement(
-            dast.ConstantVar,
-            ConstantExpr(self.parent_node, node, node.n),
-            node)
+        return dast.ConstantPattern(
+            dast.ConstantExpr(self.parent_node, node, node.n),
+            self.parent_node, node)
 
     def visit_Tuple(self, node):
-        return dast.PatternElement(
-            dast.TupleVar,
+        return dast.TuplePattern(
             [self.visit(e) for e in node.elts],
-            node)
+            self.parent_node, node)
 
     def visit_List(self, node):
-        return dast.PatternElement(
-            dast.ListVar,
+        return dast.ListPattern(
             [self.visit(e) for e in node.elts],
-            node)
+            self.parent_node, node)
 
     def visit_Call(self, node):
         if not isinstance(node.func, Name): return None
-        elts = [dast.PatternElement(
-                dast.ConstantVar,
+        elts = [dast.ConstantPattern(
                 dast.ConstantExpr(self.parent_node,
                                   node.func, node.func.id),
-                node)]
+                self.parent_node, node)]
         for e in node.args:
             elts.append(self.visit(e))
-        return dast.PatternElement(dast.TupleVar, elts, node)
+        return dast.TuplePattern(elts, self.parent_node, node)
 
 
 class Parser(NodeVisitor):
@@ -275,7 +264,8 @@ class Parser(NodeVisitor):
         self.current_label = None
         self.errcnt = 0
         self.warncnt = 0
-        self.program = dast.Program(None) # Just in case
+        self.program = execution_context if execution_context is not None \
+                       else dast.Program(None) # Just in case
         self._debug = None
 
     @property
