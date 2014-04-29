@@ -1237,8 +1237,22 @@ class Statement(DistNode):
             assert self._parent is not None
             return self._parent.scope
 
-class BlockStatement(Statement):
+class SimpleStmt(Statement):
+    """A SimpleStmt is a statement that does not contain sub-statements.
 
+    """
+
+    _fields = ['expr']
+
+    def __init__(self, parent, ast=None):
+        super().__init__(parent, ast)
+        self.expr = None
+
+class CompoundStmt(Statement):
+    """Block statements are compound statements that contain one or more blocks of
+    sub-statements.
+
+    """
     _fields = ["body"]
 
     def __init__(self, parent, ast=None):
@@ -1255,12 +1269,12 @@ class BlockStatement(Statement):
             elif node is not None:
                 node.replace_child(oldnode, newnode)
 
-class Program(BlockStatement, NameScope):
+class Program(CompoundStmt, NameScope):
     """The global NameScope.
     """
 
     _fields = ['processes', 'entry_point'] + \
-              BlockStatement._fields
+              CompoundStmt._fields
 
     def __init__(self, ast=None):
         super().__init__(None, ast)
@@ -1271,7 +1285,7 @@ class Program(BlockStatement, NameScope):
     def skip(self):
         return False
 
-class InteractiveProgram(BlockStatement, NameScope):
+class InteractiveProgram(CompoundStmt, NameScope):
     """For interactive code.
     """
 
@@ -1286,11 +1300,11 @@ class InteractiveProgram(BlockStatement, NameScope):
     def skip(self):
         return False
 
-class Function(BlockStatement, ArgumentsContainer):
+class Function(CompoundStmt, ArgumentsContainer):
 
     _fields = ['decorators'] + \
-              ArgumentsContainer._fields + BlockStatement._fields
-    _attributes = ['name'] + BlockStatement._attributes
+              ArgumentsContainer._fields + CompoundStmt._fields
+    _attributes = ['name'] + CompoundStmt._attributes
 
     def __init__(self, name, parent, ast=None):
         super().__init__(parent, ast)
@@ -1303,11 +1317,11 @@ class Function(BlockStatement, ArgumentsContainer):
     def name(self):
         return self._name
 
-class ClassStmt(BlockStatement, NameScope):
+class ClassStmt(CompoundStmt, NameScope):
 
     _fields = ['bases', 'decorators', 'keywords', 'starargs', 'kwargs'] + \
-              BlockStatement._fields
-    _attributes = ['name'] + BlockStatement._attributes
+              CompoundStmt._fields
+    _attributes = ['name'] + CompoundStmt._attributes
 
     def __init__(self, name, parent, bases=[], ast=None):
         super().__init__(parent, ast)
@@ -1325,9 +1339,9 @@ class ClassStmt(BlockStatement, NameScope):
         """
         return True
 
-class NoopStmt(Statement): pass
+class NoopStmt(SimpleStmt): pass
 
-class AssignmentStmt(Statement):
+class AssignmentStmt(SimpleStmt):
 
     _fields = ['targets', 'value']
 
@@ -1353,7 +1367,7 @@ class OpAssignmentStmt(AssignmentStmt):
     def target(self, tgt):
         self.targets[0] = tgt
 
-class IfStmt(Statement):
+class IfStmt(CompoundStmt):
 
     _fields = ['condition', 'body', 'elsebody']
 
@@ -1363,7 +1377,7 @@ class IfStmt(Statement):
         self.body = []
         self.elsebody = []
 
-class WhileStmt(Statement):
+class WhileStmt(CompoundStmt):
 
     _fields = ['condition', 'body', 'elsebody']
 
@@ -1373,7 +1387,7 @@ class WhileStmt(Statement):
         self.body = []
         self.elsebody = []
 
-class ForStmt(Statement):
+class ForStmt(CompoundStmt):
 
     _fields = ['target', 'iter', 'body', 'elsebody']
 
@@ -1384,7 +1398,7 @@ class ForStmt(Statement):
         self.body = []
         self.elsebody = []
 
-class TryStmt(Statement):
+class TryStmt(CompoundStmt):
 
     _fields = ['body', 'excepthandlers', 'elsebody', 'finalbody']
 
@@ -1406,7 +1420,7 @@ class ExceptHandler(DistNode):
         self.type = None
         self.body = []
 
-class TryFinallyStmt(Statement):
+class TryFinallyStmt(CompoundStmt):
 
     _fields = ['body', 'finalbody']
 
@@ -1415,7 +1429,7 @@ class TryFinallyStmt(Statement):
         self.body = []
         self.finalbody = []
 
-class AwaitStmt(Statement):
+class AwaitStmt(CompoundStmt):
 
     _fields = ['branches', 'orelse', 'timeout']
 
@@ -1425,7 +1439,7 @@ class AwaitStmt(Statement):
         self.orelse = []
         self.timeout = None
 
-class LoopingAwaitStmt(Statement):
+class LoopingAwaitStmt(CompoundStmt):
 
     _fields = ['condition', 'timeout', 'body']
 
@@ -1444,7 +1458,7 @@ class Branch(DistNode):
         self.condition = conditon
         self.body = []
 
-class ReturnStmt(Statement):
+class ReturnStmt(SimpleStmt):
 
     _fields = ['value']
 
@@ -1452,7 +1466,7 @@ class ReturnStmt(Statement):
         super().__init__(parent, ast)
         self.value = None
 
-class DeleteStmt(Statement):
+class DeleteStmt(SimpleStmt):
 
     _fields = ['targets']
 
@@ -1460,7 +1474,7 @@ class DeleteStmt(Statement):
         super().__init__(parent, ast)
         self.targets = []
 
-class YieldStmt(Statement):
+class YieldStmt(SimpleStmt):
 
     _fields = ['value']
 
@@ -1468,7 +1482,7 @@ class YieldStmt(Statement):
         super().__init__(parent, ast)
         self.value = None
 
-class YieldFromStmt(Statement):
+class YieldFromStmt(SimpleStmt):
 
     _fields = ['value']
 
@@ -1476,7 +1490,7 @@ class YieldFromStmt(Statement):
         super().__init__(parent, ast)
         self.value = None
 
-class WithStmt(Statement):
+class WithStmt(CompoundStmt):
 
     _fields = ['items', 'body']
 
@@ -1485,7 +1499,7 @@ class WithStmt(Statement):
         self.items = []
         self.body = []
 
-class RaiseStmt(Statement):
+class RaiseStmt(SimpleStmt):
 
     _fields = ['expr', 'cause']
 
@@ -1494,17 +1508,9 @@ class RaiseStmt(Statement):
         self.expr = None
         self.cause = None
 
-class SimpleStmt(Statement):
-
-    _fields = ['expr']
-
-    def __init__(self, parent, ast=None):
-        super().__init__(parent, ast)
-        self.expr = None
-
-class BreakStmt(Statement): pass
-class PassStmt(Statement): pass
-class ContinueStmt(Statement): pass
+class BreakStmt(SimpleStmt): pass
+class PassStmt(SimpleStmt): pass
+class ContinueStmt(SimpleStmt): pass
 
 class PythonStmt(SimpleStmt): pass
 
@@ -1532,7 +1538,7 @@ class NonlocalStmt(SimpleStmt):
         super().__init__(parent, ast)
         self.names = list(names)
 
-class SendStmt(Statement):
+class SendStmt(SimpleStmt):
 
     _fields = ['message', 'target', 'broadcast']
 
@@ -1542,7 +1548,7 @@ class SendStmt(Statement):
         self.target = None
         self.broadcast = None
 
-class OutputStmt(Statement):
+class OutputStmt(SimpleStmt):
 
     _fields = ['message', 'level']
 
@@ -1654,11 +1660,11 @@ class EventHandler(Function):
             return super().name
         return "event_handler_%d" % self.index
 
-class Process(BlockStatement, ArgumentsContainer):
+class Process(CompoundStmt, ArgumentsContainer):
 
     _fields = ['bases', 'decorators', 'initializers', 'methods',
                'events', 'body'] + ArgumentsContainer._fields
-    _attributes = ['name'] + BlockStatement._attributes
+    _attributes = ['name'] + CompoundStmt._attributes
 
     def __init__(self, name, parent, bases, ast=None):
         super().__init__(parent, ast)
