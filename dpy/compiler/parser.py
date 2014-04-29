@@ -172,7 +172,6 @@ class PatternParser(NodeVisitor):
         self.parent_node = parser.current_parent
         self.namescope = parser.current_scope
 
-
     def visit_Name(self, node):
         if self._parser.current_process is not None and \
            node.id == KW_SELF:
@@ -200,8 +199,10 @@ class PatternParser(NodeVisitor):
                 n = None
             else:
                 n = self.namescope.add_name(name)
-                n.add_assignment(self.parent_node)
-            return dast.FreePattern(n, self.parent_node, node)
+            pat = dast.FreePattern(n, self.parent_node, node)
+            if n is not None:
+                n.add_assignment(pat)
+            return pat
         else:
             # Bound variable:
             n = self.namescope.find_name(name)
@@ -210,8 +211,9 @@ class PatternParser(NodeVisitor):
                     ("new variable '%s' introduced by bound context in "
                      "pattern." % name), node)
                 n = self.namescope.add_name(name)
-            n.add_read(self.parent_node)
-            return dast.BoundPattern(n, self.parent_node, node)
+            pat = dast.BoundPattern(n, self.parent_node, node)
+            n.add_read(pat)
+            return pat
 
     def visit_Str(self, node):
         return dast.ConstantPattern(
@@ -952,23 +954,25 @@ class Parser(NodeVisitor):
 
     def visit_Global(self, node):
         if self.current_process is not None:
-            self.warn("'global' statement inside process is redundant and"
+            self.warn("'global' statement inside process is redundant and "
                       "ignored.", node)
         else:
-            self.create_stmt(dast.GlobalStmt, node, {"names": node.names})
+            self.create_stmt(dast.GlobalStmt, node,
+                             {"names": list(node.names)})
             for name in node.names:
                 localname = self.current_scope.find_name(name, local=True)
                 if localname is not None:
-                    self.warn("name '%s' used before been declared 'global'." %
-                                  name, node)
+                    self.warn("name '%s' used before declared 'global'." %
+                              name, node)
                 nobj = self.program.find_name(name)
                 if nobj is None:
                     nobj = self.program.add_name(name)
+                self.debug("Linking global name '%s'" % name)
                 self.current_scope.link_name(nobj)
             self.node_stack.pop()
 
     def visit_Nonlocal(self, node):
-        self.create_stmt(dast.NonlocalStmt, node, {"names": node.names})
+        self.create_stmt(dast.NonlocalStmt, node, {"names": list(node.names)})
         if self.current_scope.parent_scope is None:
             self.error("No nonlocal scope found.", node)
         else:
@@ -982,6 +986,7 @@ class Parser(NodeVisitor):
                     self.warn("Unable to determine scope for nonlocal var %s" %
                               name, node)
                 else:
+                    self.debug("Linking nonlocal name '%s'" % name)
                     self.current_scope.link_name(nobj)
         self.node_stack.pop()
 

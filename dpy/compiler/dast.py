@@ -397,8 +397,6 @@ class Expression(DistNode):
         for idx, node in enumerate(self.subexprs):
             if node is oldnode:
                 self.subexprs[idx] = newnode
-            elif node is not None:
-                node.replace_child(oldnode, newnode)
 
     @property
     def scope(self):
@@ -960,8 +958,6 @@ class PatternElement(DistNode):
         """
         if self.value is oldnode:
             self.value = newnode
-        elif self.value is not None:
-            self.value.replace_child(oldnode, newnode)
 
     @property
     def ordered_boundvars(self):
@@ -1512,7 +1508,7 @@ class ContinueStmt(Statement): pass
 
 class PythonStmt(SimpleStmt): pass
 
-class AssertStmt(PythonStmt):
+class AssertStmt(SimpleStmt):
 
     _fields = ['expr', 'msg']
 
@@ -1520,7 +1516,7 @@ class AssertStmt(PythonStmt):
         super().__init__(parent, ast)
         self.msg = None
 
-class GlobalStmt(PythonStmt):
+class GlobalStmt(SimpleStmt):
 
     _fields = ['names']
 
@@ -1528,7 +1524,7 @@ class GlobalStmt(PythonStmt):
         super().__init__(parent, ast)
         self.names = list(names)
 
-class NonlocalStmt(PythonStmt):
+class NonlocalStmt(SimpleStmt):
 
     _fields = ['names']
 

@@ -801,8 +801,29 @@ class PythonGenerator(NodeVisitor):
         ast = Expr(value)
         return concat_bodies([value], [ast])
 
+    def visit_BreakStmt(self, node):
+        return [Break()]
+
+    def visit_PassStmt(self, node):
+        return [Pass()]
+
+    def visit_ContinueStmt(self, node):
+        return [Continue()]
+
     def visit_PythonStmt(self, node):
         return [node.ast]
+
+    def visit_AssertStmt(self, node):
+        expr = self.visit(node.expr)
+        msg = self.visit(node.msg) if node.msg is not None else None
+        ast = Assert(expr, msg)
+        return concat_bodies([expr, msg], [ast])
+
+    def visit_GlobalStmt(self, node):
+        return [Global(node.names)]
+
+    def visit_NonlocalStmt(self, node):
+        return [Nonlocal(node.names)]
 
     def visit_SendStmt(self, node):
         mesg = self.visit(node.message)
