@@ -1,3 +1,4 @@
+import sys
 from ast import *
 from itertools import chain
 from . import dast
@@ -56,13 +57,22 @@ def pyName(name, ctx=None):
     return Name(name, Load() if ctx is None else ctx)
 
 def pyNone():
-    return pyName("None")
+    if sys.version_info > (3, 4):
+        return NameConstant(None)
+    else:
+        return pyName("None")
 
 def pyTrue():
-    return pyName("True")
+    if sys.version_info > (3, 4):
+        return NameConstant(True)
+    else:
+        return pyName("True")
 
 def pyFalse():
-    return pyName("False")
+    if sys.version_info > (3, 4):
+        return NameConstant(False)
+    else:
+        return pyName("False")
 
 def pyList(elts, ctx=None):
     return List(elts, Load() if ctx is None else ctx)
@@ -246,13 +256,31 @@ class PythonGenerator(NodeVisitor):
     def generate_args(self, node):
         assert isinstance(node, dast.ArgumentsContainer)
         args = [arg(ident.name, None) for ident in node.args]
-        vararg = node.vararg
         kwonlyargs = [arg(ident.name, None) for ident in node.kwonlyargs]
         kw_defaults = [self.visit(expr) for expr in node.kw_defaults]
-        kwarg = node.kwarg
         defaults = [self.visit(expr) for expr in node.defaults]
-        return arguments(args, vararg, None, kwonlyargs, kwarg,
-                         None, defaults, kw_defaults)
+        if sys.version_info > (3, 4):
+            vararg = arg(node.vararg, None) if node.vararg is not None else None
+            kwarg = arg(node.kwarg, None) if node.kwarg is not None else None
+            return arguments(
+                args=args,
+                vararg=vararg,
+                kwonlyargs=kwonlyargs,
+                kwarg=kwarg,
+                defaults=defaults,
+                kw_defaults=kw_defaults)
+        else:
+            vararg = node.vararg
+            kwarg = node.kwarg
+            return arguments(
+                args=args,
+                vararg=vararg,
+                varargannotation=None,
+                kwonlyargs=kwonlyargs,
+                kwarg=kwarg,
+                kwargannotation=None,
+                defaults=defaults,
+                kw_defaults=kw_defaults)
 
     def visit_Process(self, node):
         cd = ClassDef()

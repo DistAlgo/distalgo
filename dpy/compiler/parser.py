@@ -1252,6 +1252,17 @@ class Parser(NodeVisitor):
         self.node_stack.pop()
         return expr
 
+    # Since Python 3.4:
+    def visit_NameConstant(self, node):
+        if node.value == True:
+            return self.create_expr(dast.TrueExpr, node, nopush=True)
+        elif node.value == False:
+            return self.create_expr(dast.FalseExpr, node, nopush=True)
+        elif node.value == None:
+            return self.create_expr(dast.NoneExpr, node, nopush=True)
+        else:
+            raise NotImplementedError("Unrecognized NameConstant %s." % repr(node.value))
+
     def visit_Tuple(self, node):
         expr = self.create_expr(dast.TupleExpr, node)
         for item in node.elts:

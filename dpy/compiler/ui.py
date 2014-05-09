@@ -1,6 +1,6 @@
 import ast
 import argparse
-from sys import stdout, stderr
+import sys
 
 from .parser import Parser
 from .pygen import PythonGenerator
@@ -8,6 +8,8 @@ from .pypr import to_source
 from .pseudo import to_pseudo
 
 Debug = None
+stdout = sys.stdout
+stderr = sys.stderr
 
 def dpyast_from_file(filename):
     """Generates a DistPy AST representation from the specified DistPy source
@@ -98,9 +100,18 @@ def dpyfile_to_pyfile(filename, outname=None):
             outfd.write(pystr)
             stderr.write("Written compiled file %s.\n"% outname)
 
+def check_python_version():
+    if sys.version_info < (3, 3):
+        stderr.write("DistPy requires Python version 3.3 or newer.\n")
+        sys.exit(1)
+    elif sys.version_info > (3, 5):
+        stderr.write("Python 3.5 not yet supported.\n")
+        sys.exit(2)
+
 def main():
     """Main entry point when invoking compiler module from command line.
     """
+    check_python_version()
     global Debug
     ap = argparse.ArgumentParser(description="DistPy compiler.")
     ap.add_argument('-o', help="Output file name.", dest="outfile")

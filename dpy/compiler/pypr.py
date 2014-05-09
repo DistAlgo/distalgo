@@ -8,6 +8,7 @@
     :copyright: Copyright 2008 by Armin Ronacher.
     :license: BSD.
 """
+import sys
 from ast import *
 
 BOOLOP_SYMBOLS = {
@@ -136,10 +137,16 @@ class SourceGenerator(NodeVisitor):
                 self.visit(default)
         if node.vararg is not None:
             write_comma()
-            self.write('*' + node.vararg)
+            if sys.version_info > (3, 4):
+                self.write('*' + node.vararg.arg)
+            else:
+                self.write('*' + node.vararg)
         if node.kwarg is not None:
             write_comma()
-            self.write('**' + node.kwarg)
+            if sys.version_info > (3, 4):
+                self.write('**' + node.kwarg.arg)
+            else:
+                self.write('**' + node.kwarg)
 
     def decorators(self, node):
         for decorator in node.decorator_list:
@@ -459,6 +466,10 @@ class SourceGenerator(NodeVisitor):
 
     def visit_Num(self, node):
         self.write(repr(node.n))
+
+    # Since Python 3.4:
+    def visit_NameConstant(self, node):
+        self.write(repr(node.value))
 
     def visit_Tuple(self, node):
         self.write('(')
