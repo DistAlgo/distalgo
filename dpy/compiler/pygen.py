@@ -2,6 +2,7 @@ import sys
 from ast import *
 from itertools import chain
 from . import dast
+from .utils import printd, printw, printe
 
 OperatorMap = {
     dast.AddOp : Add,
@@ -35,11 +36,14 @@ OperatorMap = {
     dast.AndOp : And,
     dast.OrOp : Or
 }
+# New matrix multiplication operator since 3.4:
+if sys.version_info > (3, 5):
+    OperatorMap[dast.MatMultOp] = MatMult
 
 PATTERN_EXPR_NAME = "_PatternExpr_%d"
 QUATIFIED_EXPR_NAME = "_QuantifiedExpr_%d"
 
-########## Conveniece methods for creating AST nodes: ##########
+########## Convenience methods for creating AST nodes: ##########
 
 def call_noarg_ast(name):
     return Call(Name(name, Load()), [], [], None, None)
@@ -74,6 +78,9 @@ def pyFalse():
     else:
         return pyName("False")
 
+def pyNot(expr):
+    return UnaryOp(Not(), expr)
+
 def pyList(elts, ctx=None):
     return List(elts, Load() if ctx is None else ctx)
 
@@ -90,12 +97,24 @@ def pySubscr(value, index, ctx=None):
     return Subscript(value, Index(index),
                      Load() if ctx is None else ctx)
 
+def pySize(value):
+    return pyCall("len", [value])
+
+def pyMin(value):
+    return pyCall("min", [value])
+
+def pyMax(value):
+    return pyCall("max", [value])
+
 def pyAttr(name, attr, ctx=None):
     if isinstance(name, str):
         return Attribute(Name(name, Load()), attr,
                          Load() if ctx is None else ctx)
     else:
         return Attribute(name, attr, Load() if ctx is None else ctx)
+
+def pyCompare(left, op, right):
+    return Compare(left, [op()], [right])
 
 def pyLabel(name, block=False, timeout=None):
     kws = [("block", pyTrue() if block else pyFalse())]
@@ -131,15 +150,16 @@ def pyFunctionDef(name, args=[], body=[], decorator_list=[], returns=None):
                        returns)
 
 def propagate_attributes(from_nodes, to_node):
-    for fro in from_nodes:
-        if (hasattr(fro, "prebody") and isinstance(fro.prebody, list)):
-            if not hasattr(to_node, "prebody"):
-                to_node.prebody = []
-            to_node.prebody.extend(fro.prebody)
-        if (hasattr(fro, "postbody") and isinstance(fro.postbody, list)):
-            if not hasattr(to_node, "postbody"):
-                to_node.postbody = []
-            to_node.postbody.extend(fro.postbody)
+    if isinstance(to_node, AST):
+        for fro in from_nodes:
+            if (hasattr(fro, "prebody") and isinstance(fro.prebody, list)):
+                if not hasattr(to_node, "prebody"):
+                    to_node.prebody = []
+                to_node.prebody.extend(fro.prebody)
+            if (hasattr(fro, "postbody") and isinstance(fro.postbody, list)):
+                if not hasattr(to_node, "postbody"):
+                    to_node.postbody = []
+                to_node.postbody.extend(fro.postbody)
     return to_node
 
 def propagate_subexprs(node):
@@ -155,6 +175,9 @@ def concat_bodies(subexprs, body):
         if hasattr(e, "postbody"):
             postbody.extend(e.postbody)
     return prebody + body + postbody
+
+# List of arguments needed to initialize a process:
+PROC_INITARGS = ["parent", "initq", "channel", "log"]
 
 PREAMBLE = parse(
     """
@@ -174,7 +197,17 @@ class PythonGenerator(NodeVisitor):
     def __init__(self, filename=""):
         self.filename = filename
         self.processed_patterns = set()
-        self.active_target = None
+        self.preambles = list(PREAMBLE)
+        self.postambles = list()
+
+    def reset(self):
+        """Resets internal states.
+
+        Call this before compiling a new file or code segment, if you don't
+        want to create a new instance.
+
+        """
+        self.processed_patterns = set()
         self.preambles = list(PREAMBLE)
         self.postambles = list()
 
@@ -185,24 +218,34 @@ class PythonGenerator(NodeVisitor):
         returns the generated code. Otherwise, call the normal visit method.
 
         """
-        if isinstance(node, dast.DistNode):
-            if hasattr(node, "incr_override"):
-                return node.incr_override
-        return super().visit(node)
+        assert isinstance(node, dast.DistNode)
+        if hasattr(node, "ast_override"):
+            res = node.ast_override
+        else:
+            res = super().visit(node)
+
+        if isinstance(res, list):
+            # This is a statement, expand pre and post bodies:
+            return concat_bodies([node], res)
+        else:
+            # This is an expression, pass on pre and post bodies:
+            return propagate_attributes([node], res)
 
     def body(self, body):
+        """Process a block of statements."""
         res = []
         for stmt in body:
             if stmt.label is not None:
                 res.append(pyLabel(stmt.label))
             ast = self.visit(stmt)
             if ast is not None:
-                res.extend(self.visit(stmt))
+                res.extend(ast)
             else:
-                print("None result from %s" % str(stmt))
+                printe("None result from %s" % str(stmt))
         return res
 
     def bases(self, bases):
+        """Process base classes of a class definition."""
         res = []
         for expr in bases:
             res.append(self.visit(expr))
@@ -213,55 +256,54 @@ class PythonGenerator(NodeVisitor):
         for p in node.processes:
             body.extend(self.visit(p))
         body.extend(self.body(node.body))
-        if node.entry_point is not None:
-            body.extend(self.visit(node.entry_point))
         return Module(self.preambles + body + self.postambles)
 
     def generate_init(self, node):
-        InitArgs = ["parent", "initq", "channel", "log"]
-        initfun = pyFunctionDef("__init__", ["self"] + InitArgs)
-        supercall = pyCall(pyAttr(pyCall(pyName("super")),
-                                  "__init__"),
-                           [pyName(n) for n in InitArgs])
+        supercall = pyCall(func=pyAttr(pyCall(pyName("super")),
+                                       "__init__"),
+                           args=[pyName(n) for n in PROC_INITARGS])
         evtconstructors = [self.visit(evt) for evt in node.events]
-        historyinit = []
-        for evt in node.events:
-            if evt.record_history:
-                historyinit.append(
-                    Assign(targets=[pyAttr("self", evt.name)],
-                           value=pyList([])))
+        historyinit = [Assign(targets=[pyAttr("self", evt.name)],
+                              value=pyList([]))
+                       for evt in node.events if evt.record_history]
         evtdef = Assign(targets=[pyAttr("self", "_events")],
                         value=pyList(evtconstructors))
-        initfun.body = [Expr(supercall), evtdef] + historyinit
-        return initfun
+        return pyFunctionDef(name="__init__",
+                             args=(["self"] + PROC_INITARGS),
+                             body=([Expr(supercall), evtdef] + historyinit))
 
     def generate_setup(self, node):
-        args = self.generate_args(node)
+        """Generate the 'setup' method for a process."""
+        args = self.visit(node.args)
         args.args.insert(0, arg("self", None))
-        body = []
-        for name in node.names:
-            body.append(Assign(targets=[pyAttr("self", name, Store())],
-                                        value=pyName(name)))
-        for stmt in node.initializers:
-            body.extend(self.visit(stmt))
-        return FunctionDef("setup", args, body, [], None)
+        body = ([Assign(targets=[pyAttr("self", name, Store())],
+                       value=pyName(name)) for name in node.names] +
+                self.body(node.initializers))
+        return FunctionDef(name="setup",
+                           args=args,
+                           body=body,
+                           decorator_list=[],
+                           returns=None)
 
     def generate_handlers(self, node):
+        """Generate the message handlers of a process."""
         body = []
         for evt in node.events:
             for handler in evt.handlers:
                 body.extend((self.visit(handler)))
         return body
 
-    def generate_args(self, node):
-        assert isinstance(node, dast.ArgumentsContainer)
+    def visit_Arguments(self, node):
+        """Generates the argument lists for functions and lambdas."""
         args = [arg(ident.name, None) for ident in node.args]
         kwonlyargs = [arg(ident.name, None) for ident in node.kwonlyargs]
         kw_defaults = [self.visit(expr) for expr in node.kw_defaults]
         defaults = [self.visit(expr) for expr in node.defaults]
         if sys.version_info > (3, 4):
-            vararg = arg(node.vararg, None) if node.vararg is not None else None
-            kwarg = arg(node.kwarg, None) if node.kwarg is not None else None
+            vararg = arg(node.vararg.name, None) \
+                     if node.vararg is not None else None
+            kwarg = arg(node.kwarg.name, None) \
+                    if node.kwarg is not None else None
             return arguments(
                 args=args,
                 vararg=vararg,
@@ -270,8 +312,8 @@ class PythonGenerator(NodeVisitor):
                 defaults=defaults,
                 kw_defaults=kw_defaults)
         else:
-            vararg = node.vararg
-            kwarg = node.kwarg
+            vararg = node.vararg.name
+            kwarg = node.kwarg.name
             return arguments(
                 args=args,
                 vararg=vararg,
@@ -283,6 +325,8 @@ class PythonGenerator(NodeVisitor):
                 kw_defaults=kw_defaults)
 
     def visit_Process(self, node):
+        printd("Compiling process %s" % node.name)
+        printd("has methods:%r" % node.methods)
         cd = ClassDef()
         cd.name = node.name
         cd.bases = [pyAttr("dpy", "DistProcess")]
@@ -298,14 +342,14 @@ class PythonGenerator(NodeVisitor):
         if node.entry_point is not None:
             cd.body.extend(self.visit(node.entry_point))
         cd.decorator_list = [self.visit(d) for d in node.decorators]
-        cd.body.extend(self.body(node.methods))
+        cd.body.extend(self.body(node.body))
         cd.body.extend(self.generate_handlers(node))
         return [cd]
 
     def visit_Function(self, node):
         fd = FunctionDef()
         fd.name = node.name
-        fd.args = self.generate_args(node)
+        fd.args = self.visit(node.args)
         if type(node.parent) is dast.Process:
             fd.args.args.insert(0, arg("self", None))
         fd.body = self.body(node.body)
@@ -383,11 +427,11 @@ class PythonGenerator(NodeVisitor):
         return pyNone()
 
     def visit_TupleExpr(self, node):
-        ast = Tuple([self.visit(e) for e in node.subexprs], None)
+        ast = pyTuple([self.visit(e) for e in node.subexprs])
         return propagate_attributes(ast.elts, ast)
 
     def visit_ListExpr(self, node):
-        ast = List([self.visit(e) for e in node.subexprs], None)
+        ast = pyList([self.visit(e) for e in node.subexprs])
         return propagate_attributes(ast.elts, ast)
 
     def visit_SetExpr(self, node):
@@ -501,7 +545,7 @@ class PythonGenerator(NodeVisitor):
 
         if len(nameset) > 0:
             # Back patch nonlocal statement
-            if not type(node.parent_statement.parent) is dast.Program:
+            if not type(node.statement.parent) is dast.Program:
                 decl = Nonlocal([nv.name for nv in nameset
                                  if type(nv.scope) is not dast.Process])
             else:
@@ -534,9 +578,7 @@ class PythonGenerator(NodeVisitor):
         generators = []
         for tgt, it in zip(node.targets, node.iters):
             tast = self.visit(tgt)
-            self.active_target = tgt
             iast = self.visit(it)
-            self.active_target = None
             comp = comprehension(tast, iast, [])
             generators.append(propagate_attributes((tast, iast), comp))
         generators[-1].ifs = [self.visit(cond) for cond in node.conditions]
@@ -631,13 +673,13 @@ class PythonGenerator(NodeVisitor):
 
     def visit_HistoryExpr(self, node):
         assert node.event is not None
-        if len(node.boundvars) == 0 and self.active_target is None:
+        if len(node.boundvars) == 0 and node.context is None:
             return pyAttr("self", node.event.name)
         else:
             ctx = [(v.name, self.visit(v)) for v in node.boundvars]
-            if self.active_target is not None:
+            if node.context is not None:
                 order = pyTuple([Str(n)
-                                 for n in self.active_target.ordered_names])
+                                 for n in node.context.ordered_names])
             else:
                 order = pyNone()
             pat = pySubscr(pyAttr("self", "_events"),
@@ -651,7 +693,7 @@ class PythonGenerator(NodeVisitor):
     visit_SentExpr = visit_HistoryExpr
 
     def visit_LambdaExpr(self, node):
-        args = self.generate_args(node)
+        args = self.visit(node.args)
         return Lambda(args, self.visit(node.body))
 
     def visit_NamedVar(self, node):
@@ -697,9 +739,7 @@ class PythonGenerator(NodeVisitor):
 
     def visit_ForStmt(self, node):
         target = self.visit(node.target)
-        self.active_target = node.target
         it = self.visit(node.iter)
-        self.active_target = None
         body = self.body(node.body)
         orelse = self.body(node.elsebody)
         ast = For(target, it, body, orelse)
@@ -867,13 +907,16 @@ class PythonGenerator(NodeVisitor):
         ast = pyCall(func=pyAttr("self", "output"), args=args)
         return concat_bodies(ast.args, [ast])
 
+    def generate_history(self, node):
+        if node.record_history:
+            return pyTrue()
+        else:
+            return pyNone()
+
     def visit_Event(self, node):
         evtype = pyAttr(pyAttr("dpy", "pat"), node.type.__name__)
         name = Str(node.name)
-        if node.record_history:
-            history = pyTrue()
-        else:
-            history = pyFalse()
+        history = self.generate_history(node)
         pattern = self.visit(node.pattern)
         sources = pyNone()
         destinations = pyNone()

@@ -49,6 +49,15 @@ class DistNode(AST):
         pass
 
 
+    def immediate_container_of_type(self, nodetype):
+        node = self
+        while node is not None:
+            if isinstance(node, nodetype):
+                return node
+            else:
+                node = node.parent
+        return None
+
     def first_parent_of_type(self, nodetype):
         node = self.parent
         while node is not None:
@@ -58,10 +67,35 @@ class DistNode(AST):
                 node = node.parent
         return None
 
+    def last_parent_of_type(self, nodetype):
+        last = node = self.parent
+        if not isinstance(node, nodetype):
+            return None
+        while node is not None:
+            node = node.parent
+            if not isinstance(node, nodetype):
+                break
+            else:
+                last = node
+        return last
+
+    def is_child_of(self, node):
+        """True if 'node' is an ancestor of this node."""
+        p = self.parent
+        while p is not None:
+            if p is node:
+                return True
+            else:
+                p = p.parent
+        return False
+
     @property
     def scope(self):
         """The local scope containing this node."""
-        return None
+        if self._parent is not None:
+            return self._parent.scope
+        else:
+            return None
 
     @property
     def parent(self):
@@ -212,8 +246,7 @@ class LockableNameScope(NameScope):
     def unlock(self):
         self.locked = False
 
-
-class ArgumentsContainer(NameScope):
+class Arguments(DistNode):
     """A special type of NameScope that takes arguments.
 
     """
@@ -230,35 +263,39 @@ class ArgumentsContainer(NameScope):
         self.kw_defaults = []
         self.kwarg = None
 
+    @property
+    def scope(self):
+        return self.parent
+
     def add_arg(self, name):
         assert isinstance(name, str)
-        e = self.add_name(name)
+        e = self.parent.add_name(name)
         e.add_assignment(self)
         self.args.append(e)
 
     def add_defaultarg(self, name, value):
         assert isinstance(name, str) and isinstance(value, DistNode)
-        e = self.add_name(name)
+        e = self.parent.add_name(name)
         e.add_assignment(self, typectx=value)
         self.args.append(e)
         self.defaults.append(value)
 
     def add_vararg(self, name):
         assert self.vararg is None and isinstance(name, str)
-        e = self.add_name(name)
+        e = self.parent.add_name(name)
         e.add_assignment(self, typectx=list)
         self.vararg = e
 
     def add_kwonlyarg(self, name, value):
         assert isinstance(name, str) and isinstance(value, DistNode)
-        e = self.add_name(name)
+        e = self.parent.add_name(name)
         e.add_assignment(self, typectx=value)
         self.kwonlyargs.append(e)
         self.kw_defaults.append(value)
 
     def add_kwarg(self, name):
         assert self.kwarg is None and isinstance(name, str)
-        e = self.add_name(name)
+        e = self.parent.add_name(name)
         e.add_assignment(self, typectx=dict)
         self.kwarg = name
 
@@ -271,6 +308,21 @@ class ArgumentsContainer(NameScope):
             res.add(self.kwarg.name)
         return res
 
+
+class ArgumentsContainer(NameScope):
+    """A special type of NameScope that takes arguments.
+
+    """
+
+    _fields = ["args"]
+
+    def __init__(self, parent, ast=None):
+        super().__init__(parent, ast)
+        self.args = Arguments(parent=self)
+
+    @property
+    def names(self):
+        return self.args.names
 
 class NamedVar(DistNode):
     """Node representing a named variable.
@@ -311,6 +363,7 @@ class NamedVar(DistNode):
         argument definitions.
 
         """
+        assert node.parent is not None
         self.assignments.append((node, typectx))
 
     def add_update(self, node, attr=None, attrtype=object):
@@ -322,17 +375,20 @@ class NamedVar(DistNode):
         attributes and calling methods which potentially change object state.
 
         """
+        assert node.parent is not None
         self.updates.append((node, attr, attrtype))
 
     def add_read(self, node, typectx=object):
         """Add a node where the value of this variable is being read.
         """
+        assert node.parent is not None
         self.reads.append((node, typectx))
 
     def purge_reads(self, scope):
-        """Purges all read references of this NamedVar from given scope.
+        """Purges all read references in given scope from this NamedVar.
 
         Return list of purged read references.
+
         """
         removed = []
         remain = []
@@ -355,9 +411,9 @@ class NamedVar(DistNode):
         """
 
         if len(self.assignments) > 0:
-            return self.assignments[0][0].scope
+            return self.assignments[0][0].parent.scope
         elif len(self.updates) > 0:
-            return self.updates[0][0].scope
+            return self.updates[0][0].parent.scope
         else:
             return None
 
@@ -366,11 +422,8 @@ class NamedVar(DistNode):
         """True if this variable is an argument of an ArgumentsContainer.
 
         """
-        if (len(self.assignments) > 0 and
-            isinstance(self.assignments[0], ArgumentsContainer)):
-            return True
-        else:
-            return False
+        return (len(self.assignments) > 0 and
+                isinstance(self.assignments[0], Arguments))
 
     def __str__(self):
         return "<NamedVar " + self.name + ">"
@@ -407,23 +460,49 @@ class Expression(DistNode):
             return self.parent.scope
 
     @property
-    def ordered_names(self):
-        return list(chain(*[e.ordered_names for e in self.subexprs]))
-
-    @property
     def ordered_nameobjs(self):
+        """A list of NamedVar objects contained within this expression, in textual
+    order.
+
+        This default property recursively calls 'ordered_nameobjs' on the
+        sub-expressions in order and chains them together. Specialized
+        expressions should override this property to generate the proper
+        ordered name object list.
+
+        """
         return list(chain(*[e.ordered_nameobjs for e in self.subexprs]))
 
     @property
+    def ordered_names(self):
+        """A list of names contained in this expression, in textual order.
+
+        This is generated from 'ordered_nameobjs'.
+        """
+        return list(n.name for n in self.ordered_nameobjs)
+
+    @property
     def names(self):
+        """A set of names appearing in this expression.
+
+        This is generated from 'ordered_names'.
+
+        """
         return set(self.ordered_names)
 
     @property
     def nameobjs(self):
+        """A set of NamedVar objects appearing in this expression.
+
+        This is generated from 'ordered_nameobjs'.
+
+        """
         return set(self.ordered_nameobjs)
 
     @property
-    def parent_statement(self):
+    def statement(self):
+        """The first statement parent of this expression, if any.
+
+        """
         return self.first_parent_of_type(Statement)
 
     def __eq__(self, target):
@@ -456,16 +535,11 @@ class SimpleExpr(Expression):
         self.subexprs[0] = val
 
     @property
-    def ordered_names(self):
-        if isinstance(self.value, NamedVar):
-            return [self.value.name]
-        else:
-            return []
-
-    @property
     def ordered_nameobjs(self):
         if isinstance(self.value, NamedVar):
             return [self.value]
+        elif isinstance(self.value, Expression):
+            return self.value.ordered_nameobjs
         else:
             return []
 
@@ -546,8 +620,8 @@ class DictExpr(Expression):
         self.values = []
 
     @property
-    def ordered_names(self):
-        return list(chain(*[v.ordered_names
+    def ordered_nameobjs(self):
+        return list(chain(*[v.ordered_nameobjs
                             for v in chain(self.keys, self.values)]))
 
 class IfExpr(Expression):
@@ -582,8 +656,8 @@ class IfExpr(Expression):
 
 class CallExpr(Expression):
 
-    def __init__(self, statement, ast=None):
-        super().__init__(statement, ast)
+    def __init__(self, parent, ast=None):
+        super().__init__(parent, ast)
         self.subexprs = [None for i in range(5)]
 
     @property
@@ -633,12 +707,12 @@ class CallExpr(Expression):
 
 
     @property
-    def ordered_names(self):
+    def ordered_nameobjs(self):
         res = []
         if self.func is not None:
-            res.extend(self.func.ordered_names)
+            res.extend(self.func.ordered_nameobjs)
         for a in self.args:
-            res.extend(a.ordered_names)
+            res.extend(a.ordered_nameobjs)
         return res
 
 class ApiCallExpr(CallExpr):
@@ -652,8 +726,8 @@ class ApiCallExpr(CallExpr):
         self.subexprs[0] = func
 
     @property
-    def ordered_names(self):
-        return list(chain(*[a.ordered_names for a in self.args]))
+    def ordered_nameobjs(self):
+        return list(chain(*[a.ordered_nameobjs for a in self.args]))
 
 class BuiltinCallExpr(CallExpr):
     @property
@@ -667,8 +741,8 @@ class BuiltinCallExpr(CallExpr):
         self.subexprs[0] = func
 
     @property
-    def ordered_names(self):
-        return list(chain(*[a.ordered_names for a in self.args]))
+    def ordered_nameobjs(self):
+        return list(chain(*[a.ordered_nameobjs for a in self.args]))
 
 
 class BooleanOperator(DistNode): pass
@@ -682,8 +756,8 @@ class LogicalExpr(BooleanExpr):
 
     _fields = ['operator', 'subexprs']
 
-    def __init__(self, statement, ast=None, op=None):
-        super().__init__(statement, ast)
+    def __init__(self, parent, ast=None, op=None):
+        super().__init__(parent, ast)
         self.operator = op
 
     @property
@@ -717,6 +791,10 @@ class DomainSpec(Expression):
         DomainSpec._index += 1
 
     @property
+    def ordered_nameobjs(self):
+        return []
+
+    @property
     def boundvars(self):
         if self.subexprs[0] is not None:
             return self.subexprs[0].boundvars
@@ -741,6 +819,15 @@ class PatternDomainSpec(DomainSpec):
     def __init__(self, parent, ast=None):
         super().__init__(parent, ast)
         self.subexprs = [None, None]
+
+    @property
+    def ordered_nameobjs(self):
+        res = []
+        if self.pattern is not None:
+            res.extend(self.pattern.ordered_nameobjs)
+        if self.domain is not None:
+            res.extend(self.domain.ordered_nameobjs)
+        return res
 
     @property
     def pattern(self):
@@ -801,6 +888,11 @@ class QuantifiedExpr(BooleanExpr):
         QuantifiedExpr._index += 1
 
     @property
+    def ordered_nameobjs(self):
+        return list(chain(*[e.ordered_nameobjs
+                            for e in chain(self.subexprs, self.domains)]))
+
+    @property
     def boundvars(self):
         return set(chain(*[d.boundvars for d in self.domains]))
 
@@ -833,8 +925,10 @@ class ComprehensionExpr(Expression, LockableNameScope):
         self.conditions = self.subexprs
 
     @property
-    def ordered_names(self):
-        return list(chain(*[e.ordered_names for e in self.targets]))
+    def ordered_nameobjs(self):
+        return list(chain(*[e.ordered_nameobjs for e in chain(self.targets,
+                                                              self.iters,
+                                                              self.conditions)]))
 
 class GeneratorExpr(ComprehensionExpr): pass
 class SetCompExpr(ComprehensionExpr): pass
@@ -843,8 +937,8 @@ class DictCompExpr(ComprehensionExpr): pass
 
 class AggregateExpr(Expression):
 
-    def __init__(self, statement, ast=None):
-        super().__init__(statement, ast)
+    def __init__(self, parent, ast=None):
+        super().__init__(parent, ast)
         self.subexprs = [None]
 
     @property
@@ -876,8 +970,8 @@ class ComparisonExpr(BooleanExpr):
 
     _fields = ['left', 'comparator', 'right']
 
-    def __init__(self, statement, ast=None):
-        super().__init__(statement, ast)
+    def __init__(self, parent, ast=None):
+        super().__init__(parent, ast)
         self.comparator = None
         self.subexprs = [None, None]
 
@@ -901,6 +995,7 @@ class Operator(DistNode): pass
 class AddOp(Operator):pass
 class SubOp(Operator): pass
 class MultOp(Operator): pass
+class MatMultOp(Operator): pass
 class DivOp(Operator): pass
 class ModOp(Operator): pass
 class PowOp(Operator): pass
@@ -920,8 +1015,8 @@ class ArithmeticExpr(Expression):
 
     _fields = ['left', 'operator', 'right']
 
-    def __init__(self, statement, ast=None, op=None):
-        super().__init__(statement, ast)
+    def __init__(self, parent, ast=None, op=None):
+        super().__init__(parent, ast)
         self.operator = op
         self.subexprs = [None, None]
 
@@ -986,6 +1081,11 @@ class PatternElement(DistNode):
     @property
     def parent_expression(self):
         return self.first_parent_of_type(Expression)
+
+    @property
+    def ordered_nameobjs(self):
+        # FIXME: is thi right??
+        return self.ordered_boundvars
 
     def match(self, target):
         """Compare two Elements to see if they describe the same pattern.
@@ -1137,9 +1237,10 @@ class PatternExpr(Expression):
 
 class HistoryExpr(Expression):
 
-    def __init__(self, statement, ast=None):
-        super().__init__(statement, ast)
+    def __init__(self, parent, ast=None, context=None):
+        super().__init__(parent, ast)
         self.subexprs = [None]
+        self.context = context
 
     @property
     def event(self):
@@ -1317,6 +1418,13 @@ class Function(CompoundStmt, ArgumentsContainer):
     def name(self):
         return self._name
 
+    def __str__(self):
+        res = ["<func ", self.name, ">"]
+        return "".join(res)
+
+    def __repr__(self):
+        return str(self)
+
 class ClassStmt(CompoundStmt, NameScope):
 
     _fields = ['bases', 'decorators', 'keywords', 'starargs', 'kwargs'] + \
@@ -1371,8 +1479,8 @@ class IfStmt(CompoundStmt):
 
     _fields = ['condition', 'body', 'elsebody']
 
-    def __init__(self, scope, ast=None):
-        super().__init__(scope, ast)
+    def __init__(self, parent, ast=None):
+        super().__init__(parent, ast)
         self.condition = None
         self.body = []
         self.elsebody = []
@@ -1381,8 +1489,8 @@ class WhileStmt(CompoundStmt):
 
     _fields = ['condition', 'body', 'elsebody']
 
-    def __init__(self, scope, ast=None):
-        super().__init__(scope, ast)
+    def __init__(self, parent, ast=None):
+        super().__init__(parent, ast)
         self.condition = None
         self.body = []
         self.elsebody = []
@@ -1402,8 +1510,8 @@ class TryStmt(CompoundStmt):
 
     _fields = ['body', 'excepthandlers', 'elsebody', 'finalbody']
 
-    def __init__(self, scope, ast=None):
-        super().__init__(scope, ast)
+    def __init__(self, parent, ast=None):
+        super().__init__(parent, ast)
         self.body = []
         self.excepthandlers = []
         self.elsebody = []
@@ -1424,8 +1532,8 @@ class TryFinallyStmt(CompoundStmt):
 
     _fields = ['body', 'finalbody']
 
-    def __init__(self, scope, ast=None):
-        super().__init__(scope, ast)
+    def __init__(self, parent, ast=None):
+        super().__init__(parent, ast)
         self.body = []
         self.finalbody = []
 
@@ -1636,9 +1744,6 @@ class Event(DistNode):
                 return False
         return True
 
-    def __eq__(self, target):
-        return self.match(target)
-
 
 class EventHandler(Function):
 
@@ -1663,7 +1768,8 @@ class EventHandler(Function):
 class Process(CompoundStmt, ArgumentsContainer):
 
     _fields = ['bases', 'decorators', 'initializers', 'methods',
-               'events', 'body'] + ArgumentsContainer._fields
+               'events', 'entry_point'] + \
+        CompoundStmt._fields + ArgumentsContainer._fields
     _attributes = ['name'] + CompoundStmt._attributes
 
     def __init__(self, name, parent, bases, ast=None):

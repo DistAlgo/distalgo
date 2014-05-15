@@ -6,6 +6,7 @@ import os.path as path
 binpath = sys.path[0]
 rootpath = path.dirname(path.abspath(binpath))
 sys.path.insert(0, rootpath)
+sys.path.insert(0, ".")
 
 from dpy import *
 

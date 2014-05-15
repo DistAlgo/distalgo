@@ -3,6 +3,7 @@ import sys
 from ast import *
 
 from . import dast
+from .utils import printe, printw, printd
 
 # DistAlgo keywords
 KW_PROCESS_DEF = "process"
@@ -36,20 +37,6 @@ KW_SELF = "self"
 KW_TRUE = "True"
 KW_FALSE = "False"
 KW_NULL = "None"
-
-# Common utility functions
-
-def printe(mesg, lineno, col_offset, filename="", outfd=sys.stdout):
-    fs = "%s:%d:%d: error: %s"
-    print(fs % (filename, lineno, col_offset, mesg), file=outfd)
-
-def printw(mesg, lineno, col_offset, filename="", outfd=sys.stdout):
-    fs = "%s:%d:%d: warning: %s"
-    print(fs % (filename, lineno, col_offset, mesg), file=outfd)
-
-def printd(mesg, lineno, col_offset, filename="", outfd=sys.stderr):
-    fs = "%s:%d:%d: DEBUG: %s"
-    print(fs % (filename, lineno, col_offset, mesg), file=outfd)
 
 def is_setup(node):
     """Returns True if this node defines a function named 'setup'."""
@@ -102,6 +89,7 @@ OperatorMap = {
     Is : dast.IsOp,
     IsNot : dast.IsNotOp,
     In : dast.InOp,
+    NotIn : dast.NotInOp,
 
     USub : dast.USubOp,
     UAdd : dast.UAddOp,
@@ -110,6 +98,9 @@ OperatorMap = {
     And : dast.AndOp,
     Or : dast.OrOp
 }
+# New matrix multiplication operator since 3.5:
+if sys.version_info > (3, 5):
+    OperatorMap[MatMult] = dast.MatMultOp
 
 # FIXME: is there a better way than hardcoding these?
 KnownUpdateMethods = {
@@ -268,7 +259,6 @@ class Parser(NodeVisitor):
         self.warncnt = 0
         self.program = execution_context if execution_context is not None \
                        else dast.Program(None) # Just in case
-        self._debug = None
 
     @property
     def current_parent(self):
@@ -287,9 +277,6 @@ class Parser(NodeVisitor):
             if isinstance(node, dast.NameScope):
                 return node
         return None
-
-    def set_debug(self, severity):
-        self._debug = severity
 
     def visit_Module(self, node):
         self.program = dast.Program(node)
@@ -463,15 +450,19 @@ class Parser(NodeVisitor):
         for stmt in statements:
             if (isinstance(stmt, FunctionDef) and stmt.name not in
                     {KW_RECV_EVENT, KW_SENT_EVENT}):
-                self.debug("Adding function %s to process scope." % stmt.name)
+                self.debug("Adding function %s to process scope." % stmt.name,
+                           stmt)
                 self.current_scope.add_name(stmt.name)
             elif isinstance(stmt, ClassDef):
-                self.debug("Adding class %s to process scope." % stmt.name)
+                self.debug("Adding class %s to process scope." % stmt.name,
+                           stmt)
                 self.current_scope.add_name(stmt.name)
             elif isinstance(stmt, Assign):
                 for expr in stmt.targets:
                     if isinstance(expr, Name):
-                        self.debug("Adding variable %s to process scope." % expr.id)
+                        self.debug(
+                            "Adding variable %s to process scope." % expr.id,
+                            stmt)
                         self.current_scope.add_name(expr.id)
             elif isinstance(stmt, AugAssign):
                 if isinstance(target, Name):
@@ -486,7 +477,7 @@ class Parser(NodeVisitor):
         """Process the argument lists."""
         assert isinstance(self.current_parent, dast.ArgumentsContainer)
         padding = len(node.args) - len(node.defaults)
-        container = self.current_parent
+        container = self.current_parent.args
         for arg in node.args[:padding]:
             container.add_arg(arg.arg)
         for arg, val in zip(node.args[padding:], node.defaults):
@@ -523,9 +514,9 @@ class Parser(NodeVisitor):
                 self.errcnt += 1
                 return
 
-            proc = dast.Process(node.name, self.current_parent, bases, node)
             n = self.current_scope.add_name(node.name)
-            n.add_assignment(self.current_parent)
+            proc = dast.Process(node.name, self.current_parent, bases, node)
+            n.add_assignment(proc)
             proc.decorators, _, _ = self.parse_decorators(node)
             self.node_stack.append(proc)
             self.program.processes.append(proc)
@@ -546,7 +537,7 @@ class Parser(NodeVisitor):
             else:
                 self.current_block.append(clsobj)
                 n = self.current_scope.add_name(node.name)
-                n.add_assignment(self.current_parent)
+                n.add_assignment(clsobj)
             self.current_context = Read()
             clsobj.decorators, _, _ = self.parse_decorators(node)
             self.node_stack.append(clsobj)
@@ -562,23 +553,21 @@ class Parser(NodeVisitor):
         if (self.current_process is None or
                 node.name not in {KW_SENT_EVENT, KW_RECV_EVENT}):
             # This is a normal method
-            s = dast.Function(node.name, self.current_parent, node)
             n = self.current_scope.add_name(node.name)
-            n.add_assignment(self.current_parent)
+            s = self.create_stmt(dast.Function, node,
+                                 params={"name" : node.name})
+            n.add_assignment(s)
             s.process = self.current_process
-            if type(self.current_parent) is dast.Process:
+            if type(s.parent) is dast.Process:
                 if s.name == "main":
                     self.current_process.entry_point = s
                 else:
                     self.current_process.methods.append(s)
-            elif (type(self.current_parent) is dast.Program and
+            elif (type(s.parent) is dast.Program and
                   s.name == "main"):
                 self.current_parent.entry_point = s
-            else:
-                self.current_block.append(s)
             # Ignore the label decorators:
             s.decorators, _, _ = self.parse_decorators(node)
-            self.node_stack.append(s)
             self.current_block = s.body
             self.signature(node.args)
             self.body(node.body)
@@ -604,7 +593,8 @@ class Parser(NodeVisitor):
                 evt.handlers.append(h)
             for v in evt.freevars:
                 if v is not None:
-                    h.add_arg(v.name)
+                    self.debug("adding event argument %s" % v)
+                    h.args.add_arg(v.name)
             self.current_block = h.body
             self.body(node.body)
             self.node_stack.pop()
@@ -635,9 +625,9 @@ class Parser(NodeVisitor):
 
         """
         if params is None:
-            stmtobj = stmtcls(self.current_parent, ast=ast)
+            stmtobj = stmtcls(parent=self.current_parent, ast=ast)
         else:
-            stmtobj = stmtcls(self.current_parent, ast=ast, **params)
+            stmtobj = stmtcls(parent=self.current_parent, ast=ast, **params)
         stmtobj.label = self.current_label
         self.current_label = None
 
@@ -856,8 +846,9 @@ class Parser(NodeVisitor):
         s = self.create_stmt(dast.ForStmt, node)
         self.current_context = Assignment()
         s.target = self.visit(node.target)
-        self.current_context = Read()
+        self.current_context = Read(s.target)
         s.iter = self.visit(node.iter)
+        self.current_context = Read()
         self.current_block = s.body
         self.body(node.body)
         self.current_block = s.elsebody
@@ -1015,6 +1006,11 @@ class Parser(NodeVisitor):
         expr = self.create_expr(dast.AttributeExpr, node)
         if (type(self.current_context) is FunCall and
                 node.attr in KnownUpdateMethods):
+            # Calling a method that is known to update an object's state is an
+            # Update operation:
+            self.current_context = Update()
+        elif type(self.current_context) is Assignment:
+            # Assigning to an attribute of an object updates that object:
             self.current_context = Update()
         expr.value = self.visit(node.value)
         expr.attr = node.attr
@@ -1139,6 +1135,8 @@ class Parser(NodeVisitor):
                 expr = self.create_expr(dast.ReceivedExpr, node)
             else:
                 expr = self.create_expr(dast.SentExpr, node)
+            if self.current_context is not None:
+                expr.context = self.current_context.type
             event = self.parse_event_expr(node)
             expr.event = event
             if event is not None:
@@ -1162,18 +1160,18 @@ class Parser(NodeVisitor):
             return expr
 
         if self.call_check(ApiMethods, None, None, node):
-            self.debug("Api method call: " + node.func.id)
+            self.debug("Api method call: " + node.func.id, node)
             expr = self.create_expr(dast.ApiCallExpr, node)
             expr.func = node.func.id
         elif self.call_check(BuiltinMethods, None, None, node):
-            self.debug("Builtin method call: " + node.func.id)
+            self.debug("Builtin method call: " + node.func.id, node)
             expr = self.create_expr(dast.BuiltinCallExpr, node)
             expr.func = node.func.id
         else:
             if self.call_check(TypeConstructors, 0, 1, node):
-                self.debug("Built-in %s type construction:" % node.func.id )
+                self.debug("Built-in %s type construction:" % node.func.id, node)
             elif isinstance(node.func, Name):
-                self.debug("Method call: " + str(node.func.id))
+                self.debug("Method call: " + str(node.func.id), node)
             expr = self.create_expr(dast.CallExpr, node)
             self.current_context = FunCall()
             expr.func = self.visit(node.func)
@@ -1209,13 +1207,15 @@ class Parser(NodeVisitor):
         if type(self.current_context) is Assignment:
             n = self.current_scope.find_name(node.id, local=False)
             if n is None:
-                self.debug("Adding name %s to %s" % (node.id, self.current_scope))
+                self.debug("Adding name %s to %s" % (node.id,
+                                                     self.current_scope), node)
                 n = self.current_scope.add_name(node.id)
             n.add_assignment(expr)
         elif type(self.current_context) in {Update, Delete}:
             n = self.current_scope.find_name(node.id, local=False)
             if n is None:
-                self.debug("Adding name %s to %s" % (node.id, self.current_scope))
+                self.debug("Adding name %s to %s" % (node.id,
+                                                     self.current_scope), node)
                 n = self.current_scope.add_name(node.id)
             n.add_update(expr)
         elif type(self.current_context) in {Read, FunCall}:
@@ -1408,10 +1408,12 @@ class Parser(NodeVisitor):
         for g in node.generators:
             expr.unlock()
             self.current_context = Assignment()
-            expr.targets.append(self.visit(g.target))
+            target = self.visit(g.target)
+            expr.targets.append(target)
             expr.lock()
-            self.current_context = Read()
+            self.current_context = Read(target)
             expr.iters.append(self.visit(g.iter))
+            self.current_context = Read()
             expr.conditions.extend([self.visit(i) for i in g.ifs])
         if isinstance(node, DictComp):
             kv = dast.KeyValue(expr)
@@ -1460,11 +1462,10 @@ class Parser(NodeVisitor):
             printw(mesg, 0, 0, self.filename)
 
     def debug(self, mesg, node=None):
-        if self._debug is not None:
-            if node is not None:
-                printd(mesg, node.lineno, node.col_offset, self.filename)
-            else:
-                printd(mesg, 0, 0, self.filename)
+        if node is not None:
+            printd(mesg, node.lineno, node.col_offset, self.filename)
+        else:
+            printd(mesg, 0, 0, self.filename)
 
 if __name__ == "__main__":
     pass

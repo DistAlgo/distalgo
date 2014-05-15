@@ -774,8 +774,11 @@ class DistProcess(multiprocessing.Process):
             bindings = dict()
             if (p.match(event, bindings=bindings,
                         ignore_bound_vars=True, **self.__dict__)):
-                if p.record_history:
-                    getattr(self, p.name).append(event)
+                if p.record_history is True:
+                    getattr(self, p.name).append(event.to_tuple())
+                elif p.record_history is not None:
+                    # Call the update stub:
+                    p.record_history(getattr(self, p.name), event.to_tuple())
                 for h in p.handlers:
                     self._jobqueue.append((h, bindings))
 

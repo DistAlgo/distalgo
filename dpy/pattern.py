@@ -107,11 +107,16 @@ class Event:
     Instances of Event are created by the backend thread and passed to the
     front end.
     """
-    def __init__(self, message, timestamp, source, destination):
+    def __init__(self, message, timestamp, destination, source):
         self.message = message
         self.timestamp = timestamp
         self.destination = destination
         self.source = source
+
+    def to_tuple(self):
+        """Generates a tuple representation for this event."""
+        return (type(self), self.message, self.timestamp,
+                self.destination, self.source)
 
     def __str__(self):
         buf = ["<", type(self).__name__,
@@ -157,6 +162,8 @@ class EventPattern:
 
     def match(self, event, bindings=None,
               ignore_bound_vars=False, **context):
+        if isinstance(event, tuple):
+            event = event[0](*event[1:])
         if type(event) is not self.eventtype:
             return False
         if bindings is None:
