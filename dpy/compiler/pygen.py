@@ -312,8 +312,8 @@ class PythonGenerator(NodeVisitor):
                 defaults=defaults,
                 kw_defaults=kw_defaults)
         else:
-            vararg = node.vararg.name
-            kwarg = node.kwarg.name
+            vararg = node.vararg.name if node.vararg is not None else None
+            kwarg = node.kwarg.name if node.kwarg is not None else None
             return arguments(
                 args=args,
                 vararg=vararg,

@@ -297,7 +297,7 @@ class Arguments(DistNode):
         assert self.kwarg is None and isinstance(name, str)
         e = self.parent.add_name(name)
         e.add_assignment(self, typectx=dict)
-        self.kwarg = name
+        self.kwarg = e
 
     @property
     def names(self):
