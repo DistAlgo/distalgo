@@ -8,9 +8,9 @@ class P(process):
         --request
         c = logical_clock()
         bcast(Request(c, self), to=s)
-        await(each(rcvd(Request(_c2, _p2)) |
-                   ((c, self) < (c2, p2) or rcvd(Release(c2, p2)))) and
-              each((_p3 in s) | some(rcvd(Ack(_c3, p3)) | (c3 > c))))
+        await(each(rcvd(Request(_c2, _p2)),
+                   (c, self) < (c2, p2) or rcvd(Release(c2, p2))) and
+              each(_p3 in s, some(rcvd(Ack(_c3, p3)), c3 > c)))
         --cs
         task()
         --release
@@ -25,7 +25,7 @@ class P(process):
             output("In cs!")
         cs(anounce)
         bcast(Done(self), to=s)
-        await(each((_p in s) | rcvd(Done(p))))
+        await(each(_p in s, len(rcvd(Done(p))) > 0))
         output("Terminating..")
 
 def main():

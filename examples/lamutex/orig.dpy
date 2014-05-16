@@ -13,11 +13,8 @@ class P(process):
         bcast(Request(reqc), to=ps)
 
         --sync
-        if await(each(((_c2, _p2) in q) |
-                      ((reqc, self) <= (c2, p2))) and
-                 each((_p3 in ps) |
-                      some(rcvd(Reply(_c3), src=p3) | (c3 > reqc)))):
-            output("witness: c2:%r p2:%r p3:%r" %(c2, p2, p3))
+        if await(each((_c2, _p2) in q, (reqc, self) <= (c2, p2)) and
+                 each(_p3 in ps, some(rcvd(Reply(_c3), src=p3), c3 > reqc))):
          # critical section
             task()
 
@@ -50,7 +47,7 @@ class P(process):
         for i in range(n):
             cs(anounce)
         bcast(Done(), to=ps)
-        await(each((_p in ps) | rcvd(Done(), src=p)))
+        await(each(_p in ps, st = len(rcvd(Done(), src=p)) > 0))
         output("Terminating...")
 
 

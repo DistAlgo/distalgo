@@ -15,18 +15,18 @@ class Replica(process):
 
     def propose(p):
         #you ignore if p is already been issued
-        if not some(((_, p) in decisions) | True):
+        if not some((_, p) in decisions, True):
             #find the largest available slot
             maxs = max(s for s, _ in chain(proposals, decisions, {(0, 0)}))
             #within maximum, find smallest which is not yet been decided
             s1 = min(s for s in range(1, maxs + 1 + 1)
-                     if not some(((s, _) in chain(proposals, decisions)) | True))
+                     if not some((s, _) in chain(proposals, decisions), True))
             proposals.add((s1, p))
             send(Propose(s1, p), to=leaders)
 
     def perform(p):
         k, cid, op = p
-        if some(((_s, p) in decisions) | (s < slot_num)):
+        if some((_s, p) in decisions, (s < slot_num)):
             slot_num += 1
         else:
             #next, result = operations[op](state) # Perform the operation on state here - get result and return
@@ -43,8 +43,8 @@ class Replica(process):
 
     def recv(msg=Decision(_s, _p)):
         decisions.add((s,p))
-        while some(((slot_num, _p1) in decisions) | True):
-            while some(((slot_num, _p2) in decisions) | (p2 != p1)):
+        while some((slot_num, _p1) in decisions, True):
+            while some((slot_num, _p2) in decisions, (p2 != p1)):
                 propose(p2)
             perform(p1)
 
@@ -82,11 +82,11 @@ class Leader(process):
         await(False)
 
     def recv(msg=Propose(_s, _p)):
-        if not some(((s, _) in proposals) | True):
+        if not some((s, _) in proposals, True):
             proposals.add((s,p))
             if active:
                 # Spwan commander only if not decided
-                if not some(((s, _) in decided) | True):
+                if not some((s, _) in decided, True):
                     spawn(Commander, [self, acceptors, replicas, (ballot_num, s, p)])
 
     def recv(msg=Adopted(ballot_num, _pvals)):
@@ -108,11 +108,11 @@ class Leader(process):
 
     def circle_plus(x, y):
         return y | {(s, p) for (s, p) in x
-                    if not some(((s, _) in y) | True)}
+                    if not some((s, _) in y, True)}
 
     def pmax(pvals):
         return {(s, p) for (b, s, p) in pvals
-                if each(((_b1, s, _) in pvals) | (b1 <= b))}
+                if each((_b1, s, _) in pvals, (b1 <= b))}
 
 
 class Commander(process):

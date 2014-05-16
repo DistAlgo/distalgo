@@ -37,6 +37,7 @@ KW_SELF = "self"
 KW_TRUE = "True"
 KW_FALSE = "False"
 KW_NULL = "None"
+KW_SUCH_THAT = "st"
 
 def is_setup(node):
     """Returns True if this node defines a function named 'setup'."""
@@ -1103,27 +1104,38 @@ class Parser(NodeVisitor):
         else:
             raise MalformedStatementError
         expr = self.create_expr(dast.QuantifiedExpr, node, {'op': context})
-        body = node.args[0]
-        try:
-            if isinstance(body, BinOp) and type(body.op) is BitOr:
-                domains = body.left
-                if isinstance(domains, Tuple):
-                    expr.domains = [self.parse_domain_spec(node)
-                                    for node in domains.elts]
+        pred = None
+        for kw in node.keywords:
+            if kw.arg == KW_SUCH_THAT:
+                if pred is None:
+                    pred = kw.value
                 else:
-                    expr.domains = [self.parse_domain_spec(domains)]
-                self.current_context = Read()
-                expr.predicate = self.visit(node.args[0].right)
+                    self.warn("Multiple predicates in quantified expression, "
+                              "first one is used, the rest are ignored.", node)
             else:
-                self.warn("Missing domain specifiers in quantified expression.")
-                self.current_context = Read()
-                expr.predicate = self.visit(body)
+                self.error("Unknown keyword '%s' in quantified expression." %
+                           kw.arg, node)
+        if pred is None:
+            if len(node.args) == 0:
+                self.error("Empty quantified expression.", node)
+            else:
+                domains = node.args[:-1]
+                pred = node.args[-1]
+        else:
+            domains = node.args
+        if len(domains) == 0:
+            self.warn("No domain specifiers in quantified expression.",
+                      node)
+        try:
+            expr.domains = [self.parse_domain_spec(node) for node in domains]
+            self.current_context = Read()
+            expr.predicate = self.visit(pred)
         finally:
             self.node_stack.pop()
         return expr
 
     def visit_Call(self, node):
-        if self.call_check(Quantifiers, 1, 1, node):
+        if self.call_check(Quantifiers, 1, None, node):
             try:
                 return self.parse_quantified_expr(node)
             except MalformedStatementError:

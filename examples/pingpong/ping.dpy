@@ -16,7 +16,7 @@ class Ping(process):
         while True:
             clk = logical_clock()
             send(Ping(), to=p)
-            await(some(rcvd(Pong(), clk=_rclk) | (rclk > clk)))
+            await(some(rcvd(Pong(), clk=_rclk), st=(rclk > clk)))
             work()
 
     def recv(msg=Pong()):

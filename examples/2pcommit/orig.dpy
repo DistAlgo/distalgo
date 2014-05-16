@@ -7,11 +7,11 @@ class Coordinator(process):
     def main():
         --start
         bcast(Prepare(tid), to=cohorts)
-        if await(each((_c in cohorts) | rcvd(Vote('ready', tid, c)))):
+        if await(each(_c in cohorts, rcvd(Vote('ready', tid, c)))):
             bcast(Commit(tid), to=cohorts)
-            await(each((_c in cohorts) | rcvd(Done(tid, c))))
+            await(each(_c in cohorts, rcvd(Done(tid, c))))
             output('log complete record for' + str(tid))
-        elif each((_c in cohorts) | rcvd(Vote(_, tid, c))):
+        elif each(_c in cohorts, rcvd(Vote(_, tid, c))):
             s = {c for (c,) in rcvd(Vote('ready', tid, _c))}
             bcast(Abort(tid), to=s)
         --end
@@ -55,7 +55,7 @@ class Cohort(process):
 def main():
     nproposers = 5
     nacceptors = 10
-    fail_rate = 50
+    fail_rate = 10
 
     use_channel("udp")
 
