@@ -37,7 +37,7 @@ KW_SELF = "self"
 KW_TRUE = "True"
 KW_FALSE = "False"
 KW_NULL = "None"
-KW_SUCH_THAT = "st"
+KW_SUCH_THAT = "has"
 
 def is_setup(node):
     """Returns True if this node defines a function named 'setup'."""

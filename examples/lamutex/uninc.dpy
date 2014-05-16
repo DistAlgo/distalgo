@@ -9,7 +9,7 @@ class P(process):
         c = logical_clock()
         bcast(Request(c, self), to=s)
         await(each(rcvd(Request(_c2, _p2)),
-                   (c, self) < (c2, p2) or rcvd(Release(c2, p2))) and
+                   (c, self) < (c2, p2) or len(rcvd(Release(c2, p2))) > 0) and
               each(_p3 in s, some(rcvd(Ack(_c3, p3)), c3 > c)))
         --cs
         task()

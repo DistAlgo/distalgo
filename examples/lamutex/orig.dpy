@@ -47,7 +47,7 @@ class P(process):
         for i in range(n):
             cs(anounce)
         bcast(Done(), to=ps)
-        await(each(_p in ps, st = len(rcvd(Done(), src=p)) > 0))
+        await(each(_p in ps, has=len(rcvd(Done(), src=p)) > 0))
         output("Terminating...")
 
 
