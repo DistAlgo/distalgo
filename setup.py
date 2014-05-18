@@ -1,5 +1,7 @@
 from distutils.core import setup
 
+import dpy
+
 setup(name = "DistPy",
       version = dpy.__version__,
       author= "bolin",
