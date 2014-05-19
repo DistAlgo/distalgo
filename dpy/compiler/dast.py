@@ -1098,9 +1098,8 @@ class PatternElement(DistNode):
 
         if type(self) is not type(target):
             return False
-        elif type(self) is FreePattern or type(self) is BoundPattern:
-            return True
-        elif type(self) is ConstantPattern:
+        elif type(self) is FreePattern or type(self) is BoundPattern or \
+             type(self) is ConstantPattern:
             return target.value == self.value
         elif type(self) is TuplePattern or type(self) is ListPattern:
             if len(self.value) != len(target.value):
@@ -1109,9 +1108,6 @@ class PatternElement(DistNode):
                 if not v.match(t):
                     return False
             return True
-
-    def __eq__(self, target):
-        return self.match(target)
 
 class ConstantPattern(PatternElement):
     def __init__(self, value, parent=None, ast=None):
@@ -1233,7 +1229,7 @@ class PatternExpr(Expression):
 
     def match(self, target):
         assert isinstance(target, PatternExpr)
-        return self.pattern == target.pattern
+        return self.pattern.match(target.pattern)
 
 class HistoryExpr(Expression):
 
