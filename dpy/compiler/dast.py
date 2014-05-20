@@ -656,6 +656,8 @@ class IfExpr(Expression):
 
 class CallExpr(Expression):
 
+    _fields = ['func', 'args', 'keywords', 'starargs', 'kwargs']
+
     def __init__(self, parent, ast=None):
         super().__init__(parent, ast)
         self.subexprs = [None for i in range(5)]
