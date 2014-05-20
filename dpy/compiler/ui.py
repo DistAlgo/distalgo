@@ -165,6 +165,10 @@ def main():
                     help="Disable table 3 quantification transformations. "
                     "Only useful with '-i'.",
                     action='store_true', dest="notable3")
+    ap.add_argument('--jb-style',
+                    help="Generate Jon-friendly quantification transformations. "
+                    "Only useful with '-i'.",
+                    action='store_true', dest="jbstyle")
     ap.add_argument('--no-all-tables',
                     help="Disable all quantification transformations. "
                     "Only useful with '-i'.",

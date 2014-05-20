@@ -34,7 +34,8 @@ def ast_eq(left, right):
         return True
     return False
 
-PREAMBLE = """import dpy
+PREAMBLE = """
+import dpy
 ReceivedEvent = dpy.pat.ReceivedEvent
 SentEvent = dpy.pat.SentEvent
 {0} = None
@@ -42,6 +43,22 @@ def init(procid):
     global {0}
     {0} = procid
 """.format(SELF_ID_NAME)
+
+def gen_assign_stub(funname, varname):
+    """Generate assignment stub for 'varname'."""
+
+    blueprint = """
+def {1}({0}):
+    if type({0}) is set:
+        res = set()
+        for elt in {0}:
+            res.add(elt)
+        {0} = res
+    {0} = {0}
+    return {0}
+    """
+    src = blueprint.format(varname, funname)
+    return parse(src).body[0]
 
 def gen_inc_module(dpyast, module_name, args=dict()):
     """Generates the interface file from a DistPy AST."""
@@ -108,20 +125,7 @@ def gen_inc_module(dpyast, module_name, args=dict()):
     for vobj in all_params:
         # We only need one assignment stub per variable:
         aname = ASSIGN_STUB_FORMAT % vobj.name
-        assdef = FunctionDef(
-            name=aname,
-            args=arguments(args=([arg(vobj.name, None)]),
-                           vararg=None,
-                           varargannotation=None,
-                           kwonlyargs=[],
-                           kwarg=None,
-                           kwargannotation=None,
-                           defaults=[],
-                           kw_defaults=[]),
-            decorator_list=[],
-            returns=None,
-            body=[Return(pyName(vobj.name))])
-        module.body.append(assdef)
+        module.body.append(gen_assign_stub(aname, vobj.name))
         pg.reset()
         asscall = Assign(targets=[pg.visit(vobj)],
                          value=pyCall(
@@ -192,15 +196,12 @@ def gen_inc_module(dpyast, module_name, args=dict()):
     for event in all_events:
         uname = UPDATE_STUB_FORMAT % (event.process.name + event.name, 0)
         aname = ASSIGN_STUB_FORMAT % (event.process.name + event.name)
-        assfun = pyFunctionDef(name=aname,
-                               args=["event"],
-                               body=[Return(pyName("event"))])
         updfun = pyFunctionDef(name=uname,
                                args=["event", "element"],
                                body=[pyCall(
                                    func=pyAttr("event", "add"),
                                    args=[pyName("element")])])
-        module.body.append(assfun)
+        module.body.append(gen_assign_stub(aname, "initevent"))
         module.body.append(updfun)
 
     # Inject calls to stub init for each process:
@@ -320,6 +321,7 @@ class IncInterfaceGenerator(PythonGenerator):
         self.notable1 = args['notable1'] if 'notable1' in args else False
         self.noalltables = args['noalltables'] \
                            if 'noalltables' in args else False
+        self.jbstyle = args['jbstyle'] if 'jbstyle' in args else False
         # For unique names:
         self.counter = 0
         # Set of free vars seens so far in this pattern.
@@ -338,6 +340,12 @@ class IncInterfaceGenerator(PythonGenerator):
     def reset(self):
         super().reset()
         self.reset_pattern_state()
+
+    def jb_tuple_optimize(self, elt):
+        if self.jbstyle:
+            if type(elt) is Tuple and len(elt.elts) == 1:
+                elt = elt.elts[0]
+        return elt
 
     def visit_NamedVar(self, node):
         return pyName(node.name)
@@ -444,8 +452,9 @@ class IncInterfaceGenerator(PythonGenerator):
             return domain
         else:
             if node.context is not None:
-                elt = pyTuple([self.visit(n)
-                               for n in node.context.ordered_nameobjs])
+                elt = self.jb_tuple_optimize(
+                    pyTuple([self.visit(n)
+                             for n in node.context.ordered_nameobjs]))
             else:
                 elt = pyTrue()
             self.reset_pattern_state()
@@ -476,7 +485,7 @@ class IncInterfaceGenerator(PythonGenerator):
 
         # Fallback to 'any' and 'all'
         generators = [self.visit(dom) for dom in node.domains]
-        elt = self.visit(node.predicate)
+        elt = self.jb_tuple_optimize(self.visit(node.predicate))
         gexp = GeneratorExp(elt, generators)
         if node.operator is dast.UniversalOp:
             func = "all"
@@ -492,7 +501,8 @@ class IncInterfaceGenerator(PythonGenerator):
         """
         cond = self.visit(node.predicate)
         for dom in reversed(node.domains):
-            elt = pyTuple([self.visit(name) for name in dom.freevars])
+            elt = self.jb_tuple_optimize(
+                pyTuple([self.visit(name) for name in dom.freevars]))
             domast = self.visit(dom)
             gexp = SetComp(elt, [domast])
             if node.operator is dast.UniversalOp:
@@ -531,7 +541,8 @@ class IncInterfaceGenerator(PythonGenerator):
             node = node.predicate
 
         assert node is not None
-        elements = pyTuple([gen.target for gen in outer_generators])
+        elements = self.jb_tuple_optimize(
+            pyTuple([gen.target for gen in outer_generators]))
         generators = outer_generators + inner_generators
         bexp = self.visit(node)
         if inner_quantifier is None:
@@ -613,6 +624,7 @@ class IncInterfaceGenerator(PythonGenerator):
             ast_eq(pyx, generators[0].target)):
             s = sp = generators[0].iter
         else:
+            pyx = self.jb_tuple_optimize(pyx)
             s = SetComp(pyx, generators)
             sp = GeneratorExp(pyx, generators)
 
