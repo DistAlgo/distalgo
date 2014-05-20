@@ -342,7 +342,7 @@ class PythonGenerator(NodeVisitor):
         if node.entry_point is not None:
             cd.body.extend(self.visit(node.entry_point))
         cd.decorator_list = [self.visit(d) for d in node.decorators]
-        cd.body.extend(self.body(node.body))
+        cd.body.extend(self.body(node.methods))
         cd.body.extend(self.generate_handlers(node))
         return [cd]
 
