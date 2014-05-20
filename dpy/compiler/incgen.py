@@ -34,20 +34,20 @@ def ast_eq(left, right):
         return True
     return False
 
+PREAMBLE = """import dpy
+ReceivedEvent = dpy.pat.ReceivedEvent
+SentEvent = dpy.pat.SentEvent
+{0} = None
+def init(procid):
+    global {0}
+    {0} = procid
+""".format(SELF_ID_NAME)
 
 def gen_inc_module(dpyast, module_name, args=dict()):
     """Generates the interface file from a DistPy AST."""
 
     assert isinstance(dpyast, dast.Program)
-    module = Module([Import([alias("dpy", None)]),
-                     Assign(targets=[pyName(SELF_ID_NAME)],
-                            value=pyNone()),
-                     pyFunctionDef(
-                         name="init",
-                         args=["procid"],
-                         body=[Global([SELF_ID_NAME]),
-                               Assign(targets=[pyName(SELF_ID_NAME)],
-                                      value=pyName("procid"))])])
+    module = parse(PREAMBLE)
     quex = QueryExtractor()
     quex.visit(dpyast)
 
@@ -394,7 +394,7 @@ class IncInterfaceGenerator(PythonGenerator):
         self.reset_pattern_state()
         typ = pyName("_EventType_")
         evtconds = [pyCompare(typ, Is,
-                              pyAttr(pyAttr("dpy", "pat"), node.type.__name__))]
+                              pyName(node.type.__name__))]
         msg, msgconds = self.visit(node.pattern)
         evtconds += msgconds
         srcconds = []
