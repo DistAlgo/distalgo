@@ -1041,7 +1041,6 @@ class PatternElement(DistNode):
     """
 
     _fields = ['value']
-    _attributes = ['type'] + DistNode._attributes
 
     def __init__(self, value, parent=None, ast=None):
         super().__init__(parent, ast)
