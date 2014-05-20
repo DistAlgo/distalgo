@@ -42,10 +42,10 @@ class P(process):
           q.remove((time, source))
 
     def main():
-        def anounce():
+        def announce():
             output("In cs!")
         for i in range(n):
-            cs(anounce)
+            cs(announce)
         bcast(Done(), to=ps)
         await(each(_p in ps, has=len(rcvd(Done(), src=p)) > 0))
         output("Terminating...")
