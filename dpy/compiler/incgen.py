@@ -60,10 +60,11 @@ def {1}({0}):
     src = blueprint.format(varname, funname)
     return parse(src).body[0]
 
-def gen_inc_module(dpyast, module_name, args=dict()):
+def gen_inc_module(dpyast, module_name, cmdline_args=dict()):
     """Generates the interface file from a DistPy AST."""
 
     assert isinstance(dpyast, dast.Program)
+    jbstyle = cmdline_args['jbstyle'] if 'jbstyle' in cmdline_args else False
     module = parse(PREAMBLE)
     quex = QueryExtractor()
     quex.visit(dpyast)
@@ -72,7 +73,7 @@ def gen_inc_module(dpyast, module_name, args=dict()):
     all_params = set()
     all_events = set()
     # Use the IncInterfaceGenerator for the inc module:
-    iig = IncInterfaceGenerator(**args)
+    iig = IncInterfaceGenerator(**cmdline_args)
     pg = PythonGenerator()
 
     # Generate query stubs:
@@ -174,6 +175,7 @@ def gen_inc_module(dpyast, module_name, args=dict()):
                 params = [nobj for nobj in node.nameobjs
                           if node.is_child_of(nobj.scope)]
                 assert vobj in params
+                astval = iig.visit(node)
                 updfun = FunctionDef(
                     name=uname,
                     args=arguments(
@@ -185,7 +187,8 @@ def gen_inc_module(dpyast, module_name, args=dict()):
                         defaults=[]),
                     decorator_list=[],
                     returns=None,
-                    body=[Return(iig.visit(node))])
+                    # Don't add the 'return' for jbstyle:
+                    body=[astval if jbstyle else Return(astval)])
                 updcall = pyCall(
                     func=pyAttr(module_name, uname),
                     args=[],
