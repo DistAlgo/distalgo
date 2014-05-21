@@ -44,7 +44,7 @@ def init(procid):
     {0} = procid
 """.format(SELF_ID_NAME)
 
-def gen_assign_stub(funname, varname):
+def gen_assign_stub(funname, varname, jbstyle=False):
     """Generate assignment stub for 'varname'."""
 
     blueprint = """
@@ -56,7 +56,16 @@ def {1}({0}):
         {0} = res
     {0} = {0}
     return {0}
-    """
+    """ if not jbstyle else """
+def {1}({0}):
+    if type({0}) is set:
+        res = runtimelib.Set()
+        for elt in {0}:
+            res.add(elt)
+        {0} = res
+    {0} = {0}
+    return {0}
+"""
     src = blueprint.format(varname, funname)
     return parse(src).body[0]
 
@@ -66,6 +75,9 @@ def gen_inc_module(dpyast, module_name, cmdline_args=dict()):
     assert isinstance(dpyast, dast.Program)
     jbstyle = cmdline_args['jbstyle'] if 'jbstyle' in cmdline_args else False
     module = parse(PREAMBLE)
+    if jbstyle:
+        # Additional import for jbstyle
+        module.body.insert(0, parse("import runtimelib").body[0])
     quex = QueryExtractor()
     quex.visit(dpyast)
 
@@ -126,7 +138,7 @@ def gen_inc_module(dpyast, module_name, cmdline_args=dict()):
     for vobj in all_params:
         # We only need one assignment stub per variable:
         aname = ASSIGN_STUB_FORMAT % vobj.name
-        module.body.append(gen_assign_stub(aname, vobj.name))
+        module.body.append(gen_assign_stub(aname, vobj.name, jbstyle))
         pg.reset()
         asscall = Assign(targets=[pg.visit(vobj)],
                          value=pyCall(
@@ -204,7 +216,7 @@ def gen_inc_module(dpyast, module_name, cmdline_args=dict()):
                                body=[pyCall(
                                    func=pyAttr("event", "add"),
                                    args=[pyName("element")])])
-        module.body.append(gen_assign_stub(aname, "initevent"))
+        module.body.append(gen_assign_stub(aname, "initevent", jbstyle))
         module.body.append(updfun)
 
     # Inject calls to stub init for each process:
@@ -629,7 +641,11 @@ class IncInterfaceGenerator(PythonGenerator):
         else:
             pyx = self.jb_tuple_optimize(pyx)
             s = SetComp(pyx, generators)
-            sp = GeneratorExp(pyx, generators)
+            if self.jbstyle:
+                # jbstyle can not handle generator expressions:
+                sp = s
+            else:
+                sp = GeneratorExp(pyx, generators)
 
         if y is pred.right:
             y_comp_op = NegatedOperatorMap[pred.comparator]
