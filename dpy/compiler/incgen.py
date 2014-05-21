@@ -471,7 +471,11 @@ class IncInterfaceGenerator(PythonGenerator):
                     pyTuple([self.visit(n)
                              for n in node.context.ordered_nameobjs]))
             else:
-                elt = pyTrue()
+                if self.jbstyle:
+                    # XXX jbstyle HACK alert!!!
+                    elt = pyName("_EventType_")
+                else:
+                    elt = pyTrue()
             self.reset_pattern_state()
             target, ifs = self.visit(node.event)
             gen = GeneratorExp(
