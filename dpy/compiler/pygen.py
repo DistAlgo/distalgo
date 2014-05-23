@@ -826,7 +826,10 @@ class PythonGenerator(NodeVisitor):
         return [ast]
 
     def visit_ReturnStmt(self, node):
-        value = self.visit(node.value)
+        if node.value is not None:
+            value = self.visit(node.value)
+        else:
+            value = None
         ast = Return(value)
         return concat_bodies([value], [ast])
 
