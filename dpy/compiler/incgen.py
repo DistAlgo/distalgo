@@ -63,7 +63,7 @@ def {1}({0}):
         for elt in {0}:
             res.add(elt)
         {0} = res
-    {0} = {0}
+    globals()['{0}'] = {0}
     return {0}
 """
     src = blueprint.format(varname, funname)
@@ -402,7 +402,17 @@ class IncInterfaceGenerator(PythonGenerator):
             targets.append(tgt)
             condition_list.extend(conds)
         self.counter += 1
-        return pyTuple(targets), condition_list
+        target = pyTuple(targets)
+        if self.jbstyle:
+            # XXX: Hack!
+            if len(targets) == 1:
+                target = targets[0]
+                if len(condition_list) == 1:
+                    assert isinstance(condition_list[0], Compare) and \
+                        len(condition_list[0].comparators) == 1
+                    condition_list[0].comparators[0] = pyTuple(
+                        [condition_list[0].comparators[0]])
+        return target, condition_list
 
     def visit_ListPattern(self, node):
         raise NotImplementedError(
