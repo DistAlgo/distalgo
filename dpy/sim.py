@@ -608,6 +608,8 @@ class DistProcess(multiprocessing.Process):
             self._log.debug("Received KeyboardInterrupt, exiting")
             pass
 
+        self.report_times()
+
     def start_timers(self):
         if not self._is_timer_running:
             self._usrtime_st, self._systime_st, _, _, _ = os.times()
@@ -711,6 +713,11 @@ class DistProcess(multiprocessing.Process):
         Currently we simply handle one event on one label call.
 
         """
+        # Handle performance timers first:
+        if name == "start":
+            self.start_timers()
+        elif name == "end":
+            self.stop_timers()
         if (self._fails('crash')):
             self.output("Stuck in label: %s" % name)
             self.exit(10)
