@@ -242,6 +242,7 @@ def entrypoint(options, args, cmdl):
         for i in range(0, niters):
             log.info("Running iteration %d ..." % (i+1))
 
+            walltime_start = time.perf_counter()
             module.main()
 
             print("Waiting for remaining child processes to terminate..."
@@ -249,8 +250,9 @@ def entrypoint(options, args, cmdl):
 
             for p in ProcessIds:
                 p.join()
+            walltime = time.perf_counter() - walltime_start
 
-            log_performance_statistics()
+            log_performance_statistics(walltime)
             r = aggregate_statistics()
             for k, v in r.items():
                 stats[k] += v
@@ -298,6 +300,7 @@ def createprocs(pcls, power, args=None):
     if RootProcess is None:
         if type(EndPointType) == type:
             RootProcess = EndPointType()
+            RootProcess.shared = multiprocessing.Value("i", 0)
             RootLock.release()
         else:
             log.error("EndPoint not defined")
@@ -455,7 +458,7 @@ def init_performance_counters(procs):
         PerformanceCounters[p] = dict()
         CounterLock.release()
 
-def log_performance_statistics():
+def log_performance_statistics(walltime):
     global PerformanceCounters
     global CounterLock
 
@@ -477,6 +480,7 @@ def log_performance_statistics():
 
     statstr += ("* Total procs: %d\n" % len(PerformanceCounters))
     CounterLock.release()
+    statstr += ("* Wallclock time: %f\n" % walltime)
 
     if total.get('totalusrtime') is not None:
         statstr += ("** Total usertime: %f\n" % total['totalusrtime'])
@@ -486,12 +490,6 @@ def log_performance_statistics():
 
     if total.get('totalsystime') is not None:
         statstr += ("** Total systemtime: %f\n" % total['totalsystime'])
-
-    if total.get('totaltime') is not None:
-        statstr += ("** Total time: %f\n" % total['totaltime'])
-        if TotalUnits is not None:
-            statstr += ("*** Average time: %f\n" %
-                        (total['totaltime'] / TotalUnits))
 
     if total.get('mem') is not None:
         statstr += ("** Total memory: %d\n" % total['mem'])

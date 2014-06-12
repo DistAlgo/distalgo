@@ -598,7 +598,7 @@ class DistProcess(multiprocessing.Process):
 
             self.main()
 
-            #            self._id.close()
+            self.report_times()
 
         except Exception as e:
             sys.stderr.write("Unexpected error at process %s:%r"% (str(self), e))
@@ -607,8 +607,6 @@ class DistProcess(multiprocessing.Process):
         except KeyboardInterrupt as e:
             self._log.debug("Received KeyboardInterrupt, exiting")
             pass
-
-        self.report_times()
 
     def start_timers(self):
         if not self._is_timer_running:
@@ -621,7 +619,7 @@ class DistProcess(multiprocessing.Process):
             usrtime, systime, _, _, _ = os.times()
             self._usrtime += usrtime - self._usrtime_st
             self._systime += systime - self._systime_st
-            self._waltime_st += time.clock() - self._waltime_st
+            self._waltime += time.clock() - self._waltime_st
             self._is_timer_running = False
 
     def report_times(self):

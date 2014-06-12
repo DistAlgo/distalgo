@@ -44,8 +44,10 @@ class P(process):
     def main():
         def announce():
             output("In cs!")
+        --start
         for i in range(n):
             cs(announce)
+        --end
         bcast(Done(), to=ps)
         await(each(_p in ps, has=len(rcvd(Done(), src=p)) > 0))
         output("Terminating...")
