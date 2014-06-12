@@ -58,11 +58,11 @@ def {1}({0}):
     return {0}
     """ if not jbstyle else """
 def {1}({0}):
+    temp = {0}
     if type({0}) is set:
-        res = runtimelib.Set()
-        for elt in {0}:
-            res.add(elt)
-        {0} = res
+        {0} = runtimelib.Set()
+        for elt in temp:
+            {0}.add(elt)
     globals()['{0}'] = {0}
     return {0}
 """
@@ -212,9 +212,9 @@ def gen_inc_module(dpyast, module_name, cmdline_args=dict()):
         uname = UPDATE_STUB_FORMAT % (event.process.name + event.name, 0)
         aname = ASSIGN_STUB_FORMAT % (event.process.name + event.name)
         updfun = pyFunctionDef(name=uname,
-                               args=["event", "element"],
+                               args=[event.name, "element"],
                                body=[pyCall(
-                                   func=pyAttr("event", "add"),
+                                   func=pyAttr(event.name, "add"),
                                    args=[pyName("element")])])
         module.body.append(gen_assign_stub(aname, "initevent", jbstyle))
         module.body.append(updfun)
