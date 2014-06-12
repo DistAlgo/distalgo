@@ -82,8 +82,8 @@ def gen_inc_module(dpyast, module_name, cmdline_args=dict()):
     quex.visit(dpyast)
 
     # Generate the query functions and accumulate set of parameters:
-    all_params = set()
-    all_events = set()
+    all_params = []
+    all_events = []
     # Use the IncInterfaceGenerator for the inc module:
     iig = IncInterfaceGenerator(**cmdline_args)
     pg = PythonGenerator()
@@ -95,11 +95,11 @@ def gen_inc_module(dpyast, module_name, cmdline_args=dict()):
         evtex = EventExtractor()
         evtex.visit(query)
         events = evtex.events
-        all_events |= events
+        all_events.extend(events)
 
         qname = QUERY_STUB_FORMAT % idx
-        params = set()
-        for nobj in query.nameobjs:
+        params = []
+        for nobj in query.ordered_nameobjs:
             if query.is_child_of(nobj.scope):
                 # Ignore if this variable is assigned to inside the query
                 # (i.e. free var):
@@ -107,8 +107,9 @@ def gen_inc_module(dpyast, module_name, cmdline_args=dict()):
                     if place.is_child_of(query):
                         break
                 else:
-                    params.add(nobj)
-        all_params |= params
+                    if nobj not in params:
+                        params.append(nobj)
+        all_params.extend(params)
         iig.reset()
         incqu = iig.visit(query)
         assert isinstance(incqu, AST)
@@ -280,10 +281,10 @@ class EventExtractor(NodeVisitor):
     """
 
     def __init__(self):
-        self.events = set()
+        self.events = []
 
     def visit_Event(self, node):
-        self.events.add(node)
+        self.events.append(node)
 
 class QueryExtractor(NodeVisitor):
     """Extracts expensive queries.
