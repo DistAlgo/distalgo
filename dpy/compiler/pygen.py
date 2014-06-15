@@ -763,30 +763,46 @@ class PythonGenerator(NodeVisitor):
         return [TryFinally(body, finalbody)]
 
     def visit_AwaitStmt(self, node):
+        INCGRD = AugAssign(pyName(node.unique_label), Add(), Num(1))
+        DEDGRD = AugAssign(pyName(node.unique_label), Sub(), Num(1))
         conds = []
-        body = []
-        if node.timeout is None:
-            label = pyLabel(node.unique_label, block=True)
-        else:
-            label = pyLabel(node.unique_label, block=True,
-                            timeout=self.visit(node.timeout))
+        body = [INCGRD]
+        labelname = node.unique_label if node.label is None else node.label
+        label = pyLabel(labelname, block=True,
+                        timeout=(self.visit(node.timeout) if node.timeout is
+                                 not None else None))
+        last = body
         for br in node.branches:
             cond = self.visit(br.condition)
             conds.append(cond)
             ifbody = self.body(br.body)
-            body.append(If(cond, ifbody + [Break()], []))
+            ifbody.append(INCGRD)
+            brnode = If(cond, ifbody, [])
+            last.append(brnode)
+            last = brnode.orelse
         if len(node.orelse) > 0:
             cond = pyAttr("self", "_timer_expired")
             ifbody = self.body(node.orelse)
-            body.append(If(cond, ifbody + [Break()], []))
+            ifbody.append(INCGRD)
+            brnode = If(cond, ifbody, [])
+            last.append(brnode)
+            last = brnode.orelse
         # Label call must come after the If tests:
-        body.append(label)
+        last.append(label)
+        last.append(DEDGRD)
+        whilenode = While(pyCompare(pyName(node.unique_label), Eq, Num(0)),
+                          body, [])
+        main = [Assign([pyName(node.unique_label)], Num(0))]
         if node.timeout is not None:
-            main = [pyCall(pyAttr("self", "_timer_start")),
-                    While(pyTrue(), body, []),
-                    pyCall(pyAttr("self", "_timer_end"))]
-        else:
-            main = [While(pyTrue(), body, [])]
+            main.append(pyCall(pyAttr("self", "_timer_start")))
+        main.append(whilenode)
+        if node.is_in_loop:
+            whilenode.orelse = [If(pyCompare(pyName(node.unique_label),
+                                             NotEq, Num(2)),
+                                   [Continue()], [])]
+            main.append(If(pyCompare(pyName(node.unique_label),
+                                             NotEq, Num(2)),
+                                   [Break()], []))
         return concat_bodies(conds, main)
 
     def visit_BranchingAwaitStmt(self, node):

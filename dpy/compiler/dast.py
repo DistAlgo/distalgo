@@ -1322,10 +1322,7 @@ class Statement(DistNode):
 
     @property
     def unique_label(self):
-        if self.label is not None:
-            return self.label
-        else:
-            return "_st_label_%d" % self.index
+        return "_st_label_%d" % self.index
 
     @property
     def scope(self):
@@ -1482,7 +1479,11 @@ class IfStmt(CompoundStmt):
         self.body = []
         self.elsebody = []
 
-class WhileStmt(CompoundStmt):
+class LoopStmt(CompoundStmt):
+    """Abstract class for loops."""
+    pass
+
+class WhileStmt(LoopStmt):
 
     _fields = ['condition', 'body', 'elsebody']
 
@@ -1492,7 +1493,7 @@ class WhileStmt(CompoundStmt):
         self.body = []
         self.elsebody = []
 
-class ForStmt(CompoundStmt):
+class ForStmt(LoopStmt):
 
     _fields = ['target', 'iter', 'body', 'elsebody']
 
@@ -1543,6 +1544,16 @@ class AwaitStmt(CompoundStmt):
         self.branches = []
         self.orelse = []
         self.timeout = None
+
+    @property
+    def is_in_loop(self):
+        loop_par = self.first_parent_of_type(LoopStmt)
+        if loop_par is None:
+            return False
+        func_par = self.first_parent_of_type(ArgumentsContainer)
+        if func_par is not None and func_par.is_child_of(loop_par):
+            return False
+        return True
 
 class LoopingAwaitStmt(CompoundStmt):
 
@@ -1613,9 +1624,15 @@ class RaiseStmt(SimpleStmt):
         self.expr = None
         self.cause = None
 
-class BreakStmt(SimpleStmt): pass
 class PassStmt(SimpleStmt): pass
-class ContinueStmt(SimpleStmt): pass
+
+class LoopCtrlStmt(SimpleStmt):
+    def __init__(self, parent, ast=None, loopstmt=None):
+        assert isinstance(loopstmt, LoopStmt)
+        super().__init__(parent, ast)
+        self.loopstmt = loopstmt
+class BreakStmt(LoopCtrlStmt): pass
+class ContinueStmt(LoopCtrlStmt): pass
 
 class PythonStmt(SimpleStmt): pass
 

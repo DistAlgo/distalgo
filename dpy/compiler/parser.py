@@ -279,6 +279,15 @@ class Parser(NodeVisitor):
                 return node
         return None
 
+    @property
+    def current_loop(self):
+        for node in reversed(self.node_stack):
+            if isinstance(node, dast.LoopStmt):
+                return node
+            elif isinstance(node, dast.ArgumentsContainer):
+                break
+        return None
+
     def visit_Module(self, node):
         self.program = dast.Program(node)
         # Populate global scope with Python builtins:
@@ -898,10 +907,18 @@ class Parser(NodeVisitor):
         self.create_stmt(dast.PassStmt, node, nopush=True)
 
     def visit_Break(self, node):
-        self.create_stmt(dast.BreakStmt, node, nopush=True)
+        loop = self.current_loop
+        if loop is None:
+            self.warn("Possible use of 'break' outside loop.")
+        self.create_stmt(dast.BreakStmt, node, nopush=True,
+                         params={"loopstmt": loop})
 
     def visit_Continue(self, node):
-        self.create_stmt(dast.ContinueStmt, node, nopush=True)
+        loop = self.current_loop
+        if loop is None:
+            self.warn("Possible use of 'continue' outside loop.")
+        self.create_stmt(dast.ContinueStmt, node, nopush=True,
+                         params={"loopstmt": loop})
 
     def visit_Delete(self, node):
         s = self.create_stmt(dast.DeleteStmt, node)
