@@ -67,6 +67,15 @@ class DistNode(AST):
                 node = node.parent
         return None
 
+    def first_parent_of_types(self, nodetypes):
+        node = self.parent
+        while node is not None:
+            for typ in nodetypes:
+                if isinstance(node, typ):
+                    return node
+            node = node.parent
+        return None
+
     def last_parent_of_type(self, nodetype):
         last = node = self.parent
         if not isinstance(node, nodetype):
@@ -1550,7 +1559,7 @@ class AwaitStmt(CompoundStmt):
         loop_par = self.first_parent_of_type(LoopStmt)
         if loop_par is None:
             return False
-        func_par = self.first_parent_of_type(ArgumentsContainer)
+        func_par = self.first_parent_of_types({ArgumentsContainer, ClassStmt})
         if func_par is not None and func_par.is_child_of(loop_par):
             return False
         return True
@@ -1628,7 +1637,6 @@ class PassStmt(SimpleStmt): pass
 
 class LoopCtrlStmt(SimpleStmt):
     def __init__(self, parent, ast=None, loopstmt=None):
-        assert isinstance(loopstmt, LoopStmt)
         super().__init__(parent, ast)
         self.loopstmt = loopstmt
 class BreakStmt(LoopCtrlStmt): pass

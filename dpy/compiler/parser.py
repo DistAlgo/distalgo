@@ -282,10 +282,11 @@ class Parser(NodeVisitor):
     @property
     def current_loop(self):
         for node in reversed(self.node_stack):
-            if isinstance(node, dast.LoopStmt):
-                return node
-            elif isinstance(node, dast.ArgumentsContainer):
+            if isinstance(node, dast.ArgumentsContainer) or \
+               isinstance(node, dast.ClassStmt):
                 break
+            elif isinstance(node, dast.LoopStmt):
+                return node
         return None
 
     def visit_Module(self, node):
@@ -909,14 +910,14 @@ class Parser(NodeVisitor):
     def visit_Break(self, node):
         loop = self.current_loop
         if loop is None:
-            self.warn("Possible use of 'break' outside loop.")
+            self.warn("Possible use of 'break' outside loop.", node)
         self.create_stmt(dast.BreakStmt, node, nopush=True,
                          params={"loopstmt": loop})
 
     def visit_Continue(self, node):
         loop = self.current_loop
         if loop is None:
-            self.warn("Possible use of 'continue' outside loop.")
+            self.warn("Possible use of 'continue' outside loop.", node)
         self.create_stmt(dast.ContinueStmt, node, nopush=True,
                          params={"loopstmt": loop})
 
