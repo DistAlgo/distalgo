@@ -109,7 +109,9 @@ def gen_inc_module(dpyast, module_name, cmdline_args=dict()):
                 else:
                     if nobj not in params:
                         params.append(nobj)
-        all_params.extend(params)
+        for p in params:
+            if p not in all_params:
+                all_params.append(p)
         iig.reset()
         incqu = iig.visit(query)
         assert isinstance(incqu, AST)
