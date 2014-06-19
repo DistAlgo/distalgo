@@ -293,6 +293,23 @@ class PythonGenerator(NodeVisitor):
                 body.extend((self.visit(handler)))
         return body
 
+    def generate_pattern_domain(self, pattern, domain):
+        assert pattern is not None
+        assert domain is not None
+        pat = self.visit(pattern)
+        domain = self.visit(domain)
+        context = [(v.name, self.visit(v)) for v in pattern.boundvars]
+        # FIXME: variable ordering?????:
+        order = pyTuple([Str(v.name) for v in pattern.freevars])
+        varelts = [self.visit(v) for v in pattern.freevars]
+        iterater = pyCall(pyAttr(pat, "filter"), [domain, order],
+                          keywords=context)
+        if len(varelts) > 0:
+            target = pyTuple(varelts)
+        else:
+            target = pyName("_dummyvar")
+        return For(target, iterater, [], [])
+
     def visit_Arguments(self, node):
         """Generates the argument lists for functions and lambdas."""
         args = [arg(ident.name, None) for ident in node.args]
@@ -738,12 +755,18 @@ class PythonGenerator(NodeVisitor):
         return concat_bodies([test], [ast])
 
     def visit_ForStmt(self, node):
-        target = self.visit(node.target)
-        it = self.visit(node.iter)
-        body = self.body(node.body)
-        orelse = self.body(node.elsebody)
-        ast = For(target, it, body, orelse)
-        return concat_bodies((target, it), [ast])
+        if isinstance(node.target, dast.PatternExpr):
+            ast = self.generate_pattern_domain(node.target, node.iter)
+            ast.body = self.body(node.body)
+            ast.orelse = self.body(node.elsebody)
+            return concat_bodies((ast.target, ast.iter), [ast])
+        else:
+            target = self.visit(node.target)
+            it = self.visit(node.iter)
+            body = self.body(node.body)
+            orelse = self.body(node.elsebody)
+            ast = For(target, it, body, orelse)
+            return concat_bodies((target, it), [ast])
 
     def visit_TryStmt(self, node):
         body = self.body(node.body)

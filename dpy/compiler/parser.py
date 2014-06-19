@@ -242,6 +242,13 @@ class PatternParser(NodeVisitor):
             elts.append(self.visit(e))
         return dast.TuplePattern(elts, self.parent_node, node)
 
+class FreeVarFinder(NodeVisitor):
+    def __init__(self):
+        self.found = False
+
+    def visit_Name(self, node):
+        if node.id.startswith("_"):
+            self.found = True
 
 class Parser(NodeVisitor):
     """The main parser class.
@@ -856,7 +863,12 @@ class Parser(NodeVisitor):
         prevblock = self.current_block
         s = self.create_stmt(dast.ForStmt, node)
         self.current_context = Assignment()
-        s.target = self.visit(node.target)
+        fvf = FreeVarFinder()
+        fvf.visit(node.target)
+        if fvf.found:
+            s.target = self.parse_pattern_expr(node.target)
+        else:
+            s.target = self.visit(node.target)
         self.current_context = Read(s.target)
         s.iter = self.visit(node.iter)
         self.current_context = Read()

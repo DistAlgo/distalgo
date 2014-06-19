@@ -8,6 +8,12 @@ class PatternElement:
         self.value = value
 
     def filter(self, iterable, order=None, **context):
+        if isinstance(iterable, set):
+            return self._filter_set(iterable, order, **context)
+        else:
+            return self._filter_list(iterable, order, **context)
+
+    def _filter_list(self, iterable, order=None, **context):
         for elt in iterable:
             bindings = dict()
             if self.match(elt, bindings=bindings, **context):
@@ -15,6 +21,21 @@ class PatternElement:
                     yield tuple(bindings[name] for name in order)
                 else:
                     yield True
+
+    def _filter_set(self, iterable, order=None, **context):
+        seen = set()
+        for elt in iterable:
+            bindings = dict()
+            if self.match(elt, bindings=bindings, **context):
+                if len(bindings) > 0 and order is not None:
+                    res = tuple(bindings[name] for name in order)
+                    if res not in seen:
+                        seen.add(res)
+                        yield res
+                else:
+                    if True not in seen:
+                        seen.add(True)
+                        yield True
 
     def match(self, message, bindings=None,
               ignore_bound_vars=False, **context):
