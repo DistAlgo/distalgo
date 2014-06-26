@@ -257,10 +257,9 @@ if __name__ == "__main__":
     #  ])
     eventpat = EventPattern(ReceivedEvent,
                             'ReceivedEvent_1',
-                            PatternElement(TupleVar,
-                                           [PatternElement(ConstantVar, 'Request'),
-                                            PatternElement(FreeVar, 'reqts')]),
-                            sources=[PatternElement(FreeVar, 'source')],
+                            TuplePattern([ConstantPattern('Request'),
+                                          FreePattern('reqts')]),
+                            sources=[FreePattern('source')],
                             destinations=None,
                             timestamps=None,
                             record_history=False, handlers=[])
