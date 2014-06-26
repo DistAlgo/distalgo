@@ -4,6 +4,8 @@ from . import dast
 from .pygen import *
 from .utils import printd
 
+INC_MODULE_VAR = "IncModule"
+
 QUERY_STUB_FORMAT = "Query_%d"
 ASSIGN_STUB_FORMAT = "Assign_%s"
 UPDATE_STUB_FORMAT = "Update_%s_%d"
@@ -69,7 +71,7 @@ def {1}({0}):
     src = blueprint.format(varname, funname)
     return parse(src).body[0]
 
-def gen_inc_module(dpyast, module_name, cmdline_args=dict()):
+def gen_inc_module(dpyast, cmdline_args=dict()):
     """Generates the interface file from a DistPy AST."""
 
     assert isinstance(dpyast, dast.Program)
@@ -130,7 +132,7 @@ def gen_inc_module(dpyast, module_name, cmdline_args=dict()):
             returns=None,
             body=[Return(incqu)])
         qrycall = pyCall(
-            func=pyAttr(module_name, qname),
+            func=pyAttr(INC_MODULE_VAR, qname),
             args=[],
             keywords=([(arg.name, pg.visit(arg)) for arg in params] +
                       [(evt.name, pyAttr("self", evt.name)) for evt in events]))
@@ -145,7 +147,7 @@ def gen_inc_module(dpyast, module_name, cmdline_args=dict()):
         pg.reset()
         asscall = Assign(targets=[pg.visit(vobj)],
                          value=pyCall(
-                             func=pyAttr(module_name, aname),
+                             func=pyAttr(INC_MODULE_VAR, aname),
                              keywords=[(vobj.name, pg.visit(vobj))]))
 
         # Inject call to stub at all assignment points:
@@ -205,7 +207,7 @@ def gen_inc_module(dpyast, module_name, cmdline_args=dict()):
                     # Don't add the 'return' for jbstyle:
                     body=[astval if jbstyle else Return(astval)])
                 updcall = pyCall(
-                    func=pyAttr(module_name, uname),
+                    func=pyAttr(INC_MODULE_VAR, uname),
                     args=[],
                     keywords=[(arg.name, pg.visit(arg)) for arg in params])
                 module.body.append(updfun)
@@ -228,11 +230,11 @@ def gen_inc_module(dpyast, module_name, cmdline_args=dict()):
             proc.initializers[0].prebody = []
         proc.initializers[0].prebody.insert(
             0, pyCall(
-                func=pyAttr(module_name, "init"),
+                func=pyAttr(INC_MODULE_VAR, "init"),
                 args=[pyAttr("self", "_id")]))
 
     # Generate the main python file:
-    pyast = StubcallGenerator(all_events, module_name).visit(dpyast)
+    pyast = StubcallGenerator(all_events).visit(dpyast)
     return module, pyast
 
 class StubcallGenerator(PythonGenerator):
@@ -241,11 +243,10 @@ class StubcallGenerator(PythonGenerator):
 
     """
 
-    def __init__(self, events, module_name):
+    def __init__(self, events):
         super().__init__()
         self.events = events
-        self.module_name = module_name
-        self.preambles.append(Import([alias(module_name, None)]))
+        self.preambles.append(Assign([pyName(INC_MODULE_VAR)], pyNone()))
 
     def generate_init(self, node):
         supercall = pyCall(func=pyAttr(pyCall(pyName("super")),
@@ -254,7 +255,7 @@ class StubcallGenerator(PythonGenerator):
         evtconstructors = [self.visit(evt) for evt in node.events]
         historyinit = [Assign(
             targets=[pyAttr("self", evt.name)],
-            value=(pyCall(func=pyAttr(self.module_name,
+            value=(pyCall(func=pyAttr(INC_MODULE_VAR,
                                       ASSIGN_STUB_FORMAT % (evt.process.name +
                                                             evt.name)),
                           args=[pySet([])])
@@ -269,7 +270,7 @@ class StubcallGenerator(PythonGenerator):
 
     def generate_history(self, node):
         if node.record_history and node in self.events:
-            return pyAttr(self.module_name,
+            return pyAttr(INC_MODULE_VAR,
                           UPDATE_STUB_FORMAT %
                           (node.process.name + node.name, 0))
         else:

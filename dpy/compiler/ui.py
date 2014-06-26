@@ -129,7 +129,7 @@ def dpyfile_to_incfiles(args):
     module_name = purename + "_inc"
     module_filename = module_name + ".py"
     if dpyast is not None:
-        inc, ast = gen_inc_module(dpyast, module_name, args.__dict__)
+        inc, ast = gen_inc_module(dpyast, args.__dict__)
         incstr = to_source(inc)
         aststr = to_source(ast)
         if outname is None:

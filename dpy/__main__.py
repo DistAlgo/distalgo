@@ -17,7 +17,7 @@ def parseArgs():
     parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
     parser.add_argument("-s", "--perffile")
     parser.add_argument("-u", "--dumpfile")
-    parser.add_argument("-i", '--iterations', type=int, default=1)
+    parser.add_argument('--iterations', type=int, default=1)
     parser.add_argument("--nolog", action="store_true", default=False)
     parser.add_argument("-f", "--logfile", action="store_true", default=False)
     parser.add_argument("--logfilename")
@@ -26,7 +26,9 @@ def parseArgs():
                         choices=LogLevelNames, default="INFO")
     parser.add_argument("-F", "--logfilelevel",
                         choices=LogLevelNames, default="DEBUG")
-    parser.add_argument("--incfile")
+    parser.add_argument("-i", "--useincmodule",
+                        action="store_true", default=False)
+    parser.add_argument("-m", "--incmodulename")
     parser.add_argument("-r", "--recompile", dest="recompile",
                         action="store_true", default=False)
     parser.add_argument("-c", "--compiler-flags", default="")
