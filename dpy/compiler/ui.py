@@ -105,10 +105,12 @@ def dpyfile_to_pyfile(filename, outname=None):
 def check_python_version():
     if sys.version_info < (3, 3):
         stderr.write("DistPy requires Python version 3.3 or newer.\n")
-        sys.exit(1)
+        return False
     elif sys.version_info > (3, 5):
         stderr.write("Python 3.5 not yet supported.\n")
-        sys.exit(2)
+        return False
+    else:
+        return True
 
 def dpyfile_to_incfiles(args):
     filename = args.infile
@@ -139,10 +141,12 @@ def dpyfile_to_incfiles(args):
             outfd.write(incstr)
             stderr.write("Written interface file %s.\n" % module_filename)
 
-def main():
+def main(argv=None):
     """Main entry point when invoking compiler module from command line.
     """
-    check_python_version()
+    if not check_python_version():
+        return 2
+
     ap = argparse.ArgumentParser(description="DistPy compiler.")
     ap.add_argument('-o', help="Output file name.", dest="outfile")
     ap.add_argument('-L', help="Logging output level.",
@@ -175,9 +179,12 @@ def main():
                     action='store_true', dest="noalltables")
     ap.add_argument('--psdfile', help="Name of output pseudo code file.",
                     dest="psdfile", default=None)
-    ap.add_argument('infile', help="DistPy input source file.")
+    ap.add_argument('infile', metavar='SOURCEFILE', type=str,
+                    help="DistPy input source file.")
 
-    args = ap.parse_args()
+    if argv is None:
+        argv = sys.argv[1:]
+    args = ap.parse_args(argv)
     if args.debug is not None:
         try:
             level = int(args.debug)
@@ -194,3 +201,5 @@ def main():
         dpyfile_to_incfiles(args)
     else:
         dpyfile_to_pyfile(args.infile, args.outfile)
+
+    return 0

@@ -1,11 +1,10 @@
 # runtime package
 
-import dpy.api as api
-import dpy.pattern as pat
-import dpy.compiler as compiler
+from . import api
+from . import pattern as pat
+from . import compiler
+
+from .__main__ import libmain, __version__
 from .sim import DistProcess
-from .__main__ import libmain
 
-__version__ = '1.0.0a3'
-
-__all__ = ["DistProcess", "pat", "api", "libmain", "compiler"]
+__all__ = ["__version__", "pat", "api", "libmain", "compiler"]

@@ -1,51 +1,50 @@
 import sys
+import logging
+import argparse
+
+__version__ = "1.0.0a3"
 
 from .api import entrypoint
 
-def parseArgs(argv):
-    import optparse
-    p = optparse.OptionParser()
+log = logging.getLogger(__name__)
+formatter = logging.Formatter(
+    '[%(asctime)s]%(name)s:%(levelname)s: %(message)s')
+log._formatter = formatter
 
-    p.add_option("-s", action="store", dest='perffile')
-    p.add_option("--dumpfile", action="store", dest='dumpfile')
-    p.add_option("-U", action="store", dest='dumpfile')
-    p.add_option("-i", action="store", dest='iterations')
-    p.add_option("--nolog", action="store_true", dest="nolog")
-    p.add_option("--logfile", action="store", dest="logfile")
-    p.add_option("--logdir", action="store", dest="logdir")
-    p.add_option("--logconsolelevel", action="store", dest="logconsolelevel")
-    p.add_option("--logfilelevel", action="store", dest="logfilelevel")
+def parseArgs():
+    LogLevelNames = [n.lower() for n in logging._nameToLevel]
 
-    p.set_defaults(perffile=None,
-                   dumpfile=None,
-                   numprocs="1",
-                   iterations="1",
-                   other=None,
-                   nolog=False,
-                   logfile=None,
-                   logdir=None,
-                   logconsolelevel="INFO",
-                   logfilelevel="DEBUG")
+    parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
+    parser.add_argument("-s", "--perffile")
+    parser.add_argument("-u", "--dumpfile")
+    parser.add_argument("-i", '--iterations', type=int, default=1)
+    parser.add_argument("--nolog", action="store_true", default=False)
+    parser.add_argument("-f", "--logfile", action="store_true", default=False)
+    parser.add_argument("--logfilename")
+    parser.add_argument("--logdir")
+    parser.add_argument("-L", "--logconsolelevel",
+                        choices=LogLevelNames, default="INFO")
+    parser.add_argument("-F", "--logfilelevel",
+                        choices=LogLevelNames, default="DEBUG")
+    parser.add_argument("--incfile")
+    parser.add_argument("-r", "--recompile", dest="recompile",
+                        action="store_true", default=False)
+    parser.add_argument("-c", "--compiler-flags", default="")
+    parser.add_argument("-v", "--version", action="version", version=__version__)
+    parser.add_argument("file",
+                        help="DistAlgo file to execute.")
+    parser.add_argument("args", nargs='*',
+                        help="arguments passed to program in sys.argv[1:].")
 
-    return p.parse_args(argv)
-
-
-def cut_cmdline():
-    for i, a in enumerate(sys.argv):
-        if a.endswith(".dpy") or a.endswith(".da"):
-            return (sys.argv[1:i+1], sys.argv[i:])
-    die("No DistAlgo source file specified.")
+    return parser.parse_args()
 
 def libmain():
     """
     Main program entry point. Parses command line options, sets up global
     variables, and calls the 'main' function of the DistAlgo program.
     """
-    libcmdl, distcmdl = cut_cmdline()
 
-    cmdline_options, args = parseArgs(libcmdl)
-
-    entrypoint(cmdline_options, args, distcmdl)
+    entrypoint(parseArgs())
 
 def die(mesg = None):
     if mesg != None:

@@ -1,99 +1,36 @@
-import multiprocessing
-import time
-import sys
-import types
-import traceback
 import os
-import stat
-import signal
+import sys
 import time
+import time
+import stat
+import types
+import signal
 import logging
+import importlib
 import threading
-import warnings
+import traceback
+import multiprocessing
 import os.path
-import imp
 
 from logging import DEBUG
 from logging import INFO
 from logging import ERROR
 from logging import CRITICAL
 from logging import FATAL
-from functools import wraps
-from inspect import signature, Parameter
 
-import dpy.compiler
+import dpy.compiler.ui
 from dpy.sim import UdpEndPoint, TcpEndPoint, DistProcess
+from .common import api, deprecated, Null, api_registry
+
+DISTPY_SUFFIXES = ["", ".dpy", ".da"]
+PYTHON_SUFFIX = ".py"
 
 log = logging.getLogger(__name__)
 formatter = logging.Formatter(
     '[%(asctime)s]%(name)s:%(levelname)s: %(message)s')
 log._formatter = formatter
 
-api_registry = dict()
-
-def api(func):
-    """Declare 'func' as DistPy API.
-
-    This wraps the function to perform basic type checking for type-annotated
-    parameters and return value.
-    """
-
-    global api_registry
-    funame = func.__name__
-    if api_registry.get(funame) is not None:
-        raise RuntimeError("Double definition of API function: %s" % funame)
-
-    sig = signature(func)
-
-    @wraps(func)
-    def _func_impl(*args, **kwargs):
-        try:
-            binding = sig.bind(*args, **kwargs)
-        except TypeError as e:
-            log.error(str(e))
-            return None
-        for argname in binding.arguments:
-            atype = sig.parameters[argname].annotation
-            if (atype is not Parameter.empty and
-                    not isinstance(binding.arguments[argname], atype)):
-                log.error(
-                    ("'%s' called with wrong type argument: "
-                     "%s, expected %s, got %s.") %
-                    (funame, argname, str(atype),
-                     str(binding.arguments[argname].__class__)))
-                return None
-        result = func(*args, **kwargs)
-        if (sig.return_annotation is not Parameter.empty and
-                not isinstance(result, sig.return_annotation)):
-            log.warn(
-                ("Possible bug: API function '%s' return value type mismatch: "
-                 "declared %s, returned %s.") %
-                (funame, sig.return_annotation, result.__class__))
-        return result
-
-    api_registry[funame] = _func_impl
-    return _func_impl
-
-class Null(object):
-    def __init__(self, *args, **kwargs): pass
-    def __call__(self, *args, **kwargs): return self
-    def __getattribute__(self, attr): return self
-    def __setattr__(self, attr, value): pass
-    def __delattr__(self, attr): pass
-
-def deprecated(func):
-    """This is a decorator which can be used to mark functions
-    as deprecated. It will result in a warning being emmitted
-    when the function is used."""
-    def newFunc(*args, **kwargs):
-        warnings.warn("Call to deprecated function %s." % func.__name__,
-                      category=DeprecationWarning)
-        return func(*args, **kwargs)
-    newFunc.__name__ = func.__name__
-    newFunc.__doc__ = func.__doc__
-    newFunc.__dict__.update(func.__dict__)
-    return newFunc
-
+CmdlineParams = Null()
 PerformanceCounters = {}
 CounterLock = threading.Lock()
 RootProcess = None
@@ -102,42 +39,71 @@ EndPointType = UdpEndPoint
 PrintProcStats = False
 TotalUnits = None
 ProcessIds = []
-log = logging.getLogger("runtime")
 
-def dist_source(dir, filename):
-    doti = filename.rfind(".")
-    purename = filename[0:doti]
-    distsource = filename
-    pysource = purename + ".py"
+def find_file_on_paths(filename, paths):
+    """Looks for a given 'filename' under a list of directories, in order.
 
-    distsrc = os.path.join(dir, distsource)
-    pysrc = os.path.join(dir, pysource)
+    If found, returns a pair (path, mode), where 'path' is the full path to
+    the file, and 'mode' is the result of calling 'os.stat' on the file.
+    Otherwise, returns (None, None).
 
-    if filename.endswith(".dpy") or filename.endswith(".da"):
-        distmode, pymode, codeobj = None, None, None
+    """
+    for path in paths:
+        fullpath = os.path.join(path, filename)
         try:
-            distmode = os.stat(distsrc)
+            filemode = os.stat(fullpath)
+            return fullpath, filemode
         except OSError:
-            die("DistAlgo source not found.")
-        try:
-            pymode = os.stat(pysrc)
-        except OSError:
-            pymode = None
-        if pymode == None or pymode[stat.ST_MTIME] < distmode[stat.ST_MTIME]:
-            dpy.compiler.dpyfile_to_pyfile(filename)
-    file, pathname, desc = imp.find_module(purename, [dir])
-    return (purename, imp.load_module(purename, file, pathname, desc))
+            pass
+    return None, None
 
-def dist_import(filename):
-    dir = os.path.dirname(filename)
-    base = os.path.basename(filename)
-    _, mod = dist_source(dir, base)
-    return mod
+@api
+def dpyimport(filename, force_recompile=False, compiler_args=[], indir=None):
+    dotidx = filename.rfind(".")
+    paths = sys.path if indir is None else [indir]
+    if dotidx == -1:
+        # filename does not contain suffix, let's try each one
+        purename = filename
+        for suffix in DISTPY_SUFFIXES:
+            fullpath, mode = find_file_on_paths(filename + suffix, paths)
+            if fullpath is not None:
+                break
+    else:
+        purename = filename[:dotidx]
+        fullpath, mode = find_file_on_paths(filename, paths)
+    if fullpath is None:
+        raise ImportError("Module %s not found." % filename)
+    dotidx = fullpath.rfind(".")
+    pyname = (fullpath[:dotidx] + PYTHON_SUFFIX) \
+             if dotidx != -1 else (fullpath + PYTHON_SUFFIX)
+    try:
+        pymode = os.stat(pyname)
+    except OSError:
+        pymode = None
+
+    if (pymode is None or
+            pymode[stat.ST_MTIME] < mode[stat.ST_MTIME] or
+            force_recompile):
+        oldargv = sys.argv
+        try:
+            argv = oldargv[0:0] + compiler_args + [fullpath]
+            res = dpy.compiler.ui.main(argv)
+        except Exception as err:
+            raise RuntimeError("Compilation failure", err)
+        finally:
+            sys.argv = oldargv
+
+        if res != 0:
+            raise ImportError("Unable to compile %s, errno: %d" %
+                              (fullpath, res))
+
+    return importlib.import_module(purename)
 
 def maximum(iterable):
     if (len(iterable) == 0): return -1
     else: return max(iterable)
 
+@api
 def use_channel(endpoint):
     global EndPointType
 
@@ -160,67 +126,61 @@ def use_channel(endpoint):
 def get_channel_type():
     return EndPointType
 
-def create_root_logger(options, logfile, logdir):
-    global log
+def setup_root_logger():
+    rootlog = logging.getLogger("")
 
-    if not options.nolog:
-        log.setLevel(logging.DEBUG)
+    if not CmdlineParams.nolog:
+        rootlog.setLevel(logging.DEBUG)
         formatter = logging.Formatter(
             '[%(asctime)s]%(name)s:%(levelname)s: %(message)s')
-        log._formatter = formatter
+        rootlog._formatter = formatter
+
+        consolelvl = logging._nameToLevel[CmdlineParams.logconsolelevel.upper()]
 
         ch = logging.StreamHandler()
         ch.setFormatter(formatter)
+        ch.setLevel(consolelvl)
+        rootlog._consolelvl = consolelvl
+        rootlog.addHandler(ch)
 
-        try:
-            ch.setLevel(options.logconsolelevel)
-            log._consolelvl = options.logconsolelevel
-        except ValueError:
-            sys.stderr.write("Unknown logging level %s. Defaulting to INFO.\n" %
-                             options.loglevel)
-            ch.setLevel(logging.INFO)
-            log._consolelvl = logging.INFO
+        if CmdlineParams.logfile:
+            filelvl = logging._nameToLevel[CmdlineParams.logfilelevel.upper()]
+            logfilename = CmdlineParams.logfilename \
+                          if CmdlineParams.logfilename is not None else \
+                             (os.path.basename(CmdlineParams.file) + ".log")
+            fh = logging.FileHandler(logfilename)
+            fh.setFormatter(formatter)
+            fh.setLevel(filelvl)
+            rootlog._filelvl = filelvl
+            rootlog.addHandler(fh)
 
-        fh = logging.FileHandler(logfile)
-        fh.setFormatter(formatter)
-
-        try:
-            fh.setLevel(options.logfilelevel)
-            log._filelvl = options.logfilelevel
-        except ValueError:
-            sys.stderr.write("Unknown logging level %s. Defaulting to INFO.\n" %
-                             options.loglevel)
-            fh.setLevel(logging.INFO)
-            log._filelvl = logging.INFO
-
-        if logdir is not None:
-            os.makedirs(logdir, exist_ok=True)
-            log._logdir = logdir
+        if CmdlineParams.logdir is not None:
+            os.makedirs(CmdlineParams.logdir, exist_ok=True)
+            rootlog._logdir = CmdlineParams.logdir
         else:
-            log._logdir = None
-
-            #log.addHandler(fh)
-        log.addHandler(ch)
-
+            rootlog._logdir = None
     else:
-        log = Null()
+        rootlog.addHandler(logging.NullHandler())
 
-def entrypoint(options, args, cmdl):
-    target = args[0]
+def entrypoint(options):
+    global CmdlineParams
+    CmdlineParams = options
+
+    setup_root_logger()
+    target = options.file
     source_dir = os.path.dirname(target)
     basename = os.path.basename(target)
-
     if not os.access(target, os.R_OK):
         die("Can not access source file %s" % target)
 
-    name, module = dist_source(source_dir, basename)
-    create_root_logger(options,
-                       os.path.join(source_dir, name + ".log"),
-                       os.path.join(source_dir, options.logdir)
-                       if options.logdir is not None else None)
-
-
-    sys.argv = cmdl
+    sys.path.insert(0, source_dir)
+    module = dpyimport(basename,
+                       force_recompile=options.recompile,
+                       compiler_args=options.compiler_flags.split(),
+                       indir=source_dir)
+    if not (hasattr(module, 'main') and
+            isinstance(module.main, types.FunctionType)):
+        die("'main' function not defined!")
 
     # Start the background statistics thread:
     RootLock.acquire()
@@ -229,15 +189,11 @@ def entrypoint(options, args, cmdl):
     stat_th.daemon = True
     stat_th.start()
 
-    niters = int(options.iterations)
+    niters = options.iterations
     stats = {'sent' : 0, 'usrtime': 0, 'systime' : 0, 'time' : 0,
               'units' : 0, 'mem' : 0}
-
-    if not (hasattr(module, 'main')
-            and isinstance(module.main, types.FunctionType)):
-        die("'main' function not defined!")
-
     # Start main program
+    sys.argv = [target] + options.args
     try:
         for i in range(0, niters):
             log.info("Running iteration %d ..." % (i+1))
@@ -290,7 +246,7 @@ def entrypoint(options, args, cmdl):
 
     log.info("Terminating...")
 
-
+@api
 def createprocs(pcls, power, args=None):
     if not issubclass(pcls, DistProcess):
         log.error("Can not create non-DistProcess.")
@@ -321,8 +277,7 @@ def createprocs(pcls, power, args=None):
     procs = set()
     for i in iterator:
         (childp, ownp) = multiprocessing.Pipe()
-        p = pcls(RootProcess, childp, EndPointType,
-                 (log._formatter, log._consolelvl, log._filelvl, log._logdir ))
+        p = pcls(RootProcess, childp, EndPointType)
         if isinstance(i, str):
             p.set_name(i)
         # Buffer the pipe
@@ -387,6 +342,7 @@ def createnamedprocs(pcls, names, args=None):
 
     return result
 
+@api
 def setupprocs(pids, args):
     if isinstance(pids, dict):
         pset = pids.values()
@@ -396,6 +352,7 @@ def setupprocs(pids, args):
     for p in pset:
         p._initpipe.send(("setup", args))
 
+@api
 def startprocs(procs):
     if isinstance(procs, dict):
         ps = procs.values()

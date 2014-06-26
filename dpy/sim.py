@@ -13,13 +13,7 @@ import traceback
 import multiprocessing
 
 from . import pattern
-
-class Null(object):
-    def __init__(self, *args, **kwargs): pass
-    def __call__(self, *args, **kwargs): return self
-    def __getattribute__(self, attr): return self
-    def __setattr__(self, attr, value): pass
-    def __delattr__(self, attr): pass
+from .common import Null
 
 class EndPoint:
     """Represents a target for sending of messages.
@@ -504,7 +498,7 @@ class DistProcess(multiprocessing.Process):
             except KeyboardInterrupt:
                 pass
 
-    def __init__(self, parent, initpipe, channel, loginfo, name=None):
+    def __init__(self, parent, initpipe, channel, name=None):
         multiprocessing.Process.__init__(self)
 
         self._running = False
@@ -531,10 +525,8 @@ class DistProcess(multiprocessing.Process):
         self._waltime = 0
         self._is_timer_running = False
 
-        self._loglevel = False
         self._dp_name = name
         self._log = None
-        self._loginfo = loginfo
 
         self._parent = parent
         self._initpipe = initpipe
@@ -576,27 +568,12 @@ class DistProcess(multiprocessing.Process):
             signal.signal(signal.SIGTERM, self._sighandler)
 
             self._id = self._channel(self._dp_name)
-            self._start_comm_thread()
-
             self._log = logging.getLogger(str(self))
-            self._log.setLevel(logging.DEBUG)
-            formatter, consolelvl, filelvl, logdir = self._loginfo
-
-            ch = logging.StreamHandler()
-            ch.setLevel(consolelvl)
-            ch.setFormatter(formatter)
-            self._log.addHandler(ch)
-
-            if logdir is not None:
-                logfile = os.path.join(logdir, self._id.getlogname())
-                fh = logging.FileHandler(logfile)
-                fh.setLevel(filelvl)
-                fh.setFormatter(formatter)
-                self._log.addHandler(fh)
+            self._start_comm_thread()
 
             self._wait_for_go()
 
-            self.main()
+            result = self.main()
 
             self.report_times()
 
@@ -652,8 +629,7 @@ class DistProcess(multiprocessing.Process):
         """Spawns a child process"""
 
         childp, ownp = multiprocessing.Pipe()
-        p = pcls(self._id, childp, self._channel, self._loginfo)
-        p._loglevel = self._loglevel
+        p = pcls(self._id, childp, self._channel)
         p.start()
 
         childp.close()
@@ -679,8 +655,7 @@ class DistProcess(multiprocessing.Process):
         else:
             result = to.send(data, self._id, self._logical_clock)
 
-        if (self._loglevel):
-            self.output("Sent %s -> %r"%(str(data), to))
+        self._log.debug("Sent %s -> %r"%(str(data), to))
         self._trigger_event(pattern.Event(pattern.SentEvent, self._id,
                                           self._logical_clock,data))
         self._parent.send(('sent', 1), self._id)
@@ -821,9 +796,6 @@ class DistProcess(multiprocessing.Process):
 
 
     ### Various attribute setters:
-    def set_loglevel(self, level):
-        self._loglevel = level
-
     def set_send_fail_rate(self, rate):
         self._failures['send'] = rate
 

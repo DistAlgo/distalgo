@@ -2,6 +2,7 @@ import builtins
 import sys
 from ast import *
 
+import dpy.common
 from . import dast
 from .utils import printe, printw, printd
 
@@ -112,12 +113,7 @@ KnownUpdateMethods = {
 
 TypeConstructors = {KW_TYPE_SET, KW_TYPE_TUPLE, KW_TYPE_DICT, KW_TYPE_LIST}
 
-# TODO: extract these from source code:
-
-ApiMethods = {
-    "createprocs", "startprocs", "setupprocs",
-    "use_channel"
-}
+ApiMethods = dpy.common.api_registry.keys()
 
 BuiltinMethods = {
     "work", "output", "spawn", "logical_clock",
