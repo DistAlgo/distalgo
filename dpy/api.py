@@ -183,12 +183,9 @@ def entrypoint(options):
         die("'main' function not defined!")
 
     if options.useincmodule:
-        try:
-            name = options.incmodulename if options.incmodulename is not None \
-                   else module.__name__ + "_inc"
-            module.IncModule = importlib.import_module(name)
-        except ImportError as e:
-            die("Unable to import incrementalization module %s" % name)
+        name = options.incmodulename if options.incmodulename is not None \
+               else module.__name__ + "_inc"
+        module.IncModule = importlib.import_module(name)
 
     # Start the background statistics thread:
     RootLock.acquire()
