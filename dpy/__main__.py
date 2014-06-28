@@ -23,9 +23,9 @@ def parseArgs():
     parser.add_argument("--logfilename")
     parser.add_argument("--logdir")
     parser.add_argument("-L", "--logconsolelevel",
-                        choices=LogLevelNames, default="INFO")
+                        choices=LogLevelNames, default="info")
     parser.add_argument("-F", "--logfilelevel",
-                        choices=LogLevelNames, default="DEBUG")
+                        choices=LogLevelNames, default="debug")
     parser.add_argument("-i", "--useincmodule",
                         action="store_true", default=False)
     parser.add_argument("-m", "--incmodulename")
@@ -35,7 +35,7 @@ def parseArgs():
     parser.add_argument("-v", "--version", action="version", version=__version__)
     parser.add_argument("file",
                         help="DistAlgo file to execute.")
-    parser.add_argument("args", nargs='*',
+    parser.add_argument("args", nargs=argparse.REMAINDER,
                         help="arguments passed to program in sys.argv[1:].")
 
     return parser.parse_args()
