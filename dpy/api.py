@@ -19,7 +19,8 @@ from logging import CRITICAL
 from logging import FATAL
 
 import dpy.compiler.ui
-from dpy.sim import UdpEndPoint, TcpEndPoint, DistProcess
+from .endpoint import UdpEndPoint, TcpEndPoint
+from .sim import DistProcess
 from .common import api, deprecated, Null, api_registry
 
 DISTPY_SUFFIXES = ["", ".dpy", ".da"]
@@ -308,44 +309,6 @@ def createprocs(pcls, power, args=None):
         return set(result.values())
     else:
         return result
-
-@deprecated
-def createnamedprocs(pcls, names, args=None):
-    if not issubclass(pcls, DistProcess):
-        log.error("Can not create non-DistProcess.")
-        return set()
-
-    global RootProcess
-    if RootProcess == None:
-        if type(EndPointType) == type:
-            RootProcess = EndPointType()
-            RootLock.release()
-        else:
-            sys.stderr.write("Error: EndPoint not defined.\n")
-    log.debug("RootProcess is %s" % str(RootProcess))
-
-    log.info("Creating procs %s.." % pcls.__name__)
-    pipes = []
-    for n in names:
-        (childp, ownp) = multiprocessing.Pipe()
-        p = pcls(RootProcess, childp, EndPointType, log)
-        p.set_name(n)
-        pipes.append((n, childp, ownp))      # Buffer the pipe
-        p.start()               # We need to start proc right away to obtain
-                                # EndPoint and pid for p
-        ProcessIds.append(p)
-
-    log.info("%d instances of %s created."%(len(names), pcls.__name__))
-    result = dict()
-    for name, childp, ownp in pipes:
-        childp.close()
-        cid = ownp.recv()
-        cid._initpipe = ownp    # Tuck the pipe here
-        result[name] = cid
-    if (args != None):
-        setupprocs(result.values(), args)
-
-    return result
 
 @api
 def setupprocs(pids, args):
