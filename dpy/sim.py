@@ -135,7 +135,6 @@ class DistProcess(multiprocessing.Process):
 
     def run(self):
         try:
-            import signal
             signal.signal(signal.SIGTERM, self._sighandler)
 
             self._id = self._channel(self._dp_name)
