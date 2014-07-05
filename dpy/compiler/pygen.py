@@ -308,7 +308,7 @@ class PythonGenerator(NodeVisitor):
             target = pyTuple(varelts)
         else:
             target = pyName("_dummyvar")
-        return For(target, iterater, [], [])
+        return target, iterater
 
     def visit_Arguments(self, node):
         """Generates the argument lists for functions and lambdas."""
@@ -496,24 +496,11 @@ class PythonGenerator(NodeVisitor):
             return propagate_attributes(ast.values, ast)
 
     def visit_PatternDomainSpec(self, node):
-        assert node.pattern is not None
-        assert node.domain is not None
-        pat = self.visit(node.pattern)
-        domain = self.visit(node.domain)
-        context = [(v.name, self.visit(v)) for v in node.pattern.boundvars]
-        # FIXME: variable ordering?????:
-        order = pyTuple([Str(v.name) for v in node.pattern.freevars])
-        varelts = [self.visit(v) for v in node.pattern.freevars]
-        iterater = pyCall(pyAttr(pat, "filter"), [domain, order],
-                          keywords=context)
-        if len(varelts) > 0:
-            target = pyTuple(varelts)
-        else:
-            target = pyName("_dummyvar")
-        body = []
-        orelse = []
-        ast = For(target, iterater, body, orelse)
+        target, iterater = self.generate_pattern_domain(node.pattern,
+                                                        node.domain)
+        ast = For(target, iterater, [], [])
         return propagate_attributes([ast.iter], ast)
+
 
     def visit_HistoryDomainSpec(self, node):
         assert node.event is not None
@@ -594,8 +581,11 @@ class PythonGenerator(NodeVisitor):
     def visit_ComprehensionExpr(self, node):
         generators = []
         for tgt, it in zip(node.targets, node.iters):
-            tast = self.visit(tgt)
-            iast = self.visit(it)
+            if isinstance(tgt, dast.PatternExpr):
+                tast, iast = self.generate_pattern_domain(tgt, it)
+            else:
+                tast = self.visit(tgt)
+                iast = self.visit(it)
             comp = comprehension(tast, iast, [])
             generators.append(propagate_attributes((tast, iast), comp))
         generators[-1].ifs = [self.visit(cond) for cond in node.conditions]
@@ -756,17 +746,15 @@ class PythonGenerator(NodeVisitor):
 
     def visit_ForStmt(self, node):
         if isinstance(node.target, dast.PatternExpr):
-            ast = self.generate_pattern_domain(node.target, node.iter)
-            ast.body = self.body(node.body)
-            ast.orelse = self.body(node.elsebody)
-            return concat_bodies((ast.target, ast.iter), [ast])
+            target, iterater = self.generate_pattern_domain(node.target,
+                                                            node.iter)
         else:
             target = self.visit(node.target)
-            it = self.visit(node.iter)
-            body = self.body(node.body)
-            orelse = self.body(node.elsebody)
-            ast = For(target, it, body, orelse)
-            return concat_bodies((target, it), [ast])
+            iterater = self.visit(node.iter)
+        body = self.body(node.body)
+        orelse = self.body(node.elsebody)
+        ast = For(target, iterater, body, orelse)
+        return concat_bodies((target, iterater), [ast])
 
     def visit_TryStmt(self, node):
         body = self.body(node.body)

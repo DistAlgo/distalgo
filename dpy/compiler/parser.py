@@ -1446,7 +1446,12 @@ class Parser(NodeVisitor):
         for g in node.generators:
             expr.unlock()
             self.current_context = Assignment()
-            target = self.visit(g.target)
+            fvf = FreeVarFinder()
+            fvf.visit(g.target)
+            if fvf.found:
+                target = self.parse_pattern_expr(g.target)
+            else:
+                target = self.visit(g.target)
             expr.targets.append(target)
             expr.lock()
             self.current_context = Read(target)
