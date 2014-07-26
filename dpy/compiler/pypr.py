@@ -511,14 +511,13 @@ class SourceGenerator(NodeVisitor):
         self.write('}')
 
     def visit_BinOp(self, node):
+        self.write('(')
         self.visit(node.left)
         self.write(' %s ' % BINOP_SYMBOLS[type(node.op)])
         self.assigning = True
-        self.write('(')
         self.visit(node.right)
         self.write(')')
         self.assigning = False
-        
 
     def visit_BoolOp(self, node):
         self.write('(')
