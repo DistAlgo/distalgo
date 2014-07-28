@@ -26,10 +26,11 @@ def parseArgs():
                         choices=LogLevelNames, default="info")
     parser.add_argument("-F", "--logfilelevel",
                         choices=LogLevelNames, default="debug")
-    parser.add_argument("-i", "--useincmodule",
+    parser.add_argument("-i", "--loadincmodule",
                         action="store_true", default=False)
     parser.add_argument("-m", "--incmodulename")
     parser.add_argument("-r", "--recompile", dest="recompile",
+                        help="Force recompile DistAlgo source file. ",
                         action="store_true", default=False)
     parser.add_argument("-c", "--compiler-flags", default="")
     parser.add_argument("-v", "--version", action="version", version=__version__)

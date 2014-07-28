@@ -23,7 +23,7 @@ from .endpoint import UdpEndPoint, TcpEndPoint
 from .sim import DistProcess
 from .common import api, deprecated, Null, api_registry
 
-DISTPY_SUFFIXES = ["", ".dpy", ".da"]
+DISTPY_SUFFIXES = [".da", ""]
 PYTHON_SUFFIX = ".py"
 
 log = logging.getLogger(__name__)
@@ -90,7 +90,7 @@ def dpyimport(filename, force_recompile=False, compiler_args=[], indir=None):
             argv = oldargv[0:0] + compiler_args + [fullpath]
             res = dpy.compiler.ui.main(argv)
         except Exception as err:
-            raise RuntimeError("Compilation failure", err)
+            raise RuntimeError("Compiler failure!", err)
         finally:
             sys.argv = oldargv
 
@@ -175,15 +175,17 @@ def entrypoint(options):
         die("Can not access source file %s" % target)
 
     sys.path.insert(0, source_dir)
-    module = dpyimport(basename,
-                       force_recompile=options.recompile,
-                       compiler_args=options.compiler_flags.split(),
-                       indir=source_dir)
+    try:
+        module = dpyimport(basename,
+                           force_recompile=options.recompile,
+                           compiler_args=options.compiler_flags.split(),
+                           indir=source_dir)
+    except ImportError as e:
+        die("ImportError: " + str(e))
     if not (hasattr(module, 'main') and
             isinstance(module.main, types.FunctionType)):
         die("'main' function not defined!")
-
-    if options.useincmodule:
+    if options.loadincmodule:
         name = options.incmodulename if options.incmodulename is not None \
                else module.__name__ + "_inc"
         module.IncModule = importlib.import_module(name)
@@ -290,7 +292,6 @@ def createprocs(pcls, power, args=None):
         pipes.append((i, childp, ownp, p))
         # We need to start proc right away to obtain EndPoint and pid for p:
         p.start()
-        ProcessIds.append(p)
         procs.add(p)
 
     log.info("%d instances of %s created.", len(procs), pcls.__name__)
@@ -301,6 +302,7 @@ def createprocs(pcls, power, args=None):
         cid._initpipe = ownp    # Tuck the pipe here
         cid._proc = p           # Set the process object
         result[i] = cid
+        ProcessIds.append(cid)
 
     if (args != None):
         setupprocs(result, args)
@@ -332,6 +334,17 @@ def startprocs(procs):
     for p in ps:
         p._initpipe.send("start")
         del p._initpipe
+
+@api
+def send(data, to):
+    result = True
+    if (hasattr(to, '__iter__')):
+        for t in to:
+            r = t.send(data, RootProcess, 0)
+            if not r: result = False
+    else:
+        result = to.send(data, RootProcess, 0)
+    return result
 
 def collect_statistics():
     global PerformanceCounters

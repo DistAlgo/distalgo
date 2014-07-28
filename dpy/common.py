@@ -9,6 +9,7 @@ formatter = logging.Formatter(
 log._formatter = formatter
 
 api_registry = dict()
+builtin_registry = dict()
 
 def deprecated(func):
     """Declare 'func' as deprecated.
@@ -73,9 +74,74 @@ def api(func):
     api_registry[funame] = _func_impl
     return _func_impl
 
+def builtin(func):
+    """Declare 'func' as DistPy builtin.
+
+    Builtins are instance methods of dpy.DistProcess, and must be called with
+    the process instance as first argument (self).
+
+    """
+    global builtin_registry
+    funame = func.__name__
+    if builtin_registry.get(funame) is not None:
+        return builtin_registry[funame]
+    else:
+        builtin_registry[funame] = func
+        return func
+
 class Null(object):
     def __init__(self, *args, **kwargs): pass
     def __call__(self, *args, **kwargs): return self
     def __getattribute__(self, attr): return self
     def __setattr__(self, attr, value): pass
     def __delattr__(self, attr): pass
+
+class frozendict(dict):
+    """Hashable immutable dict implementation
+
+    Copied from http://code.activestate.com/recipes/414283/
+
+    """
+    def _blocked_attribute(obj):
+        raise AttributeError("A frozendict cannot be modified.")
+    _blocked_attribute = property(_blocked_attribute)
+
+    __delitem__ = __setitem__ = clear = _blocked_attribute
+    pop = popitem = setdefault = update = _blocked_attribute
+
+    def __new__(cls, *args, **kws):
+        new = dict.__new__(cls)
+        dict.__init__(new, *args, **kws)
+        return new
+
+    def __init__(self, *args, **kws):
+        pass
+
+    def __hash__(self):
+        try:
+            return self._cached_hash
+        except AttributeError:
+            h = self._cached_hash = hash(tuple(sorted(self.items())))
+            return h
+
+    def __repr__(self):
+        return "frozendict(%s)" % dict.__repr__(self)
+
+def freeze(obj):
+    if isinstance(obj, list):
+        # list -> tuple
+        return tuple(freeze(elem) for elem in obj)
+    elif isinstance(obj, bytearray):
+        # bytearray -> bytes
+        return bytes(obj)
+    elif isinstance(obj, set):
+        # set -> frozenset
+        return frozenset(freeze(elem) for elem in obj)
+    elif isinstance(obj, dict):
+        # dict -> frozendict
+        return frozendict((freeze(k), freeze(v)) for k, v in obj.items())
+    elif hasattr(obj, '__iter__'):
+        return type(obj)(freeze(e) for e in obj)
+    else:
+        # everything else just assume hashable & immutable, hahaha:
+        return obj

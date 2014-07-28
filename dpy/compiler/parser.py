@@ -8,7 +8,7 @@ from .utils import printe, printw, printd
 
 # DistAlgo keywords
 KW_PROCESS_DEF = "process"
-KW_RECV_QUERY = "rcvd"
+KW_RECV_QUERY = "received"
 KW_SENT_QUERY = "sent"
 KW_RECV_EVENT = "recv"
 KW_SENT_EVENT = "sent"
@@ -115,11 +115,7 @@ TypeConstructors = {KW_TYPE_SET, KW_TYPE_TUPLE, KW_TYPE_DICT, KW_TYPE_LIST}
 
 ApiMethods = dpy.common.api_registry.keys()
 
-BuiltinMethods = {
-    "work", "output", "spawn", "logical_clock",
-    "incr_logical_clock", "start_timers", "stop_timers", "report_times",
-    "report_mem"
-}
+BuiltinMethods = dpy.common.builtin_registry.keys()
 
 PythonBuiltins = dir(builtins)
 
@@ -141,6 +137,7 @@ class NameContext:
 class Assignment(NameContext): pass
 class Update(NameContext): pass
 class Read(NameContext): pass
+class IterRead(Read): pass
 class FunCall(NameContext): pass
 class Delete(NameContext): pass
 class AttributeLookup(NameContext): pass
@@ -159,25 +156,41 @@ class PatternParser(NodeVisitor):
         self._parser = parser
         self.parent_node = parser.current_parent
         self.namescope = parser.current_scope
+        self.use_object_style = parser.use_object_style
+
+    def visit(self, node):
+        if isinstance(node, Name):
+            return self.visit_Name(node)
+        elif isinstance(node, Tuple):
+            return self.visit_Tuple(node)
+        elif isinstance(node, List):
+            return self.visit_List(node)
+
+        self._parser.current_context = Read()
+        expr = self._parser.visit(node)
+        if isinstance(expr, dast.ConstantExpr):
+            return dast.ConstantPattern(self.parent_node, node, value=expr)
+        else:
+            return dast.BoundPattern(self.parent_node, node, value=expr)
 
     def visit_Name(self, node):
         if self._parser.current_process is not None and \
            node.id == KW_SELF:
             return dast.ConstantPattern(
-                dast.SelfExpr(self.parent_node, node),
-                self.parent_node, node)
+                self.parent_node, node,
+                value=dast.SelfExpr(self.parent_node, node))
         elif node.id == KW_TRUE:
             return dast.ConstantPattern(
-                dast.TrueExpr(self.parent_node, node),
-                self.parent_node, node)
+                self.parent_node, node,
+                value=dast.TrueExpr(self.parent_node, node))
         elif node.id == KW_FALSE:
             return dast.ConstantPattern(
-                dast.FalseExpr(self.parent_node, node),
-                self.parent_node, node)
+                self.parent_node, node,
+                value=dast.FalseExpr(self.parent_node, node))
         elif node.id == KW_NULL:
             return dast.ConstantPattern(
-                dast.NoneExpr(self.parent_node, node),
-                self.parent_node, node)
+                self.parent_node, node,
+                value=dast.NoneExpr(self.parent_node, node))
 
         name = node.id
         if name.startswith("_"):
@@ -187,7 +200,7 @@ class PatternParser(NodeVisitor):
                 n = None
             else:
                 n = self.namescope.add_name(name)
-            pat = dast.FreePattern(n, self.parent_node, node)
+            pat = dast.FreePattern(self.parent_node, node, value=n)
             if n is not None:
                 n.add_assignment(pat)
             return pat
@@ -199,62 +212,79 @@ class PatternParser(NodeVisitor):
                     ("new variable '%s' introduced by bound context in "
                      "pattern." % name), node)
                 n = self.namescope.add_name(name)
-            pat = dast.BoundPattern(n, self.parent_node, node)
+            pat = dast.BoundPattern(self.parent_node, node, value=n)
             n.add_read(pat)
             return pat
 
     def visit_Str(self, node):
         return dast.ConstantPattern(
-            dast.ConstantExpr(self.parent_node, node, node.s),
-            self.parent_node, node)
+            self.parent_node, node,
+            value=dast.ConstantExpr(self.parent_node, node, node.s))
 
     def visit_Bytes(self, node):
         return dast.ConstantPattern(
-            dast.ConstantExpr(self.parent_node, node, node.s),
-            self.parent_node, node)
+            self.parent_node, node,
+            value=dast.ConstantExpr(self.parent_node, node, node.s))
 
     def visit_Num(self, node):
         return dast.ConstantPattern(
-            dast.ConstantExpr(self.parent_node, node, node.n),
-            self.parent_node, node)
+            self.parent_node, node,
+            value=dast.ConstantExpr(self.parent_node, node, node.n))
 
     def visit_Tuple(self, node):
         return dast.TuplePattern(
-            [self.visit(e) for e in node.elts],
-            self.parent_node, node)
+            self.parent_node, node,
+            value=[self.visit(e) for e in node.elts])
 
     def visit_List(self, node):
         return dast.ListPattern(
-            [self.visit(e) for e in node.elts],
-            self.parent_node, node)
+            self.parent_node, node,
+            value=[self.visit(e) for e in node.elts])
 
     def visit_Call(self, node):
+        if not self.use_object_style:
+            return self.generic_visit(node)
+
         if not isinstance(node.func, Name): return None
         elts = [dast.ConstantPattern(
-                dast.ConstantExpr(self.parent_node,
-                                  node.func, node.func.id),
-                self.parent_node, node)]
+            self.parent_node, node,
+            value=dast.ConstantExpr(self.parent_node,
+                                    node.func,
+                                    value=node.func.id))]
         for e in node.args:
             elts.append(self.visit(e))
-        return dast.TuplePattern(elts, self.parent_node, node)
+        return dast.TuplePattern(self.parent_node, node,
+                                 value=elts)
 
-class FreeVarFinder(NodeVisitor):
+class PatternFinder(NodeVisitor):
     def __init__(self):
         self.found = False
 
+    # It's a pattern if it has free variables:
     def visit_Name(self, node):
         if node.id.startswith("_"):
             self.found = True
+
+    # It's also a pattern if it contains constants:
+    def visit_Constant(self, node):
+        self.found = True
+
+    visit_Num = visit_Constant
+    visit_Str = visit_Constant
+    visit_Bytes = visit_Constant
+    visit_NameConstant = visit_Constant
+
 
 class Parser(NodeVisitor):
     """The main parser class.
     """
 
-    def __init__(self, filename="", execution_context=None):
+    def __init__(self, filename="", options=None, execution_context=None):
         # used in error messages:
         self.filename = filename
         # used to construct statement tree, also used for symbol table:
         self.node_stack = []
+        self.state_stack = []
         # new statements are appended to this list:
         self.current_block = None
         self.current_context = None
@@ -262,7 +292,29 @@ class Parser(NodeVisitor):
         self.errcnt = 0
         self.warncnt = 0
         self.program = execution_context if execution_context is not None \
-                       else dast.Program(None) # Just in case
+                       else dast.Program() # Just in case
+        if options is not None:
+            self.full_event_pattern = (options.full_event_pattern
+                                       if hasattr(options,
+                                                  'full_event_pattern')
+                                       else False)
+            self.use_object_style = (options.enable_object_pattern
+                                     if hasattr(options,
+                                                'enable_object_pattern')
+                                     else False)
+
+
+    def push_state(self, node):
+        self.node_stack.append(node)
+        self.state_stack.append((self.current_context,
+                                 self.current_label,
+                                 self.current_block))
+
+    def pop_state(self):
+        self.node_stack.pop()
+        (self.current_context,
+         self.current_label,
+         self.current_block) = self.state_stack.pop()
 
     @property
     def current_parent(self):
@@ -293,24 +345,24 @@ class Parser(NodeVisitor):
         return None
 
     def visit_Module(self, node):
-        self.program = dast.Program(node)
+        self.program = dast.Program(None, node)
         # Populate global scope with Python builtins:
         for name in PythonBuiltins:
             self.program.add_name(name)
-        self.node_stack.append(self.program)
+        self.push_state(self.program)
         self.current_block = self.program.body
         self.current_context = Read()
         self.body(node.body)
-        self.node_stack.pop()
+        self.pop_state()
 
     def visit_Interactive(self, node):
-        self.program = dast.InteractiveProgram(node)
+        self.program = dast.InteractiveProgram(None, node)
         # Populate global scope with Python builtins:
         for name in PythonBuiltins:
             self.program.add_name(name)
-        self.node_stack.append(self.program)
+        self.push_state(self.program)
         contxtproc = dast.Process()
-        self.node_stack.append(contxtproc)
+        self.push_state(contxtproc)
 
 
     # Helpers:
@@ -332,8 +384,13 @@ class Parser(NodeVisitor):
 
     def parse_pattern_expr(self, node):
         expr = self.create_expr(dast.PatternExpr, node)
-        expr.pattern = PatternParser(self).visit(node)
-        self.node_stack.pop()
+        pattern = PatternParser(self).visit(node)
+        if pattern is None:
+            self.error("invalid pattern", node)
+            self.pop_state()
+            return None
+        expr.pattern = pattern
+        self.pop_state()
         return expr
 
     def parse_decorators(self, node):
@@ -430,19 +487,21 @@ class Parser(NodeVisitor):
                 continue
             pat = self.parse_pattern_expr(patexpr)
             if key.arg == KW_MSG_PATTERN:
-                events.append(dast.Event(self.current_process, eventtype,
-                                         pattern=pat, ast=node))
+                events.append(dast.Event(self.current_process, ast=node,
+                                         event_type=eventtype, pattern=pat))
                 continue
             if len(events) == 0:
                 self.error("invalid event spec: missing 'msg' argument.", node)
                 # Add a phony event so we can recover as much as possible:
-                events.append(dast.Event(self.current_process, eventtype))
+                events.append(dast.Event(self.current_process))
             if key.arg == KW_EVENT_SOURCE:
                 events[-1].sources.append(pat)
             elif key.arg == KW_EVENT_DESTINATION:
                 events[-1].destinations.append(pat)
             elif key.arg == KW_EVENT_TIMESTAMP:
                 events[-1].timestamps.append(pat)
+            else:
+                self.warn("unrecognized event parameter '%s'" % key.arg, node)
         return events, labels, notlabels
 
     def body(self, statements):
@@ -515,8 +574,6 @@ class Parser(NodeVisitor):
     # Top-level blocks:
 
     def visit_ClassDef(self, node):
-        prevblock = self.current_block
-
         isproc, bases = self.parse_bases(node)
         if isproc:
             if type(self.current_parent) is not dast.Program:
@@ -529,10 +586,11 @@ class Parser(NodeVisitor):
                 return
 
             n = self.current_scope.add_name(node.name)
-            proc = dast.Process(node.name, self.current_parent, bases, node)
+            proc = dast.Process(self.current_parent, node,
+                                name=node.name, bases=bases)
             n.add_assignment(proc)
             proc.decorators, _, _ = self.parse_decorators(node)
-            self.node_stack.append(proc)
+            self.push_state(proc)
             self.program.processes.append(proc)
 
             initfun = node.body[0]
@@ -541,11 +599,11 @@ class Parser(NodeVisitor):
             self.body(initfun.body)
             self.current_block = proc.body
             self.proc_body(node.body[1:])
-            self.node_stack.pop()
+            self.pop_state()
 
         else:
-            clsobj = dast.ClassStmt(node.name, self.current_parent, bases,
-                                    node)
+            clsobj = dast.ClassStmt(self.current_parent, node,
+                                    name=node.name, bases=bases)
             if self.current_block is None or self.current_parent is None:
                 self.error("Statement not allowed in this context.", ast)
             else:
@@ -554,16 +612,12 @@ class Parser(NodeVisitor):
                 n.add_assignment(clsobj)
             self.current_context = Read()
             clsobj.decorators, _, _ = self.parse_decorators(node)
-            self.node_stack.append(clsobj)
+            self.push_state(clsobj)
             self.current_block = clsobj.body
             self.body(node.body)
-            self.node_stack.pop()
-
-        self.current_block = prevblock
+            self.pop_state()
 
     def visit_FunctionDef(self, node):
-        prevblock = self.current_block
-
         if (self.current_process is None or
                 node.name not in {KW_SENT_EVENT, KW_RECV_EVENT}):
             # This is a normal method
@@ -585,15 +639,15 @@ class Parser(NodeVisitor):
             self.current_block = s.body
             self.signature(node.args)
             self.body(node.body)
-            self.node_stack.pop()
+            self.pop_state()
 
         else:
             # This is an event handler:
-            h = dast.EventHandler(None, self.current_parent, node)
+            h = dast.EventHandler(self.current_parent, node)
             # Parse decorators before adding h to node_stack, since decorators
             # should belong to the outer scope:
             h.decorators, h.labels, h.notlabels = self.parse_decorators(node)
-            self.node_stack.append(h)
+            self.push_state(h)
             events, labels, notlabels = self.parse_event_handler(node)
             events = self.current_process.add_events(events)
             h.events = events
@@ -611,9 +665,7 @@ class Parser(NodeVisitor):
                     h.args.add_arg(v.name)
             self.current_block = h.body
             self.body(node.body)
-            self.node_stack.pop()
-
-        self.current_block = prevblock
+            self.pop_state()
 
     def check_await(self, node):
         if (isinstance(node, Call) and
@@ -650,7 +702,7 @@ class Parser(NodeVisitor):
         else:
             self.current_block.append(stmtobj)
         if not nopush:
-            self.node_stack.append(stmtobj)
+            self.push_state(stmtobj)
         self.current_context = Read()
         return stmtobj
 
@@ -662,7 +714,7 @@ class Parser(NodeVisitor):
         else:
             expr = exprcls(self.current_parent, ast=ast, **params)
         if not nopush:
-            self.node_stack.append(expr)
+            self.push_state(expr)
         return expr
 
 
@@ -670,22 +722,21 @@ class Parser(NodeVisitor):
         stmtobj = self.create_stmt(dast.AssignmentStmt, node)
         self.current_context = Read()
         stmtobj.value = self.visit(node.value)
+        self.current_context = Assignment(stmtobj.value)
         for target in node.targets:
-            self.current_context = Assignment()
             stmtobj.targets.append(self.visit(target))
-            self.current_context = Read()
-        self.node_stack.pop()
+        self.pop_state()
 
     def visit_AugAssign(self, node):
         stmtobj = self.create_stmt(dast.OpAssignmentStmt, node,
                                    params={'op':OperatorMap[type(node.op)]})
-        self.current_context = Assignment()
-        tgtexpr = self.visit(node.target)
         self.current_context = Read()
         valexpr = self.visit(node.value)
+        self.current_context = Assignment(valexpr)
+        tgtexpr = self.visit(node.target)
         stmtobj.target = tgtexpr
         stmtobj.value = valexpr
-        self.node_stack.pop()
+        self.pop_state()
 
     def visit_ImportFrom(self, node):
         if type(self.current_parent) is not dast.Program:
@@ -700,7 +751,7 @@ class Parser(NodeVisitor):
                 name = alias.name
             nobj = self.current_scope.add_name(name)
             nobj.add_assignment(stmtobj)
-        self.node_stack.pop()
+        self.pop_state()
 
     visit_Import = visit_ImportFrom
 
@@ -730,6 +781,13 @@ class Parser(NodeVisitor):
         self.error(errmsg, node)
         raise MalformedStatementError
 
+    def kw_check(self, node, names):
+        if not isinstance(node, Name):
+            return False
+        if node.id not in names:
+            return False
+        return True
+
     def parse_message(self, node):
         expr = dast.TupleExpr(self.current_parent, node)
         if type(node) is Call:
@@ -756,7 +814,8 @@ class Parser(NodeVisitor):
                                keywords={},
                                optional_keywords={KW_AWAIT_TIMEOUT}):
                 stmtobj = self.create_stmt(dast.AwaitStmt, node)
-                branch = dast.Branch(self.visit(e.args[0]), node)
+                branch = dast.Branch(stmtobj, node,
+                                     condition=self.visit(e.args[0]))
                 stmtobj.branches.append(branch)
                 if len(e.args) == 2:
                     stmtobj.timeout = self.visit(e.args[1])
@@ -801,18 +860,17 @@ class Parser(NodeVisitor):
             pass
         finally:
             if stmtobj is not None:
-                self.node_stack.pop()
+                self.pop_state()
 
     # ~~~
 
     def visit_If(self, node):
-        prevblock = self.current_block
         stmtobj = None
         try:
             if self.expr_check(KW_AWAIT, 1, 1, node.test):
                 stmtobj = self.create_stmt(dast.AwaitStmt, node)
-                branch = dast.Branch(self.visit(node.test.args[0]),
-                                     stmtobj, node.test)
+                branch = dast.Branch(stmtobj, node.test,
+                                     condition=self.visit(node.test.args[0]))
                 self.current_block = branch.body
                 self.body(node.body)
                 stmtobj.branches.append(branch)
@@ -828,7 +886,8 @@ class Parser(NodeVisitor):
                                 self.error("timeout branch must be the last"
                                            " branch of await statement", node)
                         else:
-                            branch = dast.Branch(self.visit(node.test), node)
+                            branch = dast.Branch(stmtobj, node,
+                                                 condition=self.visit(node.test))
                             self.current_block = branch.body
                             self.body(node.body)
                             stmtobj.branches.append(branch)
@@ -841,7 +900,6 @@ class Parser(NodeVisitor):
 
             else:
                 stmtobj = self.create_stmt(dast.IfStmt, node)
-                self.current_context = Read()
                 stmtobj.condition = self.visit(node.test)
                 self.current_block = stmtobj.body
                 self.body(node.body)
@@ -852,31 +910,34 @@ class Parser(NodeVisitor):
             pass
         finally:
             if stmtobj is not None:
-                self.node_stack.pop()
-        self.current_block = prevblock
+                self.pop_state()
 
     def visit_For(self, node):
-        prevblock = self.current_block
         s = self.create_stmt(dast.ForStmt, node)
         self.current_context = Assignment()
-        fvf = FreeVarFinder()
-        fvf.visit(node.target)
-        if fvf.found:
+
+        # DistAlgo: overload "for" to allow pattern matching
+        pf = PatternFinder()
+        pf.visit(node.target)
+        # Backward compatibility: only assume pattern if containing free var
+        if pf.found:
             s.target = self.parse_pattern_expr(node.target)
         else:
             s.target = self.visit(node.target)
-        self.current_context = Read(s.target)
+
+        self.current_context = IterRead(s.target)
         s.iter = self.visit(node.iter)
+        # If iterating over 'received' or 'sent', back-patch event pattern:
+        if isinstance(s.iter, dast.HistoryExpr):
+            s.target = self.pattern_from_event(s.iter.event)
         self.current_context = Read()
         self.current_block = s.body
         self.body(node.body)
         self.current_block = s.elsebody
         self.body(node.orelse)
-        self.node_stack.pop()
-        self.current_block = prevblock
+        self.pop_state()
 
     def visit_While(self, node):
-        prevblock = self.current_block
         if self.expr_check(KW_AWAIT, 1, 2, node.test,
                            optional_keywords={KW_AWAIT_TIMEOUT}):
             s = self.create_stmt(dast.LoopingAwaitStmt, node)
@@ -892,25 +953,22 @@ class Parser(NodeVisitor):
         if hasattr(s, "elsebody"):
             self.current_block = s.elsebody
             self.body(node.orelse)
-        self.node_stack.pop()
-        self.current_block = prevblock
+        self.pop_state()
 
     def visit_With(self, node):
-        prevblock = self.current_block
         s = self.create_stmt(dast.WithStmt, node)
         for item in node.items:
             self.current_context = Read()
             ctxexpr = self.visit(item.context_expr)
             if item.optional_vars is not None:
-                self.current_context = Assignment()
+                self.current_context = Assignment(ctxexpr)
                 s.items.append((ctxexpr, self.visit(item.optional_vars)))
             else:
                 s.items.append((ctxexpr, None))
         self.current_context = Read()
         self.current_block = s.body
         self.body(node.body)
-        self.node_stack.pop()
-        self.current_block = prevblock
+        self.pop_state()
 
     def visit_Pass(self, node):
         self.create_stmt(dast.PassStmt, node, nopush=True)
@@ -934,10 +992,9 @@ class Parser(NodeVisitor):
         self.current_context = Delete()
         for target in node.targets:
             s.targets.append(self.visit(target))
-        self.node_stack.pop()
+        self.pop_state()
 
     def visit_Try(self, node):
-        prevblock = self.current_block
         s = self.create_stmt(dast.TryStmt, node)
         self.current_block = s.body
         self.body(node.body)
@@ -959,16 +1016,14 @@ class Parser(NodeVisitor):
         self.body(node.orelse)
         self.current_block = s.finalbody
         self.body(node.finalbody)
-        self.node_stack.pop()
-        self.current_block = prevblock
+        self.pop_state()
 
     def visit_Assert(self, node):
         s = self.create_stmt(dast.AssertStmt, node)
-        self.current_context = Read()
         s.expr = self.visit(node.test)
         if node.msg is not None:
             s.msg = self.visit(node.msg)
-        self.node_stack.pop()
+        self.pop_state()
 
     def visit_Global(self, node):
         if self.current_process is not None:
@@ -987,7 +1042,7 @@ class Parser(NodeVisitor):
                     nobj = self.program.add_name(name)
                 self.debug("Linking global name '%s'" % name)
                 self.current_scope.link_name(nobj)
-            self.node_stack.pop()
+            self.pop_state()
 
     def visit_Nonlocal(self, node):
         self.create_stmt(dast.NonlocalStmt, node, {"names": list(node.names)})
@@ -1006,14 +1061,13 @@ class Parser(NodeVisitor):
                 else:
                     self.debug("Linking nonlocal name '%s'" % name)
                     self.current_scope.link_name(nobj)
-        self.node_stack.pop()
+        self.pop_state()
 
     def visit_Return(self, node):
         s = self.create_stmt(dast.ReturnStmt, node)
         if node.value is not None:
-            self.current_context = Read()
             s.value = self.visit(node.value)
-        self.node_stack.pop()
+        self.pop_state()
 
     def visit_Raise(self, node):
         s = self.create_stmt(dast.RaiseStmt, node)
@@ -1021,7 +1075,7 @@ class Parser(NodeVisitor):
             s.expr = self.visit(node.exc)
         if node.cause is not None:
             s.cause = self.visit(node.cause)
-        self.node_stack.pop()
+        self.pop_state()
 
 
     # Expressions:
@@ -1041,7 +1095,7 @@ class Parser(NodeVisitor):
             self.current_context = Update()
         expr.value = self.visit(node.value)
         expr.attr = node.attr
-        self.node_stack.pop()
+        self.pop_state()
         return expr
 
     def ensure_one_arg(self, name, node):
@@ -1067,10 +1121,12 @@ class Parser(NodeVisitor):
             self.warn("extraneous arguments in event expression.", node)
         pattern = self.parse_pattern_expr(node.args[0])
         if node.func.id == KW_RECV_QUERY:
-            event = dast.Event(self.current_process, dast.ReceivedEvent,
+            event = dast.Event(self.current_process,
+                               event_type=dast.ReceivedEvent,
                                pattern=pattern)
         elif node.func.id == KW_SENT_QUERY:
-            event = dast.Event(self.current_process, dast.SentEvent,
+            event = dast.Event(self.current_process,
+                               event_type=dast.SentEvent,
                                pattern=pattern)
         else:
             self.error("unknown event specifier", node)
@@ -1086,6 +1142,94 @@ class Parser(NodeVisitor):
             else:
                 self.warn("unknown keyword in query.", node)
         return self.current_process.add_event(event)
+
+    def event_from_pattern(self, node, event_type):
+        assert isinstance(node, dast.PatternExpr)
+        pattern = node.pattern
+        assert isinstance(pattern, dast.TuplePattern)
+        event = dast.Event(self.current_process,
+                           event_type=event_type)
+        if self.full_event_pattern:
+            if len(pattern.value) != 3:
+                self.error("malformed event pattern.", node)
+            else:
+                event.pattern = dast.PatternExpr(node.parent,
+                                                 pattern=pattern.value[2])
+                envpat = pattern.value[1]
+                if isinstance(envpat, dast.TuplePattern):
+                    if len(envpat.value) != 3:
+                        self.warn("possible malformed envelope pattern.", node)
+                    else:
+                        event.timestamps.append(
+                            dast.PatternExpr(node.parent,
+                                             pattern=envpat.value[0]))
+                        event.destinations.append(
+                            dast.PatternExpr(node.parent,
+                                             pattern=envpat.value[1]))
+                        event.sources.append(
+                            dast.PatternExpr(node.parent,
+                                             pattern=envpat.value[2]))
+        else:
+            if len(pattern.value) != 2:
+                self.error("malformed event pattern.", node)
+            else:
+                event.pattern = dast.PatternExpr(node.parent,
+                                                 pattern=pattern.value[0])
+                event.sources.append(
+                    dast.PatternExpr(node.parent, pattern=pattern.value[1]))
+        return self.current_process.add_event(event)
+
+    def pattern_from_event(self, node):
+        if not isinstance(node, dast.Event):
+            return None
+        expr = self.create_expr(dast.PatternExpr, node.ast)
+        pattern = dast.TuplePattern(node.parent)
+
+        # Pattern structure:
+        # (TYPE, ENVELOPE, MESSAGE)
+        # ENVELOPE: (TIMESTAMP, DESTINATION, SOURCE)
+        if isinstance(node.type, dast.EventType):
+            pattern.value.append(
+                dast.ConstantPattern(
+                    pattern,
+                    value=self.current_scope.add_name(
+                        node.type.__name__)))
+        else:
+            pattern.value.append(dast.FreePattern(pattern))
+
+        env = dast.TuplePattern(pattern)
+        if (len(node.timestamps) == 0):
+            env.value.append(dast.FreePattern(env))
+        elif len(node.timestamps) == 1:
+            env.value.append(node.timestamps[0].pattern.clone())
+            env.value[-1]._parent = env
+        else:
+            self.error("multiple timestamp spec in event pattern.", node)
+        if (len(node.destinations) == 0):
+            env.value.append(dast.FreePattern(env))
+        elif len(node.destinations) == 1:
+            env.value.append(node.destinations[0].pattern.clone())
+            env.value[-1]._parent = env
+        else:
+            self.error("multiple destination spec in event pattern.", node)
+        if (len(node.sources) == 0):
+            env.value.append(dast.FreePattern(env))
+        elif len(node.sources) == 1:
+            env.value.append(node.sources[0].pattern.clone())
+            env.value[-1]._parent = env
+        else:
+            self.error("multiple source spec in event pattern.", node)
+
+        pattern.value.append(env)
+        if node.pattern is None:
+            msgpat = dast.FreePattern(pattern)
+        else:
+            msgpat = node.pattern.pattern.clone()
+            msgpat._parent = pattern
+        pattern.value.append(msgpat)
+        expr.pattern = pattern
+        self.pop_state()
+        return expr
 
     def call_check(self, names, minargs, maxargs, node):
         if (isinstance(node.func, Name) and node.func.id in names):
@@ -1104,23 +1248,29 @@ class Parser(NodeVisitor):
             # As a short hand, "sent" and "rcvd" can be used as a domain spec:
             # some(rcvd(EVENT_PATTERN) | PRED) is semantically equivalent to
             # some(EVENT_PATTERN in rcvd | PRED).
-            expr = self.create_expr(dast.HistoryDomainSpec, node)
+            expr = self.create_expr(dast.DomainSpec, node)
             event = self.parse_event_expr(node)
             if event is not None:
                 event.record_history = True
-                expr.event = event
-            self.node_stack.pop()
+                expr.pattern = self.pattern_from_event(event)
+                if node.func.id == KW_RECV_QUERY:
+                    expr.domain = self.create_expr(dast.ReceivedExpr, node)
+                else:
+                    expr.domain = self.create_expr(dast.SentExpr, node)
+                expr.domain.event = event
+                self.pop_state()
+            self.pop_state()
             return expr
         elif (isinstance(node, Compare) and len(node.ops) == 1 and
               type(node.ops[0]) is In):
-            expr = self.create_expr(dast.PatternDomainSpec, node)
+            expr = self.create_expr(dast.DomainSpec, node)
             expr.pattern = self.parse_pattern_expr(node.left)
+            self.current_context = Read(expr.pattern)
             expr.domain = self.visit(node.comparators[0])
-            self.node_stack.pop()
+            self.pop_state()
             return expr
         else:
-            self.error("Malformed domain specifier.", node)
-            raise MalformedStatementError
+            raise MalformedStatementError("Malformed domain specifier.")
 
     def parse_quantified_expr(self, node):
         if node.func.id == KW_EXISTENTIAL_QUANT:
@@ -1128,9 +1278,11 @@ class Parser(NodeVisitor):
         elif node.func.id == KW_UNIVERSAL_QUANT:
             context = dast.UniversalOp
         else:
-            raise MalformedStatementError
+            raise MalformedStatementError("Unknown quantifier.")
+
         expr = self.create_expr(dast.QuantifiedExpr, node, {'op': context})
         pred = None
+        # Find predicate: first try the "st" keyword:
         for kw in node.keywords:
             if kw.arg == KW_SUCH_THAT:
                 if pred is None:
@@ -1141,6 +1293,7 @@ class Parser(NodeVisitor):
             else:
                 self.error("Unknown keyword '%s' in quantified expression." %
                            kw.arg, node)
+        # ..if no keyword found, then use the last positional argument:
         if pred is None:
             if len(node.args) == 0:
                 self.error("Empty quantified expression.", node)
@@ -1150,14 +1303,14 @@ class Parser(NodeVisitor):
         else:
             domains = node.args
         if len(domains) == 0:
-            self.warn("No domain specifiers in quantified expression.",
-                      node)
+            self.warn("No domain specifiers in quantified expression.", node)
+
         try:
             expr.domains = [self.parse_domain_spec(node) for node in domains]
             self.current_context = Read()
             expr.predicate = self.visit(pred)
         finally:
-            self.node_stack.pop()
+            self.pop_state()
         return expr
 
     def visit_Call(self, node):
@@ -1165,22 +1318,40 @@ class Parser(NodeVisitor):
             try:
                 return self.parse_quantified_expr(node)
             except MalformedStatementError:
+                self.error("Malformed quantification expression.", node)
                 return dast.SimpleExpr(self.current_parent, node)
 
         if (self.current_process is not None and
                 self.call_check({KW_RECV_QUERY, KW_SENT_QUERY}, 1, 1, node)):
-            if node.func.id == KW_RECV_QUERY:
-                expr = self.create_expr(dast.ReceivedExpr, node)
-            else:
-                expr = self.create_expr(dast.SentExpr, node)
-            if self.current_context is not None:
+            if isinstance(self.current_context, IterRead):
+                if node.func.id == KW_RECV_QUERY:
+                    expr = self.create_expr(dast.ReceivedExpr, node)
+                else:
+                    expr = self.create_expr(dast.SentExpr, node)
                 expr.context = self.current_context.type
-            event = self.parse_event_expr(node)
-            expr.event = event
-            if event is not None:
-                event.record_history = True
-            self.node_stack.pop()
-            return expr
+                expr.event = self.parse_event_expr(node)
+                self.pop_state()
+                if expr.event is not None:
+                    expr.event.record_history = True
+                return expr
+            else:
+                outer = self.create_expr(dast.ComparisonExpr, node)
+                outer.comparator = dast.InOp
+                if node.func.id == KW_RECV_QUERY:
+                    expr = self.create_expr(dast.ReceivedExpr, node)
+                else:
+                    expr = self.create_expr(dast.SentExpr, node)
+                if self.current_context is not None:
+                    expr.context = self.current_context.type
+                event = self.parse_event_expr(node)
+                self.pop_state()
+                expr.event = event
+                outer.right = expr
+                if event is not None:
+                    outer.left = self.pattern_from_event(event)
+                    event.record_history = True
+                self.pop_state()
+                return outer
 
         if self.call_check(AggregateKeywords, 1, 1, node):
             if not self.ensure_one_arg(node.func.id, node):
@@ -1194,7 +1365,7 @@ class Parser(NodeVisitor):
             else:
                 expr = self.create_expr(dast.MinExpr, node)
             expr.value = self.visit(node.args[0])
-            self.node_stack.pop()
+            self.pop_state()
             return expr
 
         if self.call_check(ApiMethods, None, None, node):
@@ -1222,7 +1393,7 @@ class Parser(NodeVisitor):
                         if node.starargs is not None else None
         expr.kwargs = self.visit(node.kwargs) \
                       if node.kwargs is not None else None
-        self.node_stack.pop()
+        self.pop_state()
         return expr
 
     def visit_Name(self, node):
@@ -1239,24 +1410,46 @@ class Parser(NodeVisitor):
             elif node.id == KW_NULL:
                 return self.create_expr(dast.NoneExpr, node, nopush=True)
 
+        if (self.current_process is not None and
+                (node.id in {KW_RECV_QUERY, KW_SENT_QUERY})):
+            if node.id == KW_RECV_QUERY:
+                expr = self.create_expr(dast.ReceivedExpr, node)
+                event_type = dast.ReceivedEvent
+            else:
+                expr = self.create_expr(dast.SentExpr, node)
+                event_type = dast.SentEvent
+
+            if (isinstance(self.current_context, Read) and
+                    isinstance(self.current_context.type, dast.PatternExpr)):
+                expr.context = self.current_context.type
+                event = self.event_from_pattern(expr.context, event_type)
+                expr.event = event
+                event.record_history = True
+            else:
+                self.error("Invalid context for '%s'" % node.id, node)
+            self.pop_state()
+            return expr
+
         # NamedVar is not by itself an Expression, we'll have to wrap it in a
         # SimpleExpr:
         expr = self.create_expr(dast.SimpleExpr, node)
-        if type(self.current_context) is Assignment:
+        if isinstance(self.current_context, Assignment):
             n = self.current_scope.find_name(node.id, local=False)
             if n is None:
                 self.debug("Adding name %s to %s" % (node.id,
                                                      self.current_scope), node)
                 n = self.current_scope.add_name(node.id)
             n.add_assignment(expr)
-        elif type(self.current_context) in {Update, Delete}:
+        elif isinstance(self.current_context, Update) or\
+             isinstance(self.current_context, Delete):
             n = self.current_scope.find_name(node.id, local=False)
             if n is None:
                 self.debug("Adding name %s to %s" % (node.id,
                                                      self.current_scope), node)
                 n = self.current_scope.add_name(node.id)
             n.add_update(expr)
-        elif type(self.current_context) in {Read, FunCall}:
+        elif isinstance(self.current_context, Read) or \
+             isinstance(self.current_context, FunCall):
             n = self.current_scope.find_name(node.id, local=False)
             if n is None:
                 self.warn("Possible use of uninitialized variable '%s'" %
@@ -1269,25 +1462,25 @@ class Parser(NodeVisitor):
                 n = self.current_scope.add_name(node.id)
             n.add_read(expr)
         expr.value = n
-        self.node_stack.pop()
+        self.pop_state()
         return expr
 
     def visit_Str(self, node):
         expr = self.create_expr(dast.ConstantExpr, node)
         expr.value = node.s
-        self.node_stack.pop()
+        self.pop_state()
         return expr
 
     def visit_Bytes(self, node):
         expr = self.create_expr(dast.ConstantExpr, node)
         expr.value = node.s
-        self.node_stack.pop()
+        self.pop_state()
         return expr
 
     def visit_Num(self, node):
         expr = self.create_expr(dast.ConstantExpr, node)
         expr.value = node.n
-        self.node_stack.pop()
+        self.pop_state()
         return expr
 
     # Since Python 3.4:
@@ -1305,21 +1498,21 @@ class Parser(NodeVisitor):
         expr = self.create_expr(dast.TupleExpr, node)
         for item in node.elts:
             expr.subexprs.append(self.visit(item))
-        self.node_stack.pop()
+        self.pop_state()
         return expr
 
     def visit_List(self, node):
         expr = self.create_expr(dast.ListExpr, node)
         for item in node.elts:
             expr.subexprs.append(self.visit(item))
-        self.node_stack.pop()
+        self.pop_state()
         return expr
 
     def visit_Set(self, node):
         expr = self.create_expr(dast.SetExpr, node)
         for item in node.elts:
             expr.subexprs.append(self.visit(item))
-        self.node_stack.pop()
+        self.pop_state()
         return expr
 
     def visit_Dict(self, node):
@@ -1328,15 +1521,15 @@ class Parser(NodeVisitor):
             expr.keys.append(self.visit(key))
         for value in node.values:
             expr.values.append(self.visit(value))
-        self.node_stack.pop()
+        self.pop_state()
         return expr
 
     def visit_BinOp(self, node):
-        e = self.create_expr(dast.ArithmeticExpr, node,
+        e = self.create_expr(dast.BinaryExpr, node,
                              {"op": OperatorMap[type(node.op)]})
         e.left = self.visit(node.left)
         e.right = self.visit(node.right)
-        self.node_stack.pop()
+        self.pop_state()
         return e
 
     def visit_BoolOp(self, node):
@@ -1344,7 +1537,7 @@ class Parser(NodeVisitor):
                              {"op": OperatorMap[type(node.op)]})
         for v in node.values:
             e.subexprs.append(self.visit(v))
-        self.node_stack.pop()
+        self.pop_state()
         return e
 
     def visit_Compare(self, node):
@@ -1352,24 +1545,41 @@ class Parser(NodeVisitor):
             self.error("Explicit parenthesis required in comparison expression",
                        node)
             return None
+        outer = None
         # We make all negation explicit:
         if type(node.ops[0]) in NegatedOperators:
             outer = self.create_expr(dast.LogicalExpr, node)
             outer.operator = dast.NotOp
-            expr = self.create_expr(dast.ComparisonExpr, node)
-            outer.subexprs.append(expr)
-            expr.comparator = NegatedOperators[type(node.ops[0])]
+
+        expr = self.create_expr(dast.ComparisonExpr, node)
+
+        # DistAlgo: overload "in" to allow pattern matching
+        if isinstance(node.ops[0], In) or \
+               isinstance(node.ops[0], NotIn):
+            # Backward compatibility: only assume pattern if containing free
+            # var
+            pf = PatternFinder()
+            pf.visit(node.left)
+            if pf.found:
+                expr.left = self.parse_pattern_expr(node.left)
+        if expr.left is None:
             expr.left = self.visit(node.left)
-            expr.right = self.visit(node.comparators[0])
-            self.node_stack.pop()
-            self.node_stack.pop()
+        self.current_context = Read(expr.left)
+        expr.right = self.visit(node.comparators[0])
+        if (isinstance(expr.right, dast.HistoryExpr) and
+                expr.right.event is not None):
+            # Must replace short pattern format with full pattern here:
+            expr.left = self.pattern_from_event(expr.right.event)
+
+        if outer is not None:
+            expr.comparator = NegatedOperators[type(node.ops[0])]
+            outer.subexprs.append(expr)
+            self.pop_state()
+            self.pop_state()
             return outer
         else:
-            expr = self.create_expr(dast.ComparisonExpr, node)
             expr.comparator = OperatorMap[type(node.ops[0])]
-            expr.left = self.visit(node.left)
-            expr.right = self.visit(node.comparators[0])
-            self.node_stack.pop()
+            self.pop_state()
             return expr
 
     def visit_UnaryOp(self, node):
@@ -1377,20 +1587,18 @@ class Parser(NodeVisitor):
             expr = self.create_expr(dast.LogicalExpr, node, {"op": dast.NotOp})
             expr.subexprs.append(self.visit(node.operand))
         else:
-            expr = self.create_expr(dast.ArithmeticExpr, node,
+            expr = self.create_expr(dast.UnaryExpr, node,
                                     {"op": OperatorMap[type(node.op)]})
             expr.right = self.visit(node.operand)
-        self.node_stack.pop()
+        self.pop_state()
         return expr
 
     def visit_Subscript(self, node):
         expr = self.create_expr(dast.SubscriptExpr, node)
         expr.value = self.visit(node.value)
-        oldctx = self.current_context
         self.current_context = Read()
         expr.index = self.visit(node.slice)
-        self.current_context = oldctx
-        self.node_stack.pop()
+        self.pop_state()
         return expr
 
     def visit_Index(self, node):
@@ -1404,7 +1612,7 @@ class Parser(NodeVisitor):
             expr.upper = self.visit(node.upper)
         if node.step is not None:
             expr.step = self.visit(node.step)
-        self.node_stack.pop()
+        self.pop_state()
         return expr
 
     def visit_ExtSlice(self, node):
@@ -1427,7 +1635,7 @@ class Parser(NodeVisitor):
         expr = self.create_expr(dast.LambdaExpr, node)
         self.signature(node.args)
         expr.body = self.visit(node.body)
-        self.node_stack.pop()
+        self.pop_state()
         return expr
 
     def visit_Ellipsis(self, node):
@@ -1446,16 +1654,22 @@ class Parser(NodeVisitor):
         for g in node.generators:
             expr.unlock()
             self.current_context = Assignment()
-            fvf = FreeVarFinder()
-            fvf.visit(g.target)
-            if fvf.found:
+            # DistAlgo: overload 'in' to allow pattern matching:
+            pf = PatternFinder()
+            # Backward compat: only assume pattern if containing free var:
+            pf.visit(g.target)
+            if pf.found:
                 target = self.parse_pattern_expr(g.target)
             else:
                 target = self.visit(g.target)
             expr.targets.append(target)
             expr.lock()
-            self.current_context = Read(target)
+            self.current_context = IterRead(target)
             expr.iters.append(self.visit(g.iter))
+            # If iterating over history, back-patch pattern from event:
+            if isinstance(expr.iters[-1], dast.HistoryExpr):
+                expr.targets[-1] = self.pattern_from_event(expr.iters[-1].event)
+
             self.current_context = Read()
             expr.conditions.extend([self.visit(i) for i in g.ifs])
         if isinstance(node, DictComp):
@@ -1465,7 +1679,7 @@ class Parser(NodeVisitor):
             expr.elem = kv
         else:
             expr.elem = self.visit(node.elt)
-        self.node_stack.pop()
+        self.pop_state()
         return expr
 
     visit_ListComp = generator_visit
@@ -1479,13 +1693,13 @@ class Parser(NodeVisitor):
         expr.condition = self.visit(node.test)
         expr.body = self.visit(node.body)
         expr.orbody = self.visit(node.orelse)
-        self.node_stack.pop()
+        self.pop_state()
         return expr
 
     def visit_Starred(self, node):
         expr = self.create_expr(dast.StarredExpr, node)
         expr.value = self.visit(node.value)
-        self.node_stack.pop()
+        self.pop_state()
         return expr
 
     # Helper Nodes

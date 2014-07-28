@@ -218,7 +218,7 @@ class PythonGenerator(NodeVisitor):
         returns the generated code. Otherwise, call the normal visit method.
 
         """
-        assert isinstance(node, dast.DistNode)
+        assert node is None or isinstance(node, dast.DistNode)
         if hasattr(node, "ast_override"):
             res = node.ast_override
         else:
@@ -258,19 +258,45 @@ class PythonGenerator(NodeVisitor):
         body.extend(self.body(node.body))
         return Module(self.preambles + body + self.postambles)
 
+    def generate_event_def(self, node):
+        evtype = pyAttr(pyAttr("dpy", "pat"), node.type.__name__)
+        name = Str(node.name)
+        history = self.history_stub(node)
+        pattern = self.visit(node.pattern)
+        sources = pyNone()
+        destinations = pyNone()
+        timestamps = pyNone()
+        if len(node.sources) > 0:
+            sources = pyList([self.visit(s) for s in node.sources])
+        if len(node.destinations) > 0:
+            destinations = pyList([self.visit(s) for s in node.destinations])
+        if len(node.timestamps) > 0:
+            timestamps = pyList([self.visit(s) for s in node.timestamps])
+        handlers = pyList([pyAttr("self", h.name) for h in node.handlers])
+        return pyCall(func=pyAttr(pyAttr("dpy", "pat"), "EventPattern"),
+                      args=[evtype, name, pattern],
+                      keywords=[("sources", sources),
+                                ("destinations", destinations),
+                                ("timestamps", timestamps),
+                                ("record_history", history),
+                                ("handlers", handlers)])
+
+    def history_initializers(self, node):
+        return [Assign(targets=[pyAttr("self", evt.name)],
+                       value=pyList([]))
+                for evt in node.events if evt.record_history]
+
     def generate_init(self, node):
-        supercall = pyCall(func=pyAttr(pyCall(pyName("super")),
-                                       "__init__"),
-                           args=[pyName(n) for n in PROC_INITARGS])
-        evtconstructors = [self.visit(evt) for evt in node.events]
-        historyinit = [Assign(targets=[pyAttr("self", evt.name)],
-                              value=pyList([]))
-                       for evt in node.events if evt.record_history]
-        evtdef = Assign(targets=[pyAttr("self", "_events")],
-                        value=pyList(evtconstructors))
+        supercall = [Expr(pyCall(func=pyAttr(pyCall(pyName("super")),
+                                             "__init__"),
+                                 args=[pyName(n) for n in PROC_INITARGS]))]
+        histories = self.history_initializers(node)
+        events = [Assign(targets=[pyAttr("self", "_events")],
+                         value=pyList([self.generate_event_def(evt)
+                                       for evt in node.events]))]
         return pyFunctionDef(name="__init__",
                              args=(["self"] + PROC_INITARGS),
-                             body=([Expr(supercall), evtdef] + historyinit))
+                             body=(supercall + histories + events))
 
     def generate_setup(self, node):
         """Generate the 'setup' method for a process."""
@@ -298,7 +324,8 @@ class PythonGenerator(NodeVisitor):
         assert domain is not None
         pat = self.visit(pattern)
         domain = self.visit(domain)
-        context = [(v.name, self.visit(v)) for v in pattern.boundvars]
+        context = [(v.unique_name, self.visit(v.value))
+                   for v in pattern.ordered_boundpatterns]
         # FIXME: variable ordering?????:
         order = pyTuple([Str(v.name) for v in pattern.freevars])
         varelts = [self.visit(v) for v in pattern.freevars]
@@ -495,30 +522,10 @@ class PythonGenerator(NodeVisitor):
                          [self.visit(e) for e in node.subexprs])
             return propagate_attributes(ast.values, ast)
 
-    def visit_PatternDomainSpec(self, node):
+    def visit_DomainSpec(self, node):
         target, iterater = self.generate_pattern_domain(node.pattern,
                                                         node.domain)
         ast = For(target, iterater, [], [])
-        return propagate_attributes([ast.iter], ast)
-
-
-    def visit_HistoryDomainSpec(self, node):
-        assert node.event is not None
-        ctx = [(v.name, self.visit(v)) for v in node.event.boundvars]
-        pat = pySubscr(pyAttr("self", "_events"), Num(node.event.index))
-        # FIXME: variable ordering?????:
-        order = pyTuple([Str(v.name) for v in node.event.freevars])
-        varelts = [self.visit(v) for v in node.event.freevars]
-        iterater = pyCall(pyAttr(pat, "filter"),
-                          args=[pyAttr("self", node.event.name), order],
-                          keywords=ctx)
-        if len(varelts) > 0:
-            target = pyTuple(varelts)
-        else:
-            target = pyName("_dummyvar")
-        body = []
-        orelse = []
-        ast = For(target, iterater, body, orelse)
         return propagate_attributes([ast.iter], ast)
 
     def visit_QuantifiedExpr(self, node):
@@ -562,6 +569,7 @@ class PythonGenerator(NodeVisitor):
         params = set(nobj for nobj in chain(node.boundvars,
                                             node.predicate.nameobjs)
                      if isinstance(nobj.scope, dast.ComprehensionExpr)
+                     if node.is_child_of(nobj.scope)
                      if nobj not in nameset)
 
         ast = pyCall(func=pyName(node.name),
@@ -638,8 +646,15 @@ class PythonGenerator(NodeVisitor):
     def visit_ComparisonExpr(self, node):
         left = self.visit(node.left)
         right = self.visit(node.right)
-        op = OperatorMap[node.comparator]()
-        ast = Compare(left, [op], [right])
+        if isinstance(node.left, dast.PatternExpr):
+            # 'PATTERN in DOMAIN'
+            context = [(v.unique_name, self.visit(v.value))
+                       for v in node.left.ordered_boundpatterns]
+            ast = pyCall(func=pyAttr(left, "match_iter"),
+                         args=[right], keywords=context)
+        else:
+            op = OperatorMap[node.comparator]()
+            ast = Compare(left, [op], [right])
         return propagate_attributes((left, right), ast)
 
     def visit_ArithmeticExpr(self, node):
@@ -651,13 +666,20 @@ class PythonGenerator(NodeVisitor):
             ast = BinOp(self.visit(node.left), op, self.visit(node.right))
             return propagate_attributes((ast.left, ast.right), ast)
 
+    visit_BinaryExpr = visit_ArithmeticExpr
+    visit_UnaryExpr = visit_ArithmeticExpr
+
     def visit_PatternElement(self, node):
         if type(node) is dast.FreePattern:
             val = Str(node.value.name) if node.value is not None else pyNone()
         elif type(node) is dast.BoundPattern:
-            val = Str(node.value.name)
+            val = Str(node.unique_name)
         elif type(node) is dast.ConstantPattern:
-            val = self.visit(node.value)
+            if isinstance(node.value, dast.SelfExpr):
+                # We have to special case the 'self' expr here:
+                return pyCall(func=pyAttr(pyAttr("dpy", "pat"), "SelfPattern"))
+            else:
+                val = self.visit(node.value)
         else:
             val = pyList([self.visit(v) for v in node.value])
 
@@ -680,21 +702,7 @@ class PythonGenerator(NodeVisitor):
 
     def visit_HistoryExpr(self, node):
         assert node.event is not None
-        if len(node.boundvars) == 0 and node.context is None:
-            return pyAttr("self", node.event.name)
-        else:
-            ctx = [(v.name, self.visit(v)) for v in node.boundvars]
-            if node.context is not None:
-                order = pyTuple([Str(n)
-                                 for n in node.context.ordered_names])
-            else:
-                order = pyNone()
-            pat = pySubscr(pyAttr("self", "_events"),
-                                  Num(node.evtidx))
-            gen = pyCall(pyAttr(pat, "filter"),
-                         args=[pyAttr("self", node.event.name), order],
-                         keywords=ctx)
-            return pySetC([gen])
+        return pyAttr("self", node.event.name)
 
     visit_ReceivedExpr = visit_HistoryExpr
     visit_SentExpr = visit_HistoryExpr
@@ -937,34 +945,14 @@ class PythonGenerator(NodeVisitor):
         ast = pyCall(func=pyAttr("self", "output"), args=args)
         return concat_bodies(ast.args, [ast])
 
-    def generate_history(self, node):
+    def history_stub(self, node):
         if node.record_history:
             return pyTrue()
         else:
             return pyNone()
 
     def visit_Event(self, node):
-        evtype = pyAttr(pyAttr("dpy", "pat"), node.type.__name__)
-        name = Str(node.name)
-        history = self.generate_history(node)
-        pattern = self.visit(node.pattern)
-        sources = pyNone()
-        destinations = pyNone()
-        timestamps = pyNone()
-        if len(node.sources) > 0:
-            sources = pyList([self.visit(s) for s in node.sources])
-        if len(node.destinations) > 0:
-            destinations = pyList([self.visit(s) for s in node.destinations])
-        if len(node.timestamps) > 0:
-            timestamps = pyList([self.visit(s) for s in node.timestamps])
-        handlers = pyList([pyAttr("self", h.name) for h in node.handlers])
-        return pyCall(func=pyAttr(pyAttr("dpy", "pat"), "EventPattern"),
-                      args=[evtype, name, pattern],
-                      keywords=[("sources", sources),
-                                ("destinations", destinations),
-                                ("timestamps", timestamps),
-                                ("record_history", history),
-                                ("handlers", handlers)])
+        return pyAttr(pyAttr("dpy", "pat"), node.type.__name__)
 
     def visit_EventHandler(self, node):
         stmts = self.visit_Function(node)

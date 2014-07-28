@@ -1,4 +1,5 @@
 import os
+import copy
 import abc
 import sys
 import time
@@ -11,7 +12,7 @@ import traceback
 import multiprocessing
 
 from . import pattern
-from .common import Null
+from .common import Null, builtin
 
 class DistProcess(multiprocessing.Process):
     """Abstract base class for DistAlgo processes.
@@ -63,10 +64,8 @@ class DistProcess(multiprocessing.Process):
                 for msg in self._parent._recvmesgs():
                     (src, clock, data) = msg
                     e = pattern.ReceivedEvent(
-                            message=data,
-                            timestamp=clock,
-                            source=src,
-                            destination=None)
+                        envelope=(clock, None, src),
+                        message=data)
                     self._parent._eventq.put(e)
             except KeyboardInterrupt:
                 pass
@@ -137,7 +136,8 @@ class DistProcess(multiprocessing.Process):
         try:
             signal.signal(signal.SIGTERM, self._sighandler)
 
-            self._id = self._channel(self._dp_name)
+            self._id = self._channel(self._dp_name, self.__class__)
+            pattern.initialize(self._id)
             self._log = logging.getLogger(str(self))
             self._start_comm_thread()
 
@@ -179,35 +179,54 @@ class DistProcess(multiprocessing.Process):
         memusage = pympler.asizeof.asizeof(self) / 1024
         self._parent.send(('mem', memusage), self._id)
 
+    @builtin
     def exit(self, code):
         raise SystemExit(10)
 
+    @builtin
     def output(self, message, level=logging.INFO):
         self._log.log(level, message)
 
-    def purge_received(self):
+    @builtin
+    def reset_received(self):
         for attr in dir(self):
-            if attr.startswith("_receive_messages_"):
-                setattr(self, attr, [])
+            if attr.startswith("ReceivedEvent_"):
+                getattr(self, attr).clear()
 
-    def purge_sent(self):
+    @builtin
+    def reset_sent(self):
         for attr in dir(self):
-            if attr.startswith("_sent_messages_"):
-                setattr(self, attr, [])
+            if attr.startswith("SentEvent_"):
+                getattr(self, attr).clear()
 
+    @builtin
+    def work(self):
+        """Waste some random amount of time."""
+        time.sleep(random.randint(0, 200) / 100)
+        pass
+
+    @builtin
+    def logical_clock(self):
+        """Returns the current value of Lamport clock."""
+        return self._logical_clock
+
+    @builtin
+    def incr_logical_clock(self):
+        """Increment Lamport clock by 1."""
+        self._logical_clock += 1
+
+    @builtin
     def spawn(self, pcls, args):
         """Spawns a child process"""
-
         childp, ownp = multiprocessing.Pipe()
         p = pcls(self._id, childp, self._channel)
+        p.daemon = True
         p.start()
 
         childp.close()
         cid = ownp.recv()
         ownp.send(("setup", args))
         ownp.send("start")
-
-        #self._child_procs.append((p.pid, cid))
 
         return cid
 
@@ -225,9 +244,9 @@ class DistProcess(multiprocessing.Process):
         else:
             result = to.send(data, self._id, self._logical_clock)
 
-        self._log.debug("Sent %s -> %r"%(str(data), to))
-        self._trigger_event(pattern.Event(pattern.SentEvent, self._id,
-                                          self._logical_clock,data))
+        self._trigger_event(pattern.SentEvent((self._logical_clock,
+                                               to, self._id),
+                                              copy.deepcopy(data)))
         self._parent.send(('sent', 1), self._id)
         return result
 
@@ -283,10 +302,11 @@ class DistProcess(multiprocessing.Process):
         for handler, args in self._jobqueue:
             if ((handler._labels is None or label in handler._labels) and
                 (handler._notlabels is None or label not in handler._notlabels)):
-                try:
-                    handler(**args)
-                except TypeError as e:
-                    self._log.warn("Insufficient bindings to call handler:", e)
+                # try:
+                #     handler(**args)
+                # except TypeError as e:
+                #     self._log.warn("Error calling handler: %r", e)
+                handler(**args)
             else:
                 newq.append((handler, args))
         self._jobqueue = newq
@@ -316,10 +336,7 @@ class DistProcess(multiprocessing.Process):
 
         """
 
-        self._log.debug("triggering event %s%r%r%r%r" %
-                        (type(event).__name__,
-                         event.message, event.timestamp,
-                         event.destination, event.source))
+        self._log.debug("triggering event %s" % event)
         for p in self._events:
             bindings = dict()
             if (p.match(event, bindings=bindings,
@@ -330,7 +347,7 @@ class DistProcess(multiprocessing.Process):
                     # Call the update stub:
                     p.record_history(getattr(self, p.name), event.to_tuple())
                 for h in p.handlers:
-                    self._jobqueue.append((h, bindings))
+                    self._jobqueue.append((h, copy.deepcopy(bindings)))
 
     def _forever_message_loop(self):
         while (True):
@@ -346,23 +363,10 @@ class DistProcess(multiprocessing.Process):
     def __str__(self):
         s = self.__class__.__name__
         if self._dp_name is not None:
-            s += "(" + self._dp_name + ")"
+            s += "[" + self._dp_name + "]"
         else:
-            s += "(" + str(self._id) + ")"
+            s += "[" + str(self._id) + "]"
         return s
-
-    def work(self):
-        """Waste some random amount of time."""
-        time.sleep(random.randint(0, 200) / 100)
-        pass
-
-    def logical_clock(self):
-        """Returns the current value of Lamport clock."""
-        return self._logical_clock
-
-    def incr_logical_clock(self):
-        """Increment Lamport clock by 1."""
-        self._logical_clock += 1
 
 
     ### Various attribute setters:

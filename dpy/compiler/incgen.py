@@ -2,7 +2,8 @@ import sys
 from ast import *
 from . import dast
 from .pygen import *
-from .utils import printd
+from .pypr import to_source
+from .utils import printd, printw
 
 INC_MODULE_VAR = "IncModule"
 
@@ -11,6 +12,66 @@ ASSIGN_STUB_FORMAT = "Assign_%s"
 UPDATE_STUB_FORMAT = "Update_%s_%d"
 
 SELF_ID_NAME = "SELF_ID"
+
+NegatedOperatorMap = {
+    dast.EqOp : NotEq,
+    dast.NotEqOp : Eq,
+    dast.LtOp : Gt,
+    dast.LtEOp : GtE,
+    dast.GtOp : Lt,
+    dast.GtEOp : LtE,
+    dast.IsOp : IsNot,
+    dast.IsNotOp : Is,
+    dast.InOp : NotIn,
+    dast.NotInOp : In
+}
+
+ModuleFilename = ""
+
+##########
+# Auxiliary methods:
+
+def iprintd(message):
+    printd(message, filename=ModuleFilename)
+
+def iprintw(message):
+    printw(message, filename=ModuleFilename)
+
+def combine_not_comparison(node):
+    if (isinstance(node, dast.LogicalExpr) and
+            node.operator is dast.NotOp and
+            isinstance(node.left, dast.ComparisonExpr)):
+        exp = dast.ComparisonExpr(parent=node.parent, ast=node.ast)
+        exp.left = node.left.left
+        exp.right = node.left.right
+        exp.comparator = NegatedOperatorMap[node.left.comparator]
+        return exp
+    else:
+        return node
+
+def apply_demorgan_rule(node):
+    if (isinstance(node, dast.LogicalExpr) and
+            node.operator is dast.NotOp and
+            isinstance(node.left, dast.LogicalExpr) and
+            node.left.operator in {dast.AndOp, dast.OrOp}):
+        exp = dast.LogicalExpr(parent=node.parent, ast=node.ast,
+                               op=NegatedOperatorMap[node.left.operator])
+        exp.subexprs = [dast.LogicalExpr(parent=exp, ast=None,
+                                         op=dast.NotOp,
+                                         subexprs=[e])
+                        for e in node.left.subexprs]
+        return exp
+    else:
+        return node
+
+def domain_for_condition(domainspec, condition):
+    expr = dast.SetCompExpr(domainspec.parent)
+    expr.elem = dast.TupleExpr(expr)
+    expr.elem.subexprs = domainspec.pattern.ordered_freevars
+    expr.targets.append(domainspec.pattern)
+    expr.iters.append(domainspec.domain)
+    expr.conditions.append(condition)
+    return expr
 
 def ast_eq(left, right):
     """Structural equality of AST nodes."""
@@ -71,9 +132,11 @@ def {1}({0}):
     src = blueprint.format(varname, funname)
     return parse(src).body[0]
 
-def gen_inc_module(dpyast, cmdline_args=dict()):
+def gen_inc_module(dpyast, cmdline_args=dict(), filename=""):
     """Generates the interface file from a DistPy AST."""
 
+    global ModuleFilename
+    ModuleFilename = filename
     assert isinstance(dpyast, dast.Program)
     jbstyle = cmdline_args['jbstyle'] if 'jbstyle' in cmdline_args else False
     module = parse(PREAMBLE)
@@ -93,7 +156,7 @@ def gen_inc_module(dpyast, cmdline_args=dict()):
     # Generate query stubs:
     for idx, query in enumerate(quex.queries):
         assert isinstance(query, dast.Expression)
-        printd("Processing %r" % query)
+        iprintd("Processing %r" % query)
         evtex = EventExtractor()
         evtex.visit(query)
         events = evtex.events
@@ -130,7 +193,8 @@ def gen_inc_module(dpyast, cmdline_args=dict()):
                            kw_defaults=[]),
             decorator_list=[],
             returns=None,
-            body=[Return(incqu)])
+            body=[Expr(Str(to_source(query.ast))),
+                  Return(incqu)])
         qrycall = pyCall(
             func=pyAttr(INC_MODULE_VAR, qname),
             args=[],
@@ -165,7 +229,8 @@ def gen_inc_module(dpyast, cmdline_args=dict()):
                         node.body[0].prebody = []
                     assert len(node.body) > 0
                     node.body[0].prebody.insert(0, asscall)
-            else:
+            elif not (isinstance(node, dast.Function) and
+                      isinstance(node.parent, dast.Process)):
                 # This is a normal assignment
                 if not hasattr(node, "postbody"):
                     node.postbody = []
@@ -188,7 +253,7 @@ def gen_inc_module(dpyast, cmdline_args=dict()):
                 idx += 1
                 iig.reset()
                 for n in node.nameobjs:
-                    printd("%s, %s" % (n, n.scope))
+                    iprintd("%s, %s" % (n, n.scope))
                 params = [nobj for nobj in node.nameobjs
                           if node.is_child_of(nobj.scope)]
                 assert vobj in params
@@ -248,33 +313,24 @@ class StubcallGenerator(PythonGenerator):
         self.events = events
         self.preambles.append(Assign([pyName(INC_MODULE_VAR)], pyNone()))
 
-    def generate_init(self, node):
-        supercall = pyCall(func=pyAttr(pyCall(pyName("super")),
-                                       "__init__"),
-                           args=[pyName(n) for n in PROC_INITARGS])
-        evtconstructors = [self.visit(evt) for evt in node.events]
-        historyinit = [Assign(
+    def history_initializers(self, node):
+        return [Assign(
             targets=[pyAttr("self", evt.name)],
             value=(pyCall(func=pyAttr(INC_MODULE_VAR,
                                       ASSIGN_STUB_FORMAT % (evt.process.name +
                                                             evt.name)),
                           args=[pySet([])])
                    if evt in self.events else pyList([])))
-                       for evt in node.events if evt.record_history]
-        evtdef = Assign(targets=[pyAttr("self", "_events")],
-                        value=pyList(evtconstructors))
-        return pyFunctionDef(name="__init__",
-                             args=(["self"] + PROC_INITARGS),
-                             body=([Expr(supercall), evtdef] + historyinit))
+                for evt in node.events if evt.record_history]
 
 
-    def generate_history(self, node):
+    def history_stub(self, node):
         if node.record_history and node in self.events:
             return pyAttr(INC_MODULE_VAR,
                           UPDATE_STUB_FORMAT %
                           (node.process.name + node.name, 0))
         else:
-            return super().generate_history(node)
+            return super().history_stub(node)
 
 class EventExtractor(NodeVisitor):
     """Extracts event specs from queries.
@@ -307,26 +363,21 @@ class QueryExtractor(NodeVisitor):
         if par not in self.queries:
             self.queries.append(par)
 
-    def visit_ComprehensionExpr(self, node):
+    def visit_ComplexExpr(self, node):
         par = node.last_parent_of_type(dast.Expression)
         if par is None:
             par = node
         if par not in self.queries:
             self.queries.append(par)
 
-    visit_GeneratorExpr = visit_ComprehensionExpr
-    visit_SetCompExpr = visit_ComprehensionExpr
-    visit_ListCompExpr = visit_ComprehensionExpr
-    visit_DictCompExpr = visit_ComprehensionExpr
+    visit_GeneratorExpr = visit_ComplexExpr
+    visit_SetCompExpr = visit_ComplexExpr
+    visit_ListCompExpr = visit_ComplexExpr
+    visit_DictCompExpr = visit_ComplexExpr
 
-NegatedOperatorMap = {
-    dast.EqOp : NotEq,
-    dast.NotEqOp : Eq,
-    dast.LtOp : Gt,
-    dast.LtEOp : GtE,
-    dast.GtOp : Lt,
-    dast.GtEOp : LtE
-}
+    visit_ReceivedExpr = visit_ComplexExpr
+    visit_SentExpr = visit_ComplexExpr
+
 
 class IncInterfaceGenerator(PythonGenerator):
     """Transforms DistPy patterns to Python comprehension.
@@ -335,6 +386,7 @@ class IncInterfaceGenerator(PythonGenerator):
 
     def __init__(self, **args):
         super().__init__()
+        self.notable4 = args['notable4'] if 'notable4' in args else False
         self.notable3 = args['notable3'] if 'notable3' in args else False
         self.notable2 = args['notable2'] if 'notable2' in args else False
         self.notable1 = args['notable1'] if 'notable1' in args else False
@@ -361,6 +413,7 @@ class IncInterfaceGenerator(PythonGenerator):
         self.reset_pattern_state()
 
     def jb_tuple_optimize(self, elt):
+        """Eliminate single element tuples for jbstyle."""
         if self.jbstyle:
             if type(elt) is Tuple and len(elt.elts) == 1:
                 elt = elt.elts[0]
@@ -426,6 +479,53 @@ class IncInterfaceGenerator(PythonGenerator):
         target, conds = self.visit(node.pattern)
         return target, conds
 
+    def visit_ComparisonExpr(self, node):
+        if isinstance(node.left, dast.PatternExpr):
+            # 'PATTERN in DOMAIN'
+            target, conds = self.visit(node.left)
+            right = self.visit(node.right)
+            gen = comprehension(target, right, conds)
+            elem = self.jb_tuple_optimize(pyTuple(node.left.ordered_freevars))
+            ast = pySize(ListComp(elem, [gen]))
+            return ast
+        else:
+            return super().visit_ComparisonExpr(node)
+
+    def visit_ComprehensionExpr(self, node):
+        generators = []
+        for target, dom in zip(node.targets, node.iters):
+            if isinstance(target, dast.PatternExpr):
+                pytgt, pyconds = self.visit(target)
+            else:
+                pytgt = self.visit(target)
+                pyconds = []
+            pydom = self.visit(dom)
+            generators.append(comprehension(pytgt, pydom, pyconds))
+        generators[-1].ifs.extend([self.visit(cond) for cond in
+                                   node.conditions])
+
+        if type(node) is dast.DictCompExpr:
+            key = self.visit(node.elem.key)
+            value = self.visit(node.elem.value)
+            ast = DictComp(key, value, generators)
+        else:
+            elem = self.visit(node.elem)
+            if isinstance(node, dast.SetCompExpr):
+                ast = SetComp(elem, generators)
+            elif isinstance(node, dast.ListCompExpr):
+                ast = ListComp(elem, generators)
+            elif isinstance(node, dast.GeneratorExpr):
+                ast = GeneratorExp(elem, generators)
+            else:
+                iprintw("Warning: unknown comprehension type!")
+                ast = SetComp(elem, generators)
+        return ast
+
+    visit_GeneratorExpr = visit_ComprehensionExpr
+    visit_SetCompExpr = visit_ComprehensionExpr
+    visit_ListCompExpr = visit_ComprehensionExpr
+    visit_DictCompExpr = visit_ComprehensionExpr
+
     def visit_Event(self, node):
         assert node.type is not None
         self.reset_pattern_state()
@@ -459,43 +559,17 @@ class IncInterfaceGenerator(PythonGenerator):
             evtconds += cond
         else:
             clk = pyName("_Timestamp_")
-        return pyTuple([typ, msg, clk, dst, src]), evtconds
+        env = pyTuple([clk, dst, src])
+        return pyTuple([typ, env, msg]), evtconds
 
-    def visit_PatternDomainSpec(self, node):
+    def visit_DomainSpec(self, node):
         self.reset_pattern_state()
         target, ifs = self.visit(node.pattern)
         domain = self.visit(node.domain)
         return comprehension(target, domain, ifs)
 
-    def visit_HistoryDomainSpec(self, node):
-        assert node.event is not None
-        self.reset_pattern_state()
-        target, ifs = self.visit(node.event)
-        domain = pyName(node.event.name)
-        return comprehension(target, domain, ifs)
-
     def visit_HistoryExpr(self, node):
-        assert node.event is not None
-        domain = pyName(node.event.name)
-        if len(node.boundvars) == 0 and node.context is None:
-            return domain
-        else:
-            if node.context is not None:
-                elt = self.jb_tuple_optimize(
-                    pyTuple([self.visit(n)
-                             for n in node.context.ordered_nameobjs]))
-            else:
-                if self.jbstyle:
-                    # XXX jbstyle HACK alert!!!
-                    elt = pyName("_EventType_")
-                else:
-                    elt = pyTrue()
-            self.reset_pattern_state()
-            target, ifs = self.visit(node.event)
-            gen = GeneratorExp(
-                elt=elt,
-                generators=[comprehension(target, domain, ifs)])
-            return pySetC([gen])
+        return pyName(node.event.name)
 
     visit_ReceivedExpr = visit_HistoryExpr
     visit_SentExpr = visit_HistoryExpr
@@ -503,15 +577,23 @@ class IncInterfaceGenerator(PythonGenerator):
     def visit_QuantifiedExpr(self, node):
         assert node.predicate is not None
 
+        if not (self.notable4 or self.noalltables):
+            iprintd("Trying table4...")
+            res = self.do_table4_transformation(node)
+            if res is not None:
+                return res
         if not (self.notable3 or self.noalltables):
+            iprintd("Trying table3...")
             res = self.do_table3_transformation(node)
             if res is not None:
                 return res
         if not (self.notable2 or self.noalltables):
+            iprintd("Trying table2...")
             res = self.do_table2_transformation(node)
             if res is not None:
                 return res
         if not (self.notable1 or self.noalltables):
+            iprintd("Trying table1...")
             res = self.do_table1_transformation(node)
             if res is not None:
                 return res
@@ -607,31 +689,85 @@ class IncInterfaceGenerator(PythonGenerator):
 
         return res
 
-    @staticmethod
-    def combine_logical_comparison(node):
-        if (isinstance(node, dast.LogicalExpr) and
-                node.operator is dast.NotOp and
-                isinstance(node.left, dast.ComparisonExpr)):
-            exp = dast.ComparisonExpr(parent=node.parent, ast=node.ast)
-            exp.left = node.left.left
-            exp.right = node.left.right
-            exp.comparator = NegatedOperatorMap[node.left.comparator]
-            return exp
-        else:
-            return node
+    def do_table4_transformation(self, node):
+        """Transformation defined in Table 4 of OOPSLA paper.
+
+        This transformation breaks up quantification conditions involving
+        logical operators (and/or) in the hopes of creating opportunities to
+        apply table 3.
+
+        Note 1: unlike the other 3 transformations which generate Python ASTs,
+        this transformation generates DistPy AST (which must then be further
+        passed through other transformations or the default translator to
+        obtain a Python AST)
+
+        Note 2: since Python lacks a "implies" logical operator, rules 3 and 6
+        of table 4 are ignored.
+
+        """
+        pred = apply_demorgan_rule(node.predicate)
+        if isinstance(pred, dast.LogicalExpr):
+            iprintd("do_table4_transformation: found logical expression,"
+                   " trying transformation.")
+            # Rule 1:
+            if (pred.operator is dast.AndOp and
+                    node.operator is dast.ExistentialOp):
+                for i, e in enumerate(pred.subexprs):
+                    newnode = node.clone()
+                    newnode.domains[-1].domain = domain_for_condition(
+                        newnode.domains[-1], e)
+                    newnode.subexprs = pred.subexprs[0:i] + pred.subexprs[(i+1):]
+                    res = self.do_table3_transformation(newnode)
+                    if res is not None:
+                        return res
+            # Rule 2:
+            elif (pred.operator is dast.OrOp and
+                    node.operator is dast.ExistentialOp):
+                expr = dast.LogicalExpr(node.parent)
+                expr.operator = dast.OrOp
+                for cond in pred.subexprs:
+                    expr.subexprs.append(node.clone())
+                    expr.subexprs[-1].subexprs = [cond]
+                return self.visit(expr)
+            # Rule 4:
+            elif (pred.operator is dast.AndOp and
+                    node.operator is dast.UniversalOp):
+                expr = dast.LogicalExpr(node.parent)
+                expr.operator = dast.AndOp
+                for cond in pred.subexprs:
+                    expr.subexprs.append(node.clone())
+                    expr.subexprs[-1].subexprs = [cond]
+                return self.visit(expr)
+            # Rule 5:
+            elif (pred.operator is dast.OrOp and
+                    node.operator is dast.UniversalOp):
+                for i, e in enumerate(pred.subexprs):
+                    e = dast.LogicalExpr(e.parent,
+                                         op=dast.NotOp,
+                                         subexprs=[e])
+                    newnode = node.clone()
+                    newnode.domains[-1].domain = domain_for_condition(
+                        newnode.domains[-1], e)
+                    newnode.subexprs = pred.subexprs[0:i] + pred.subexprs[(i+1):]
+                    res = self.do_table3_transformation(newnode)
+                    if res is not None:
+                        return res
+
+        return None
 
     def do_table3_transformation(self, node):
         """Transformation defined in Table 3 of OOPSLA paper.
 
         This transforms single quantifications over comparisons into min/max
-        aggregates.
+        aggregates. Returns None if table 3 can not be applied to 'node'.
 
         """
         # We can only handle comparisons:
-        pred = IncInterfaceGenerator.combine_logical_comparison(node.predicate)
+        pred = combine_not_comparison(node.predicate)
         if not (isinstance(pred, dast.ComparisonExpr) and
                 pred.comparator in
                 {dast.LtOp, dast.LtEOp, dast.GtOp, dast.GtEOp}):
+            iprintd("Table 3 can not be applied to %s: not comparison" % node)
             return None
 
         # All free variables must appear on one side of the comparison:
@@ -645,16 +781,15 @@ class IncInterfaceGenerator(PythonGenerator):
             x = pred.right
             y = pred.left
         else:
-            printd("Table 3 can not be applied to %s" % node)
+            iprintd("Table 3 can not be applied to %s: free var distribution." %
+                   node)
             return None
 
         pyx = self.visit(x)
         pyy = self.visit(y)
         generators = [self.visit(dom) for dom in node.domains]
-        printd(generators)
-        printd(dump(pyx))
         if (len(generators) == 1 and len(generators[0].ifs) == 0 and
-            ast_eq(pyx, generators[0].target)):
+                ast_eq(pyx, generators[0].target)):
             s = sp = generators[0].iter
         else:
             pyx = self.jb_tuple_optimize(pyx)

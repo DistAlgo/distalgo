@@ -16,12 +16,13 @@ class EndPoint:
 
     """
 
-    def __init__(self, name=None):
+    def __init__(self, name=None, proctype=None):
         if name is None:
             self._name = socket.gethostname()
         else:
             self._name = name
         self._proc = None
+        self._proctype = proctype
         self._log = logging.getLogger("runtime.EndPoint")
         self._address = None
 
@@ -70,10 +71,10 @@ class EndPoint:
     ###################################################
 
     def __getstate__(self):
-        return ("EndPoint", self._address, self._name)
+        return ("EndPoint", self._address, self._name, self._proctype)
 
     def __setstate__(self, value):
-        proto, self._address, self._name = value
+        proto, self._address, self._name, self._proctype = value
         self._log = logging.getLogger("runtime.EndPoint")
 
     def __str__(self):
@@ -83,7 +84,10 @@ class EndPoint:
             return self._name
 
     def __repr__(self):
-        return "<process " + str(self) + ">"
+        if self._proctype is not None:
+            return "<" + self._proctype.__name__ + str(self) + ">"
+        else:
+            return "<process " + str(self) + ">"
 
     def __hash__(self):
         return hash(self._address)
@@ -124,8 +128,8 @@ class TcpEndPoint(EndPoint):
     senders = None
     receivers = None
 
-    def __init__(self, name=None, port=None):
-        super().__init__(name)
+    def __init__(self, name=None, proctype=None, port=None):
+        super().__init__(name, proctype)
 
         TcpEndPoint.receivers = dict()
         TcpEndPoint.senders = LRU(MAX_TCP_CONN)
@@ -257,10 +261,10 @@ class TcpEndPoint(EndPoint):
         pass
 
     def __getstate__(self):
-        return ("TCP", self._address, self._name)
+        return ("TCP", self._address, self._name, self._proctype)
 
     def __setstate__(self, value):
-        proto, self._address, self._name = value
+        proto, self._address, self._name, self._proctype = value
         self._conn = None
         self._log = logging.getLogger("runtime.TcpEndPoint(%s)" % self._name)
 
@@ -368,8 +372,8 @@ MAX_UDP_BUFSIZE = 20000
 class UdpEndPoint(EndPoint):
     sender = None
 
-    def __init__(self, name=None, port=None):
-        super().__init__(name)
+    def __init__(self, name=None, proctype=None, port=None):
+        super().__init__(name, proctype)
 
         UdpEndPoint.sender = None
 
@@ -423,10 +427,10 @@ class UdpEndPoint(EndPoint):
             self._log.debug("socket.error occured, terminating receive loop.")
 
     def __getstate__(self):
-        return ("UDP", self._address, self._name)
+        return ("UDP", self._address, self._name, self._proctype)
 
     def __setstate__(self, value):
-        proto, self._address, self._name = value
+        proto, self._address, self._name, self._proctype = value
         self._conn = None
         self._log = logging.getLogger("runtime.UdpEndPoint")
 

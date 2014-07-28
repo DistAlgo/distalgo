@@ -1,4 +1,15 @@
+from .common import freeze
+SELF_ID = None
 
+def initialize(pid):
+    """Initialize the pattern module.
+
+    This must be called by each DistProcess as part of their initialization
+    process.
+
+    """
+    global SELF_ID
+    SELF_ID = pid
 
 class PatternElement:
     """Tree structure representing a message pattern.
@@ -41,6 +52,13 @@ class PatternElement:
               ignore_bound_vars=False, **context):
         return False
 
+    def match_iter(self, iterable, **context):
+        for elt in iterable:
+            bindings = dict()
+            if self.match(elt, bindings=bindings, **context):
+                return True
+        return False
+
     def __str__(self):
         raise "<PatternElement " + str(self.value) + ">"
 
@@ -54,6 +72,17 @@ class ConstantPattern(PatternElement):
 
     def __str__(self):
         return "=" + repr(self.value)
+
+class SelfPattern(ConstantPattern):
+    def __init__(self):
+        super().__init__(None)
+
+    def match(self, message, bindings=None,
+              ignore_bound_vars=False, **context):
+        return message == SELF_ID
+
+    def __str__(self):
+        return "=SELF"
 
 class BoundPattern(PatternElement):
     def match(self, message, bindings=None,
@@ -128,23 +157,22 @@ class Event:
     Instances of Event are created by the backend thread and passed to the
     front end.
     """
-    def __init__(self, message, timestamp, destination, source):
+    def __init__(self, envelope, message):
+        (self.timestamp, self.destination, self.source) = envelope
         self.message = message
-        self.timestamp = timestamp
-        self.destination = destination
-        self.source = source
 
     def to_tuple(self):
         """Generates a tuple representation for this event."""
-        return (type(self), self.message, self.timestamp,
-                self.destination, self.source)
+        return (type(self),
+                (self.timestamp, freeze(self.destination), freeze(self.source)),
+                self.message)
 
     def __str__(self):
         buf = ["<", type(self).__name__,
-               " msg:", str(self.message),
                " time:", str(self.timestamp),
-               " to:", str(self.destination),
-               " from:", str(self.source),
+               " to:", repr(self.destination),
+               " from:", repr(self.source),
+               " msg:", repr(self.message),
                ">"]
         return "".join(buf)
 
