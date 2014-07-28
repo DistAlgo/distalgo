@@ -2,7 +2,7 @@ import sys
 import logging
 import argparse
 
-__version__ = "1.0.0a3"
+__version__ = "1.0.0a4"
 
 from .api import entrypoint
 
