@@ -1,0 +1,58 @@
+# DistAlgo 
+
+DistAlgo is a programming language for distributed algorithms. This project is
+an implementation of DistAlgo on Python.
+
+# Installation
+
+Installation of DistAlgo is optional. DistAlgo installation is handled through
+the Python distutils package. To see full usage description, type:
+
+    `python3 setup.py --help`
+
+## To install DistAlgo as system-wide package:
+
+   `python3 setup.py install`
+
+## Or, to install DistAlgo for the current user:
+
+   `python3 setup.py install --user`
+
+## Alternatively, you can simply add the root directory to your PYTHONPATH
+   environment variable:
+
+   `export PYTHONPATH=<PROJROOT>:${PYTHONPATH}`
+
+After installation, the 'dpy' package will be available for use.
+
+Lastly, the 'bin' subdirectory contains two scripts, 'dpyc' and 'dpyr', that
+runs the compiler and runtime, respectively. These scripts takes care of
+properly setting 'sys.path' so no installation or modification of PYTHONPATH
+is necessary. Simply add the 'bin' directory to your PATH:
+
+   `export PATH=<PROJROOT>/bin:${PATH}`
+
+# Running DistAlgo
+
+## Invoking the compiler
+
+   To invoke the DistAlgo compiler, run the 'dpy.compiler' Python module:
+
+   `python3 -m dpy.compiler` (or `dpyc` if you use the script)
+
+## Invoking the runtime
+
+   To run DistAlgo programs, pass the source file as an argument to the 'dpy'
+   Python module:
+
+   `python3 -m dpy <SOURCE>` (or `dpyr <SOURCE>` if you use the script)
+
+To see a full description of available options, use
+
+   `python3 -m dpy.compiler -h`
+
+and
+
+   `python3 -m dpy -h`
+
+
