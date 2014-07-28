@@ -1181,7 +1181,7 @@ class PatternElement(DistNode):
 
     @property
     def unique_name(self):
-        return "__" + type(self).__name__ + str(self._index)
+        return "_" + type(self).__name__ + str(self._index) + "_"
 
     @property
     def ordered_boundpatterns(self):
