@@ -134,10 +134,10 @@ def freeze(obj):
     elif isinstance(obj, bytearray):
         # bytearray -> bytes
         return bytes(obj)
-    elif isinstance(obj, set):
+    elif isinstance(obj, set) and not isinstance(obj, frozenset):
         # set -> frozenset
         return frozenset(freeze(elem) for elem in obj)
-    elif isinstance(obj, dict):
+    elif isinstance(obj, dict) and not isinstance(obj, frozendict):
         # dict -> frozendict
         return frozendict((freeze(k), freeze(v)) for k, v in obj.items())
     elif hasattr(obj, '__iter__'):
