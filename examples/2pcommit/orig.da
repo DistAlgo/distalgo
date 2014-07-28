@@ -1,0 +1,68 @@
+import sys
+from random import randint
+
+class Coordinator(process):
+    def setup(tid, cohorts):
+        pass
+
+    def main():
+        --start
+        send(('Prepare', tid), to=cohorts)
+        if await(each(_c in cohorts, received(('Vote', 'ready', tid, c)))):
+            send(('Commit', tid), to=cohorts)
+            await(each(_c in cohorts, received(('Done', tid, c))))
+            output('log complete record for' + str(tid))
+        elif each(_c in cohorts, received(('Vote', _, tid, c))):
+            s = {c for ((_mtype, _minfo, tid, _c), _) in received
+                 if mtype == "Vote" if minfo == "ready"}
+            bcast(Abort(tid), to=s)
+        --end
+        terminate()
+
+    def terminate():
+        send(('Done',), to=cohorts)
+        output('terminating')
+
+class Cohort(process):
+    def setup(failure_rate):
+        pass
+
+    def main():
+        await(received(('Done',)))
+
+    def recv(msg=('Prepare', _tid), src=_coord):
+        if prepared(tid):
+            output("ready:" + str(tid))
+            send(('Vote', 'ready', tid, self), to=coord)
+        else:
+            output("failed:"  + str(tid))
+            send(('Vote', 'abort', tid, self), to=coord)
+
+    def recv(msg=('Commit', _tid), src=_fro):
+        send(('Done', tid, self), to=fro)
+        commit(tid)
+
+    def recv(msg=('Abort', _tid)):
+        abort(tid)
+
+    def prepared(tid):
+        return randint(0, 100) > failure_rate
+
+    def commit(tid):
+        output('commit:' + str(tid))
+
+    def abort(tid):
+        output('abort:' + str(tid))
+
+def main():
+    nproposers = int(sys.argv[1]) if len(sys.argv) > 1 else 10
+    nacceptors = int(sys.argv[2]) if len(sys.argv) > 2 else 10
+    fail_rate = int(sys.argv[3]) if len(sys.argv) > 3 else 10
+
+    use_channel("udp")
+
+    accpts = createprocs(Cohort, nacceptors, [fail_rate])
+    propsrs = createprocs(Coordinator, 1, [nproposers, accpts])
+
+    startprocs(accpts | propsrs)
+

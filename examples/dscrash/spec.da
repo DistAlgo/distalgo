@@ -1,0 +1,36 @@
+import sys
+
+class P(process):
+    def setup(ps, v, maxfail):
+        x = -1
+        V = {v: False}
+        receiveflag = False
+
+    def main():
+          --start
+          for round in range(1, maxfail+1):
+              --one_round
+              for k in list(V):
+                  if (not V[k]):
+                      send(('Value',k), to=ps)
+                      V[k] = True
+                      await(receiveflag)
+                      receiveflag = False
+          --end
+          for v in V:
+              if V[v]:
+                    x = max((x, v))
+          output("x = %r" % (x))
+
+    def recv(msg=('Value', _v)):
+       receiveflag = True
+       if v not in V:
+             V[v] = False
+
+def main():
+      n = int(sys.argv[1]) if len(sys.argv) > 1 else 10
+      f = int(sys.argv[2]) if len(sys.argv) > 2 else 50
+      ps = createprocs(P, n)
+      for i, p in enumerate(list(ps)):
+            setupprocs({p}, (ps, i, f))
+      startprocs(ps)

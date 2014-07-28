@@ -1,0 +1,61 @@
+import sys
+import random
+
+class P(process):
+    def setup(left, right):
+        status = "Unknown"      # Current status, can be {"Unknown", "Leader"}
+        phase_left, phase_right = False, False
+        phase = 0
+
+    def main():
+        while True:
+            send(('Token', self, 'out', 1 << phase), to={left, right})
+
+            if await(status == "Leader"):
+                output("I am leader at phase %d!"%phase)
+                await(False)
+            elif (phase_left and phase_right):
+                phase += 1
+                phase_left, phase_right = False, False
+
+    def recv(msg=('Token', _v, _direction, _h), src=_source):
+        if source == left and direction == 'out':
+            if v > self and h > 1:
+                send(('Token', v, 'out', h-1), to=right)
+            elif v > self and h == 1:
+                send(('Token', v, 'in', 1), to=left)
+            elif v == self:
+                status = "Leader"
+
+        elif source == right and direction == 'out':
+            if v > self and h > 1:
+                send(('Token', v, 'out', h-1), to=left)
+            elif v > self and h == 1:
+                send(('Token', v, 'in', 1), to=right)
+            elif v == self:
+                status = "Leader"
+
+
+        elif source == left and direction == 'in':
+            if v > self:
+                send(('Token', v, 'in', 1), to=right)
+            elif v == self:
+                phase_left = True
+
+        elif source == right and direction == 'in':
+            if v > self:
+                send(('Token', v, 'in', 1), to=left)
+            elif v == self:
+                phase_right = True
+
+def main():
+    n = int(sys.argv[1]) if len(sys.argv) > 1 else 10
+    topology = list(createprocs(P, n))
+    random.shuffle(topology)
+    for i, p in enumerate(topology):
+        if i == len(topology)-1:
+           setupprocs({p}, (topology[i-1], topology[0]))
+        else:
+           setupprocs({p}, (topology[i-1], topology[i+1]))
+    startprocs(topology)
+

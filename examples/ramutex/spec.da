@@ -1,0 +1,39 @@
+import sys
+class P(process):
+    def setup(s, n):           # pass in set of all processes
+        ownc = 0
+
+    def cs(task):
+        --request
+        ownc = logical_clock()
+        send(('request', ownc, self), to=s)    # send request to all processes
+        await(each(_p in s, some(received(('ack', _c, p)), c > ownc)))
+        --cs
+        task()                  # critical section
+        --release
+        send(('ack', logical_clock(), self),
+             to={p for p in s if some(received(('request', _c, p)),
+                                      (c, p) >= (ownc, self))})
+
+    def recv(msg=('request', _c, _p)):
+        if each(received(('request', _c, self)), (c, p) < (ownc, self)):
+            send(('ack', logical_clock(), self), to=p)
+
+    def main():
+        def anounce():
+            output("In cs!")
+        for i in range(n):
+            cs(anounce)
+        send(('Done',), to=s)
+        await(each(_p in s, received(('Done',), src=p)))
+        output("Done!")
+
+def main():
+    nprocs = int(sys.argv[1]) if len(sys.argv) > 1 else 10
+    nrounds = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+
+    ps = createprocs(P, nprocs)
+    # setup the processes
+    for p in ps: setupprocs({p}, (ps-{p}, nrounds))
+    # start the processes
+    startprocs(ps)

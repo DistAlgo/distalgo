@@ -1,0 +1,62 @@
+import sys
+class P (process):
+    def setup(ps, nrounds, orig_token):
+        clock = 0
+        token = dict((p, 0) for p in ps)
+
+    def cs(task):
+        --request
+        if not token_present():
+            clock += 1
+            send(('request', clock, self), to=ps)
+            await(token_present())
+        token[self] = clock
+
+        task()                  # critical section
+
+        --release
+        for p in ps:
+            if request_pending(p) and token_present():
+                #output("sending %r-> %r" % (token, p))
+                send(('access', token), to=p)
+                break
+
+    def recv(msg=('access', _newtok)):
+        token = newtok
+
+    def recv(msg=('request', _c, _p)):
+        if request_pending(p) and token_present():
+            #output("sending %r-> %r" % (token, p))
+            send(('access', token), to=p)
+
+    def request_pending(p):
+        # p has a request after it last had the token
+        return some(received(('request', _c, p)), c > token[p])
+
+    def token_present():
+        return (orig_token and not sent(('access', _)) or
+                some(received(('access', _token1)),
+                     not some(sent(('access', _token2)),
+                              token2[self] > token1[self])))
+
+    def main():
+        def anounce():
+            output("In cs!")
+        if token_present():
+            output("I'm lucky!")
+        for i in range(nrounds):
+            cs(anounce)
+        send(('Done',), to=ps)
+        await(each(_p in ps, received(('Done',), src=p)))
+        output("Done!")
+
+def main():
+    nprocs = int(sys.argv[1]) if len(sys.argv) > 1 else 10
+    nrounds = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+    # create n process
+    ps = createprocs(P, nprocs)
+
+    p = ps.pop()
+    setupprocs(ps, (ps|{p}, nrounds, False))
+    setupprocs([p], (ps|{p}, nrounds, True))
+    startprocs(ps|{p})

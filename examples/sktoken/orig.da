@@ -1,0 +1,61 @@
+import sys
+class P(process):
+    def setup(ps, orig_token, nrounds): # other procs, and whether self holds token
+        RN = dict((p, 0) for p in ps)        # last request number received
+        # Token structure:
+        Q = []                   # queue of pending requests
+        LN = dict((p, 0) for p in ps) # last request number for which token was granted
+
+    def cs(task):
+        -- request
+        if not haveToken():
+            RN[self] += 1
+            send(('request', self, RN[self]), to=ps)
+            #await(some(rcvd(('token', _, _LN1)), LN1[self] < rn))
+            await(haveToken())
+
+        task()                   #critical section
+
+        LN[self] = RN[self]
+        Q.extend([p for p in ps if p not in Q if RN[p] == LN[p] + 1])
+        if len(Q) > 0:
+            p = Q.pop()
+            send(('token', Q, LN), to=p)
+
+    def recv(msg=('token', _Q1, _LN1)):
+        Q = Q1
+        LN = LN1
+
+    def recv(msg=('request', _p, _n)):
+        RN[p] = max((RN[p], n))
+        if (haveToken() and RN[p] == LN[p] + 1):
+            send(('token', Q, LN), to=p)
+
+    def haveToken():
+        return (orig_token and not sent(('token', _, _)) or
+                some(received(('token', _, _LN1)),
+                     not some(sent(('token', _, _LN2)), LN2[self] > LN1[self])))
+
+    def main():
+        def anounce():
+            output("In cs!")
+        if haveToken():
+            output("I'm lucky!")
+        for i in range(nrounds):
+            cs(anounce)
+        send(('Done',), to=ps)
+        await(each(_p in ps, received(('Done',), src=p)))
+        output("Done!")
+
+def main():
+    nprocs = int(sys.argv[1]) if len(sys.argv) > 1 else 10
+    nrounds = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+     # create n process
+    ps = createprocs(P, nprocs)
+
+    # setup the processes
+    lucky = ps.pop()
+
+    setupprocs(ps, (ps|{lucky}, False, nrounds))
+    setupprocs({lucky}, (ps|{lucky}, True, nrounds))
+    startprocs(ps|{lucky})

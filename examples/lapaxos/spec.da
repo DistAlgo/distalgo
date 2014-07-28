@@ -1,0 +1,61 @@
+import sys
+TIMEOUT = 1.5
+class Proposer(process):
+    def setup(acceptors, maj):
+        propNum = (0, self)
+        propVal = self
+
+    def main():
+        while True:
+            --start
+            send(('Prepare', propNum), to=acceptors)
+            --propose
+            if await(len({a for ((_type, _num, _, _, _a), _) in received
+                          if type == 'Promise' if num == propNum}) > maj):
+                _, propVal = max({(propnum, votedval)
+                                  for ((_type, _num, _propnum, _votedval, _), _) in received
+                                  if type == 'Promise' if num == propNum} |
+                                 {(propNum, propVal)})
+                send(('Propose', propNum, propVal), to=acceptors)
+                if await(len({a for ((_type, _num, propVal, _a), _) in received
+                              if type == 'Accept' if num == propNum}) > maj):
+                    --end
+                    output("Succeeded in proposing %r"%propVal)
+                    continue
+                elif timeout(TIMEOUT): pass
+            elif timeout(TIMEOUT): pass
+            --reinit
+            output("Failed ballot %s, retrying." % str(propNum))
+            # Try again with a higher proposal number
+            propNum = (propNum[0]+1, self)
+
+class Acceptor(process):
+    def setup():
+        min_propnum = (-1, self)
+
+    def main():
+        await(False)
+
+    def recv(msg=('Prepare', _n), src=_source):
+        if (n > max({propnum for ((_type, _propnum, _, _, _who), _) in sent
+                     if type == 'Promise' if who == self} |
+                    {min_propnum})):
+            maxpn, votedval = max({(mpn, vv) for ((_type, _mpn, _vv, _who), _) in sent
+                                   if type == 'Accept' if who == self} |
+                                  {(min_propnum, self)})
+            send(('Promise', n, maxpn, votedval, self), to=source)
+
+    def recv(msg=('Propose', _n, _v), src=_source):
+        if (n >= max({propnum for ((_type, _propnum, _, _, _who), _) in sent
+                      if type == 'Promise' if who == self} |
+                     {min_propnum})):
+            send(('Accept', n, v, self), to=source)
+
+def main():
+    nproposers = int(sys.argv[1]) if len(sys.argv) > 1 else 10
+    nacceptors = int(sys.argv[2]) if len(sys.argv) > 2 else 25
+
+    acceptors = createprocs(Acceptor, nacceptors, [])
+    proposers = createprocs(Proposer, nproposers, [acceptors, nacceptors/2])
+    startprocs(acceptors)
+    startprocs(proposers)
