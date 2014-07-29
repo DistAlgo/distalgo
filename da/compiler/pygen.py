@@ -181,11 +181,11 @@ PROC_INITARGS = ["parent", "initq", "channel"]
 
 PREAMBLE = parse(
     """
-import dpy
+import da
     """).body
 POSTAMBLE = parse("""
 if __name__ == "__main__":
-    dpy.init(config)
+    da.init(config)
 """).body
 
 
@@ -259,7 +259,7 @@ class PythonGenerator(NodeVisitor):
         return Module(self.preambles + body + self.postambles)
 
     def generate_event_def(self, node):
-        evtype = pyAttr(pyAttr("dpy", "pat"), node.type.__name__)
+        evtype = pyAttr(pyAttr("da", "pat"), node.type.__name__)
         name = Str(node.name)
         history = self.history_stub(node)
         pattern = self.visit(node.pattern)
@@ -273,7 +273,7 @@ class PythonGenerator(NodeVisitor):
         if len(node.timestamps) > 0:
             timestamps = pyList([self.visit(s) for s in node.timestamps])
         handlers = pyList([pyAttr("self", h.name) for h in node.handlers])
-        return pyCall(func=pyAttr(pyAttr("dpy", "pat"), "EventPattern"),
+        return pyCall(func=pyAttr(pyAttr("da", "pat"), "EventPattern"),
                       args=[evtype, name, pattern],
                       keywords=[("sources", sources),
                                 ("destinations", destinations),
@@ -373,7 +373,7 @@ class PythonGenerator(NodeVisitor):
         printd("has methods:%r" % node.methods)
         cd = ClassDef()
         cd.name = node.name
-        cd.bases = [pyAttr("dpy", "DistProcess")]
+        cd.bases = [pyAttr("da", "DistProcess")]
         cd.bases.extend(self.bases(node.bases))
         # ########################################
         # TODO: just pass these through until we figure out a use for them:
@@ -504,7 +504,7 @@ class PythonGenerator(NodeVisitor):
         return propagate_attributes([ast.func] + ast.args, ast)
 
     def visit_ApiCallExpr(self, node):
-        ast = pyCall(pyAttr(pyAttr("dpy", "api"), node.func),
+        ast = pyCall(pyAttr(pyAttr("da", "api"), node.func),
                      [self.visit(a) for a in node.args])
         return propagate_attributes(ast.args, ast)
 
@@ -677,13 +677,13 @@ class PythonGenerator(NodeVisitor):
         elif type(node) is dast.ConstantPattern:
             if isinstance(node.value, dast.SelfExpr):
                 # We have to special case the 'self' expr here:
-                return pyCall(func=pyAttr(pyAttr("dpy", "pat"), "SelfPattern"))
+                return pyCall(func=pyAttr(pyAttr("da", "pat"), "SelfPattern"))
             else:
                 val = self.visit(node.value)
         else:
             val = pyList([self.visit(v) for v in node.value])
 
-        return pyCall(func=pyAttr(pyAttr("dpy", "pat"), type(node).__name__),
+        return pyCall(func=pyAttr(pyAttr("da", "pat"), type(node).__name__),
                       args=[val])
 
     visit_FreePattern = visit_PatternElement
@@ -952,7 +952,7 @@ class PythonGenerator(NodeVisitor):
             return pyNone()
 
     def visit_Event(self, node):
-        return pyAttr(pyAttr("dpy", "pat"), node.type.__name__)
+        return pyAttr(pyAttr("da", "pat"), node.type.__name__)
 
     def visit_EventHandler(self, node):
         stmts = self.visit_Function(node)

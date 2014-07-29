@@ -2,7 +2,7 @@ import builtins
 import sys
 from ast import *
 
-import dpy.common
+from .. import common
 from . import dast
 from .utils import printe, printw, printd
 
@@ -113,9 +113,9 @@ KnownUpdateMethods = {
 
 TypeConstructors = {KW_TYPE_SET, KW_TYPE_TUPLE, KW_TYPE_DICT, KW_TYPE_LIST}
 
-ApiMethods = dpy.common.api_registry.keys()
+ApiMethods = common.api_registry.keys()
 
-BuiltinMethods = dpy.common.builtin_registry.keys()
+BuiltinMethods = common.builtin_registry.keys()
 
 PythonBuiltins = dir(builtins)
 

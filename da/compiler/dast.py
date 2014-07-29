@@ -1990,7 +1990,7 @@ class Process(CompoundStmt, ArgumentsContainer):
     def __init__(self, parent=None, ast=None, name="", bases=[]):
         super().__init__(parent, ast)
         self.name = name
-        # List of base classes (other than dpy.DistProcess):
+        # List of base classes (other than da.DistProcess):
         self.bases = bases
         # List of decorator expressions:
         self.decorators = []

@@ -98,9 +98,9 @@ def ast_eq(left, right):
     return False
 
 PREAMBLE = """
-import dpy
-ReceivedEvent = dpy.pat.ReceivedEvent
-SentEvent = dpy.pat.SentEvent
+import da
+ReceivedEvent = da.pat.ReceivedEvent
+SentEvent = da.pat.SentEvent
 {0} = None
 def init(procid):
     global {0}
@@ -132,19 +132,19 @@ def {1}({0}):
     src = blueprint.format(varname, funname)
     return parse(src).body[0]
 
-def gen_inc_module(dpyast, cmdline_args=dict(), filename=""):
+def gen_inc_module(daast, cmdline_args=dict(), filename=""):
     """Generates the interface file from a DistPy AST."""
 
     global ModuleFilename
     ModuleFilename = filename
-    assert isinstance(dpyast, dast.Program)
+    assert isinstance(daast, dast.Program)
     jbstyle = cmdline_args['jbstyle'] if 'jbstyle' in cmdline_args else False
     module = parse(PREAMBLE)
     if jbstyle:
         # Additional import for jbstyle
         module.body.insert(0, parse("import runtimelib").body[0])
     quex = QueryExtractor()
-    quex.visit(dpyast)
+    quex.visit(daast)
 
     # Generate the query functions and accumulate set of parameters:
     all_params = []
@@ -290,7 +290,7 @@ def gen_inc_module(dpyast, cmdline_args=dict(), filename=""):
         module.body.append(updfun)
 
     # Inject calls to stub init for each process:
-    for proc in dpyast.processes:
+    for proc in daast.processes:
         if not hasattr(proc.initializers[0], "prebody"):
             proc.initializers[0].prebody = []
         proc.initializers[0].prebody.insert(
@@ -299,7 +299,7 @@ def gen_inc_module(dpyast, cmdline_args=dict(), filename=""):
                 args=[pyAttr("self", "_id")]))
 
     # Generate the main python file:
-    pyast = StubcallGenerator(all_events).visit(dpyast)
+    pyast = StubcallGenerator(all_events).visit(daast)
     return module, pyast
 
 class StubcallGenerator(PythonGenerator):

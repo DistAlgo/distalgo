@@ -77,7 +77,7 @@ def api(func):
 def builtin(func):
     """Declare 'func' as DistPy builtin.
 
-    Builtins are instance methods of dpy.DistProcess, and must be called with
+    Builtins are instance methods of da.DistProcess, and must be called with
     the process instance as first argument (self).
 
     """

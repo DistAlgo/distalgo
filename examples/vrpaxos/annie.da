@@ -220,4 +220,4 @@ def main():
     startprocs(clients)
     for c in clients: c.join()
     print("Done.")
-    dpy.send(('Done',), to=(acceptors|replicas|leaders))
+    da.send(('Done',), to=(acceptors|replicas|leaders))

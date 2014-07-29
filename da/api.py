@@ -18,7 +18,7 @@ from logging import ERROR
 from logging import CRITICAL
 from logging import FATAL
 
-import dpy.compiler.ui
+from .compiler import ui as compiler
 from .endpoint import UdpEndPoint, TcpEndPoint
 from .sim import DistProcess
 from .common import api, deprecated, Null, api_registry
@@ -59,7 +59,7 @@ def find_file_on_paths(filename, paths):
     return None, None
 
 @api
-def dpyimport(filename, force_recompile=False, compiler_args=[], indir=None):
+def daimport(filename, force_recompile=False, compiler_args=[], indir=None):
     dotidx = filename.rfind(".")
     paths = sys.path if indir is None else [indir]
     if dotidx == -1:
@@ -88,7 +88,7 @@ def dpyimport(filename, force_recompile=False, compiler_args=[], indir=None):
         oldargv = sys.argv
         try:
             argv = oldargv[0:0] + compiler_args + [fullpath]
-            res = dpy.compiler.ui.main(argv)
+            res = compiler.main(argv)
         except Exception as err:
             raise RuntimeError("Compiler failure!", err)
         finally:
@@ -176,7 +176,7 @@ def entrypoint(options):
 
     sys.path.insert(0, source_dir)
     try:
-        module = dpyimport(basename,
+        module = daimport(basename,
                            force_recompile=options.recompile,
                            compiler_args=options.compiler_flags.split(),
                            indir=source_dir)

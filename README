@@ -23,9 +23,9 @@ the Python distutils package. To see full usage description, type:
 
    `export PYTHONPATH=<PROJROOT>:${PYTHONPATH}`
 
-After installation, the 'dpy' package will be available for use.
+After installation, the 'da' package will be available for use.
 
-Lastly, the 'bin' subdirectory contains two scripts, 'dpyc' and 'dpyr', that
+Lastly, the 'bin' subdirectory contains two scripts, 'dac' and 'dar', that
 runs the compiler and runtime, respectively. These scripts takes care of
 properly setting 'sys.path' so no installation or modification of PYTHONPATH
 is necessary. Simply add the 'bin' directory to your PATH:
@@ -36,23 +36,21 @@ is necessary. Simply add the 'bin' directory to your PATH:
 
 ## Invoking the compiler
 
-   To invoke the DistAlgo compiler, run the 'dpy.compiler' Python module:
+   To invoke the DistAlgo compiler, run the 'da.compiler' Python module:
 
-   `python3 -m dpy.compiler` (or `dpyc` if you use the script)
+   `python3 -m da.compiler` (or `dac` if you use the script)
 
 ## Invoking the runtime
 
-   To run DistAlgo programs, pass the source file as an argument to the 'dpy'
+   To run DistAlgo programs, pass the source file as an argument to the 'da'
    Python module:
 
-   `python3 -m dpy <SOURCE>` (or `dpyr <SOURCE>` if you use the script)
+   `python3 -m da <SOURCE>` (or `dar <SOURCE>` if you use the script)
 
 To see a full description of available options, use
 
-   `python3 -m dpy.compiler -h`
+   `python3 -m da.compiler -h`
 
 and
 
-   `python3 -m dpy -h`
-
-
+   `python3 -m da -h`
