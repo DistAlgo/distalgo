@@ -8,22 +8,22 @@ class P(process):
         distance = 1
         while distance < 1025:
             send(('Out', self, distance), to={left, right})
-            if await(received(('Out', self, _rem))):
+            if await(received(('Out', self, _))):
                 output("I am leader!")
                 await(False)
-            elif (received(('In', self), src=left) and
-                  received(('In', self), src=right)):
+            elif (received(('In', self), src=_left) and
+                  received(('In', self), src=_right)):
                 distance *= 2
                 reset_received()
 
-    def recv(msg=('Out', _v, _d), src=_source):
+    def recv(msg=('Out', v, d), src=source):
         if v > self:
             if d > 1:
                 send(('Out', v, d-1), to=(right if source == left else left))
             elif d == 1:
                 send(('In', v), to=source)
 
-    def recv(msg=('In', _v), src=_source):
+    def recv(msg=('In', v), src=source):
         if v > self:
             send(('In', v), to=(right if source == left else left))
 

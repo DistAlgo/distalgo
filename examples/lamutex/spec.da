@@ -8,16 +8,16 @@ class P(process):
         --request
         c = logical_clock()
         send(('Request', c, self), to=s)
-        await(each(received(('Request', _c2, _p2)),
-                   (c, self) < (c2, p2) or received(('Release', c2, p2))) and
-              each(_p3 in s, some(received(('Ack', _c3, p3)), c3 > c)))
+        await(each(received(('Request', c2, p2)),
+                   (c, self) < (c2, p2) or received(('Release', _c2, _p2))) and
+              each(p3 in s, some(received(('Ack', c3, _p3)), c3 > c)))
         --cs
         task()
         --release
         output("Release CS!")
         send(('Release', c, self), to=s)
 
-    def recv(msg=('Request', _, _p2)):
+    def recv(msg=('Request', _, p2)):
         send(('Ack', logical_clock(), self), to=p2)
 
     def main():
@@ -26,7 +26,7 @@ class P(process):
         for i in range(n):
             cs(announce)
         send(('Done', self), to=s)
-        await(each(_p in s, received(('Done', p))))
+        await(each(p in s, received(('Done', _p))))
         output("Terminating..")
 
 def main():

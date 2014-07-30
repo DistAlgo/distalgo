@@ -8,14 +8,13 @@ class Coordinator(process):
     def main():
         --start
         send(('Prepare', tid), to=cohorts)
-        if await(each(_c in cohorts, received(('Vote', 'ready', tid, c)))):
+        if await(each(c in cohorts, received(('Vote', 'ready', _tid, _c)))):
             send(('Commit', tid), to=cohorts)
-            await(each(_c in cohorts, received(('Done', tid, c))))
+            await(each(c in cohorts, received(('Done', _tid, _c))))
             output('log complete record for' + str(tid))
-        elif each(_c in cohorts, received(('Vote', _, tid, c))):
-            s = {c for ((_mtype, _minfo, tid, _c), _) in received
-                 if mtype == "Vote" if minfo == "ready"}
-            bcast(Abort(tid), to=s)
+        elif each(c in cohorts, received(('Vote', _, _tid, _c))):
+            s = {c for c in received(("Vote", "ready", _tid, c))}
+            send(('Abort', tid), to=s)
         --end
         terminate()
 
@@ -30,7 +29,7 @@ class Cohort(process):
     def main():
         await(received(('Done',)))
 
-    def recv(msg=('Prepare', _tid), src=_coord):
+    def recv(msg=('Prepare', tid), src=coord):
         if prepared(tid):
             output("ready:" + str(tid))
             send(('Vote', 'ready', tid, self), to=coord)
@@ -38,11 +37,11 @@ class Cohort(process):
             output("failed:"  + str(tid))
             send(('Vote', 'abort', tid, self), to=coord)
 
-    def recv(msg=('Commit', _tid), src=_fro):
+    def recv(msg=('Commit', tid), src=fro):
         send(('Done', tid, self), to=fro)
         commit(tid)
 
-    def recv(msg=('Abort', _tid)):
+    def recv(msg=('Abort', tid)):
         abort(tid)
 
     def prepared(tid):

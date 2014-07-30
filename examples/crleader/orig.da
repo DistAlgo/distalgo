@@ -7,7 +7,7 @@ class P(process):
     def initiate():
         send(('Election', self), to=left)
 
-    def recv(msg=('Election', _p)):
+    def recv(msg=('Election', p)):
         if p > self:
             send(('Election', p), to=left)
         if p < self:
@@ -16,7 +16,7 @@ class P(process):
         if p == self:
             send(('Leader', self), to=left)
 
-    def recv(msg=('Leader', _leader)):
+    def recv(msg=('Leader', leader)):
         leaderid = leader
         if leader != self:
             send(('Leader', leader), to=left)

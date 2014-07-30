@@ -10,15 +10,12 @@ class Proposer(process):
             --start
             send(('Prepare', propNum), to=acceptors)
             --propose
-            if await(len({a for ((_type, _num, _, _, _a), _) in received
-                          if type == 'Promise' if num == propNum}) > maj):
-                _, propVal = max({(propnum, votedval)
-                                  for ((_type, _num, _propnum, _votedval, _), _) in received
-                                  if type == 'Promise' if num == propNum} |
+            if await(len({a for a in received(('Promise', _propNum, _, _, a))}) > maj):
+                _, propVal = max({(votednum, votedval)
+                                  for _ in received(('Promise', _propNum, votednum, votedval, _))} |
                                  {(propNum, propVal)})
                 send(('Propose', propNum, propVal), to=acceptors)
-                if await(len({a for ((_type, _num, propVal, _a), _) in received
-                              if type == 'Accept' if num == propNum}) > maj):
+                if await(len({a for a in received(('Accept', _propNum, _propVal, a))}) > maj):
                     --end
                     output("Succeeded in proposing %r"%propVal)
                     continue
@@ -36,18 +33,15 @@ class Acceptor(process):
     def main():
         await(False)
 
-    def recv(msg=('Prepare', _n), src=_source):
-        if (n > max({propnum for ((_type, _propnum, _, _, _who), _) in sent
-                     if type == 'Promise' if who == self} |
+    def recv(msg=('Prepare', n), src=source):
+        if (n > max({propnum for propnum in sent(('Promise', propnum, _, _, self))} |
                     {min_propnum})):
-            maxpn, votedval = max({(mpn, vv) for ((_type, _mpn, _vv, _who), _) in sent
-                                   if type == 'Accept' if who == self} |
+            maxpn, votedval = max({(mpn, vv) for _ in sent(('Accept', mpn, vv, self))} |
                                   {(min_propnum, self)})
             send(('Promise', n, maxpn, votedval, self), to=source)
 
-    def recv(msg=('Propose', _n, _v), src=_source):
-        if (n >= max({propnum for ((_type, _propnum, _, _, _who), _) in sent
-                      if type == 'Promise' if who == self} |
+    def recv(msg=('Propose', n, v), src=source):
+        if (n >= max({propnum for _ in sent(('Promise', propnum, _, _, self))} |
                      {min_propnum})):
             send(('Accept', n, v, self), to=source)
 

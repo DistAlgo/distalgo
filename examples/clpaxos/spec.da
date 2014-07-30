@@ -11,19 +11,19 @@ class Proposer(process):
             --prepare
             send(('Prepare', propNum, self), to=acceptors)
             if await(len({a for a in
-                          received(('Promise', propNum, _, _, _a))}) > quorumsize):
+                          received(('Promise', _propNum, _, _, a))}) > quorumsize):
                 --propose
                 voted = max({(n, v)
                              for (n, v) in
-                             received(('Promise', propNum, _n, _v, _))
-                             if len({a for a in received(('Promise', propNum,
-                                                          n, v, _a))}) > f} |
-                            {((-1, self), propVal)})
+                             received(('Promise', _propNum, n, v, _))
+                             if len({a for a in received(('Promise', _propNum,
+                                                          _n, _v, a))}) > f} |
+                            {((-1, self), propVal)})[1]
 
-                send(('OneC', propNum, voted[1], self), to=acceptors)
-                if await(len({a for a in received(('TwoAv', propNum, voted[1], _a))}) > quorumsize):
+                send(('OneC', propNum, voted, self), to=acceptors)
+                if await(len({a for a in received(('TwoAv', _propNum, _voted, a))}) > quorumsize):
                     --end
-                    output("Succeeded proposing %r" % voted[1])
+                    output("Succeeded proposing %r" % voted)
                     work()
                     continue
                 elif timeout(TIMEOUT):
@@ -38,28 +38,28 @@ class Acceptor(process):
 
     def main():
         while True:
-            if await(some(received(('TwoAV', _n, _v, _)),
-                          (len({a for _a in received(('TwoAV', n, v, _a))}) > quorumsize and
-                           not sent(('TwoB', n, v))))):
+            if await(some(received(('TwoAV', n, v, _)),
+                          (len({a for a in received(('TwoAV', _n, _v, a))}) > quorumsize and
+                           not sent(('TwoB', _n, _v))))):
                 send(('TwoB', n, v), to=peers)
 
-    def recv(msg=('Prepare', _n, _p)):
+    def recv(msg=('Prepare', n, p)):
         if n > maxpromised():
-            vn, vv = max({(vpn, vv) for _ in sent(('TwoAv', _vpn, _vv, self))} |
+            vn, vv = max({(vpn, vv) for _ in sent(('TwoAv', vpn, vv, self))} |
                          {((-1, self), None)})
             send(('Promise', n, vn, vv, self), to=peers)
 
-    def recv(msg=('OneC', _n, _v, _p)):
-        if (n >= maxpromised() and islegal(n, v) and (not sent(('TwoAv', n, _, self)))):
+    def recv(msg=('OneC', n, v, p)):
+        if (n >= maxpromised() and islegal(n, v) and (not sent(('TwoAv', _n, _, self)))):
             send(('TwoAv', n, v, self), to=peers)
 
     def maxpromised():
-        return max({n for n in sent(('Promise', _n, _, _, _))} | {(-2, self)})
+        return max({n for n in sent(('Promise', n, _, _, _))} | {(-2, self)})
 
     def islegal(n, v):
         voted = {(vn, vv)
-                 for (vn, vv) in received(('Promise', n, _vn, _vv, _))
-                 if len({a for a in received(('Promise', n, vn, vv, _a))}) > f}
+                 for (vn, vv) in received(('Promise', _n, vn, vv, _))
+                 if len({a for a in received(('Promise', _n, _vn, _vv, a))}) > f}
         if voted and (max(voted)[1] is not None):
             return v == max(voted)[1]
         else:

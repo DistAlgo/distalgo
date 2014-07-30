@@ -1,0 +1,51 @@
+import sys
+class P(process):
+     def setup(ps):
+       reqc = None
+       waiting = set()
+       replied = set()
+
+     def cs(task):
+       # to enter cs, enque and send request to all, then await replies from all
+         --start
+         reqc = logical_clock()
+         send(Request(reqc), to=ps)
+
+         await(len(replied) == len(ps))
+
+       # critical section
+         task()
+
+       # to exit cs, deque and send releases to all
+         --release
+         reqc = None
+         send(Reply(logical_clock()), to=waiting)
+         --end
+         waiting = set()
+         replied = set()
+
+     def main():
+          def anounce():
+               output("In cs!")
+          while True:
+               cs(anounce)
+
+     # when receiving requests from others, enque and reply
+     def recv(msg=('Request', timestamp), src=source):
+         if (reqc == None or (timestamp, source) < (reqc, self)):
+           send(Reply(logical_clock()), to=source)
+         else:
+           waiting.add(source)
+
+     def recv(msg=('Reply', c1), src=source):
+         if reqc is not None and c1 > reqc:
+             replied.add(source)
+
+def main():
+ nprocs = int(sys.argv[1]) if len(sys.argv) > 1 else 10
+
+ ps = createprocs(P, nprocs)
+ # setup the processes
+ for p in ps: setupprocs({p}, [ps-{p}])
+ # start the processes
+ startprocs(ps)

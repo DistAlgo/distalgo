@@ -7,11 +7,11 @@ class P(process):
        for rnd in range(1, maxfail):
           send(('Value',
                 frozenset([v for v in V
-                           if (not (some(sent(('Value', _V2, self)), v in V2)))]),
+                           if (not (some(sent(('Value', V2, self)), v in V2)))]),
                 self), to=ps)
           reset_received()
-          await(each(_p in ps, received(('Value', _, p))))
-          V |= {v for _ in received(('Value', _V2, _)) for v in V2}
+          await(each(p in ps, received(('Value', _, _p))))
+          V |= {v for _ in received(('Value', V2, _)) for v in V2}
        x = min(V)
        output(x)
 

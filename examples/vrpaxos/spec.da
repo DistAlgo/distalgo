@@ -17,18 +17,18 @@ class Replica(process):
 
     def propose(p):
         #you ignore if p is already been issued
-        if not some((_, p) in decisions, True):
+        if not some((_, _p) in decisions, True):
             #find the largest available slot
-            maxs = max(s for _s, _ in chain(proposals, decisions, {(0, 0)}))
+            maxs = max(s for s, _ in chain(proposals, decisions, {(0, 0)}))
             #within maximum, find smallest which is not yet been decided
             s1 = min(s for s in range(1, maxs + 1 + 1)
-                     if not some((s, _) in chain(proposals, decisions), True))
+                     if not some((_s, _) in chain(proposals, decisions), True))
             proposals.add((s1, p))
             send(('Propose', s1, p), to=leaders)
 
     def perform(p):
         k, cid, op = p
-        if some((_s, p) in decisions, (s < slot_num)):
+        if some((s, _p) in decisions, (s < slot_num)):
             slot_num += 1
         else:
             #next, result = operations[op](state) # Perform the operation on state here - get result and return
@@ -37,16 +37,16 @@ class Replica(process):
                 state[op] += 1
             else:
                 state[op] = 1
-            slot_num = slot_num + 1
+            slot_num += 1
             send(('Response', cid, state[op]), to=k)
 
-    def recv(msg=('Request', _p)):
+    def recv(msg=('Request', p)):
         propose(p)
 
-    def recv(msg=('Decision', _s, _p)):
+    def recv(msg=('Decision', s, p)):
         decisions.add((s,p))
-        while some((slot_num, _p1) in decisions, True):
-            while some((slot_num, _p2) in decisions, (p2 != p1)):
+        while some((_slot_num, p1) in decisions, True):
+            while some((_slot_num, p2) in decisions, (p2 != p1)):
                 propose(p2)
             perform(p1)
 
@@ -59,14 +59,14 @@ class Acceptor(process):
         await(received(('Done',)))
         output("Terminating..")
 
-    def recv(msg=('P1a', _lam, _b)):
+    def recv(msg=('P1a', lam, b)):
         if b > ballot_num:
             ballot_num = b
         send(('P1b', self, ballot_num, accepted), to=lam) # we are sending the entire accepted set here - something is not right
 
-    def recv(msg=('P2a', _lam, _load)):
+    def recv(msg=('P2a', lam, load)):
         b, s, p = load
-        if b >= ballot_num :
+        if b >= ballot_num:
             ballot_num = b
             # State Reduction - we do not need to send all accepted values. Hence instead of appending, overwrite the set
             accepted.clear()
@@ -84,7 +84,7 @@ class Commander(process):
         send(('P2a', self, (b, s, p)), to=acceptors)
         await(done)
 
-    def recv(msg=('P2b', _a, _b1)):
+    def recv(msg=('P2b', a, b1)):
         if (b1 == b):
             if a in waitfor:
                 waitfor.remove(a)
@@ -109,7 +109,7 @@ class Scout(process):
         send(('P1a', self, b), to=acceptors)
         await(done)
 
-    def recv(msg=('P1b', _a, _b1, _r)):
+    def recv(msg=('P1b', a, b1, r)):
         if b1 == b:
             pvalues |= r
             if a in waitfor:
@@ -133,21 +133,21 @@ class Leader(process):
         await(received(('Done',)))
         output("Terminating..")
 
-    def recv(msg=('Propose', _s, _p)):
-        if not some((s, _) in proposals, True):
+    def recv(msg=('Propose', s, p)):
+        if not some((_s, _) in proposals, True):
             proposals.add((s,p))
             if active:
                 # Spwan commander only if not decided
-                if not some((s, _) in decided, True):
+                if not some((_s, _) in decided, True):
                     spawn(Commander, [self, acceptors, replicas, (ballot_num, s, p)])
 
-    def recv(msg=('Adopted', ballot_num, _pvals)):
+    def recv(msg=('Adopted', _ballot_num, pvals)):
         proposals = circle_plus(proposals, pmax(pvals))
         for (s, p) in proposals:
             spawn(Commander, [self, acceptors, replicas, (ballot_num, s, p)])
         active = True
 
-    def recv(msg=('Preempted', _b)):
+    def recv(msg=('Preempted', b)):
         r1, lam1 = b
         if b > ballot_num:
             active = False
@@ -155,16 +155,16 @@ class Leader(process):
             spawn(Scout, [self, acceptors, ballot_num])
 
     # Keep track of decisions
-    def recv(msg=('Decision', _s, _p)):
+    def recv(msg=('Decision', s, p)):
         decided.add((s,p))
 
     def circle_plus(x, y):
         return y | {(s, p) for (s, p) in x
-                    if not some((s, _) in y, True)}
+                    if not some((_s, _) in y, True)}
 
     def pmax(pvals):
         return {(s, p) for (b, s, p) in pvals
-                if each((_b1, s, _) in pvals, (b1 <= b))}
+                if each((b1, _s, _) in pvals, (b1 <= b))}
 
 
 class Client(process):
@@ -189,7 +189,7 @@ class Client(process):
             output("Received result %d:%d" % (cid, results[cid]))
             cid += 1
 
-    def recv(msg=('Response', _cid, _result)):
+    def recv(msg=('Response', cid, result)):
         if results.get(cid) == None:
             results[cid] = result
             count[cid] = 1

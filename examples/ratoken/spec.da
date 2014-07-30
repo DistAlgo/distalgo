@@ -21,22 +21,22 @@ class P (process):
                 send(('access', token), to=p)
                 break
 
-    def recv(msg=('access', _newtok)):
+    def recv(msg=('access', newtok)):
         token = newtok
 
-    def recv(msg=('request', _c, _p)):
+    def recv(msg=('request', c, p)):
         if request_pending(p) and token_present():
             #output("sending %r-> %r" % (token, p))
             send(('access', token), to=p)
 
     def request_pending(p):
         # p has a request after it last had the token
-        return some(received(('request', _c, p)), c > token[p])
+        return some(received(('request', c, _p)), c > token[p])
 
     def token_present():
         return (orig_token and not sent(('access', _)) or
-                some(received(('access', _token1)),
-                     not some(sent(('access', _token2)),
+                some(received(('access', token1)),
+                     not some(sent(('access', token2)),
                               token2[self] > token1[self])))
 
     def main():
@@ -47,7 +47,7 @@ class P (process):
         for i in range(nrounds):
             cs(anounce)
         send(('Done',), to=ps)
-        await(each(_p in ps, received(('Done',), src=p)))
+        await(each(p in ps, received(('Done',), src=_p)))
         output("Done!")
 
 def main():

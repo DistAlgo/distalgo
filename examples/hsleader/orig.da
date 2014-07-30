@@ -18,7 +18,7 @@ class P(process):
                 phase += 1
                 phase_left, phase_right = False, False
 
-    def recv(msg=('Token', _v, _direction, _h), src=_source):
+    def recv(msg=('Token', v, direction, h), src=source):
         if source == left and direction == 'out':
             if v > self and h > 1:
                 send(('Token', v, 'out', h-1), to=right)

@@ -7,16 +7,16 @@ class P(process):
         --request
         ownc = logical_clock()
         send(('request', ownc, self), to=s)    # send request to all processes
-        await(each(_p in s, some(received(('ack', _c, p)), c > ownc)))
+        await(each(p in s, some(received(('ack', c, _p)), c > ownc)))
         --cs
         task()                  # critical section
         --release
         send(('ack', logical_clock(), self),
-             to={p for p in s if some(received(('request', _c, p)),
+             to={p for p in s if some(received(('request', c, _p)),
                                       (c, p) >= (ownc, self))})
 
-    def recv(msg=('request', _c, _p)):
-        if each(received(('request', _c, self)), (c, p) < (ownc, self)):
+    def recv(msg=('request', c, p)):
+        if each(received(('request', c, self)), (c, p) < (ownc, self)):
             send(('ack', logical_clock(), self), to=p)
 
     def main():
@@ -25,7 +25,7 @@ class P(process):
         for i in range(n):
             cs(anounce)
         send(('Done',), to=s)
-        await(each(_p in s, received(('Done',), src=p)))
+        await(each(p in s, received(('Done',), src=_p)))
         output("Done!")
 
 def main():

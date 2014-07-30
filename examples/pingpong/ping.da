@@ -5,7 +5,7 @@ class Pong(process):
     def main():
         await(False)
 
-    def recv(msg=('Ping',), src=_p):
+    def recv(msg=('Ping',), src=p):
         output("Pinged")
         send(('Pong',), to=p)
 
@@ -16,7 +16,7 @@ class Ping(process):
         while True:
             clk = logical_clock()
             send(('Ping',), to=p)
-            await(some(received(('Pong',), clk=_rclk), (rclk > clk)))
+            await(some(received(('Pong',), clk=rclk), (rclk > clk)))
             work()
 
     def recv(msg=('Pong',)):

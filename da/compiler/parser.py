@@ -193,19 +193,12 @@ class PatternParser(NodeVisitor):
                 value=dast.NoneExpr(self.parent_node, node))
 
         name = node.id
-        if name.startswith("_"):
-            # Free variable:
-            name = node.id[1:]
-            if len(name) == 0:
-                n = None
-            else:
-                n = self.namescope.add_name(name)
-            pat = dast.FreePattern(self.parent_node, node, value=n)
-            if n is not None:
-                n.add_assignment(pat)
-            return pat
-        else:
+        if name == "_":
+            # Wild card
+            return dast.FreePattern(self.parent_node, node)
+        elif name.startswith("_"):
             # Bound variable:
+            name = node.id[1:]
             n = self.namescope.find_name(name)
             if n is None:
                 self._parser.warn(
@@ -214,6 +207,14 @@ class PatternParser(NodeVisitor):
                 n = self.namescope.add_name(name)
             pat = dast.BoundPattern(self.parent_node, node, value=n)
             n.add_read(pat)
+            return pat
+        else:
+            # Free variable:
+            name = node.id
+            n = self.namescope.add_name(name)
+            pat = dast.FreePattern(self.parent_node, node, value=n)
+            if n is not None:
+                n.add_assignment(pat)
             return pat
 
     def visit_Str(self, node):
@@ -260,7 +261,7 @@ class PatternFinder(NodeVisitor):
     def __init__(self):
         self.found = False
 
-    # It's a pattern if it has free variables:
+    # It's a pattern if it has bound variables:
     def visit_Name(self, node):
         if node.id.startswith("_"):
             self.found = True
@@ -917,13 +918,7 @@ class Parser(NodeVisitor):
         self.current_context = Assignment()
 
         # DistAlgo: overload "for" to allow pattern matching
-        pf = PatternFinder()
-        pf.visit(node.target)
-        # Backward compatibility: only assume pattern if containing free var
-        if pf.found:
-            s.target = self.parse_pattern_expr(node.target)
-        else:
-            s.target = self.visit(node.target)
+        s.target = self.parse_pattern_expr(node.target)
 
         self.current_context = IterRead(s.target)
         s.iter = self.visit(node.iter)
@@ -1655,13 +1650,7 @@ class Parser(NodeVisitor):
             expr.unlock()
             self.current_context = Assignment()
             # DistAlgo: overload 'in' to allow pattern matching:
-            pf = PatternFinder()
-            # Backward compat: only assume pattern if containing free var:
-            pf.visit(g.target)
-            if pf.found:
-                target = self.parse_pattern_expr(g.target)
-            else:
-                target = self.visit(g.target)
+            target = self.parse_pattern_expr(g.target)
             expr.targets.append(target)
             expr.lock()
             self.current_context = IterRead(target)
