@@ -193,7 +193,7 @@ def gen_inc_module(daast, cmdline_args=dict(), filename=""):
                            kw_defaults=[]),
             decorator_list=[],
             returns=None,
-            body=[Expr(Str(to_source(query.ast))),
+            body=[Expr(Str(to_source(query.ast, single_line=True))),
                   Return(incqu)])
         qrycall = pyCall(
             func=pyAttr(INC_MODULE_VAR, qname),
