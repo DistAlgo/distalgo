@@ -152,11 +152,18 @@ class PatternParser(NodeVisitor):
     """Parses a pattern.
     """
 
-    def __init__(self, parser):
+    def __init__(self, parser, scope=None):
         self._parser = parser
+        self._scope = scope
         self.parent_node = parser.current_parent
-        self.namescope = parser.current_scope
         self.use_object_style = parser.use_object_style
+
+    @property
+    def namescope(self):
+        if self._scope is not None:
+            return self._scope
+        else:
+            return self._parser.current_scope
 
     def visit(self, node):
         if isinstance(node, Name):
@@ -383,9 +390,13 @@ class Parser(NodeVisitor):
                 bases.append(self.visit(b))
         return isproc, bases
 
-    def parse_pattern_expr(self, node):
+    def parse_pattern_expr(self, node, use_dummy_scope=False):
         expr = self.create_expr(dast.PatternExpr, node)
-        pattern = PatternParser(self).visit(node)
+        if use_dummy_scope:
+            pp = PatternParser(self, dast.NameScope(self.current_parent))
+        else:
+            pp = PatternParser(self)
+        pattern = pp.visit(node)
         if pattern is None:
             self.error("invalid pattern", node)
             self.pop_state()
@@ -1111,10 +1122,10 @@ class Parser(NodeVisitor):
             return False
         return True
 
-    def parse_event_expr(self, node):
+    def parse_event_expr(self, node, use_dummy_scope=False):
         if (node.starargs is not None or node.kwargs is not None):
             self.warn("extraneous arguments in event expression.", node)
-        pattern = self.parse_pattern_expr(node.args[0])
+        pattern = self.parse_pattern_expr(node.args[0], use_dummy_scope)
         if node.func.id == KW_RECV_QUERY:
             event = dast.Event(self.current_process,
                                event_type=dast.ReceivedEvent,
@@ -1127,7 +1138,7 @@ class Parser(NodeVisitor):
             self.error("unknown event specifier", node)
             return None
         for kw in node.keywords:
-            pat = self.parse_pattern_expr(kw.value)
+            pat = self.parse_pattern_expr(kw.value, use_dummy_scope)
             if kw.arg == KW_EVENT_SOURCE:
                 event.sources.append(pat)
             elif kw.arg == KW_EVENT_DESTINATION:
@@ -1338,7 +1349,7 @@ class Parser(NodeVisitor):
                     expr = self.create_expr(dast.SentExpr, node)
                 if self.current_context is not None:
                     expr.context = self.current_context.type
-                event = self.parse_event_expr(node)
+                event = self.parse_event_expr(node, True)
                 self.pop_state()
                 expr.event = event
                 outer.right = expr
@@ -1556,7 +1567,8 @@ class Parser(NodeVisitor):
             pf = PatternFinder()
             pf.visit(node.left)
             if pf.found:
-                expr.left = self.parse_pattern_expr(node.left)
+                expr.left = self.parse_pattern_expr(node.left,
+                                                    use_dummy_scope=True)
         if expr.left is None:
             expr.left = self.visit(node.left)
         self.current_context = Read(expr.left)
