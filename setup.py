@@ -1,9 +1,9 @@
 from distutils.core import setup
 
-import dpy
+import da
 
 setup(name = "DistAlgo",
-      version = dpy.__version__,
+      version = da.__version__,
       author= "bolin",
       author_email = "bolin@cs.stonybrook.edu",
-      packages = ['dpy', 'dpy.compiler'])
+      packages = ['da', 'da.compiler'])
