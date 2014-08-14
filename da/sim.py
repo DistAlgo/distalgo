@@ -79,14 +79,12 @@ class DistProcess(multiprocessing.Process):
         self._logical_clock = 0
 
         self._events = []
-        self._received_q = []
         self._jobqueue = []
         self._timer = None
         self._timer_expired = False
         self._failures = {'send': 0,
                           'receive': 0,
                           'crash': 0}
-        self._evtimeout = None
 
         # Performance counters:
         self._usrtime_st = 0
@@ -105,6 +103,7 @@ class DistProcess(multiprocessing.Process):
         self._child_procs = []
 
     def _wait_for_go(self):
+        self._log.debug("Sending id to parent...")
         self._initpipe.send(self._id)
         while True:
             act = self._initpipe.recv()
@@ -112,10 +111,12 @@ class DistProcess(multiprocessing.Process):
             if act == "start":
                 self._running = True
                 del self._initpipe
+                self._log.debug("'start' command received, commencing...")
                 return
             else:
                 inst, args = act
                 if inst == "setup":
+                    self._log.debug("Running setup..")
                     self.setup(*args)
                 else:
                     m = getattr(self, "set_" + inst)
@@ -353,13 +354,6 @@ class DistProcess(multiprocessing.Process):
         while (True):
             self._process_event(self._events, True)
 
-    def _has_received(self, mess):
-        try:
-            self._received_q.remove(mess)
-            return True
-        except ValueError:
-            return False
-
     def __str__(self):
         s = self.__class__.__name__
         if self._dp_name is not None:
@@ -378,9 +372,6 @@ class DistProcess(multiprocessing.Process):
 
     def set_crash_rate(self, rate):
         self._failures['crash'] = rate
-
-    def set_event_timeout(self, time):
-        self._evtimeout = time
 
     def set_name(self, name):
         self._dp_name = name
