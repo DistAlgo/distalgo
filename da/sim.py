@@ -235,15 +235,16 @@ class DistProcess(multiprocessing.Process):
     def _send(self, data, to):
         self.incr_logical_clock()
         if (self._fails('send')):
-            return False
+            return set()
 
-        result = True
+        result = set()
         if (hasattr(to, '__iter__')):
-            for t in to:
-                r = t.send(data, self._id, self._logical_clock)
-                if not r: result = False
+            targets = to
         else:
-            result = to.send(data, self._id, self._logical_clock)
+            targets = [to]
+        for t in targets:
+            if t.send(data, self._id, self._logical_clock):
+                result.add(t)
 
         self._trigger_event(pattern.SentEvent((self._logical_clock,
                                                to, self._id),
