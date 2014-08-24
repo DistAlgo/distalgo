@@ -11,7 +11,7 @@
 
    Python version 3.4 or higher is required to run DistAlgo. Here we assume
    your default `python' executable is version 3.4 or higher. Please note that
-   if your system has both Python 2.x and Python 3.x installed, you `python'
+   if your system has both Python 2.x and Python 3.x installed, your `python'
    executable will most likely be Python 2. In that case, you should
    substitute `python' with `python3' (or `pythonX.Y' where 'X.Y' is the exact
    Python version you want to use) in all following command line examples.
@@ -149,4 +149,4 @@
    argument to the runtime (which causes debugging output to be printed to the
    console):
 
-       python -m da -L <PROJROOT>/examples/lamutex/orig.da
+       python -m da -L debug <PROJROOT>/examples/lamutex/orig.da
