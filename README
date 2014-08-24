@@ -1,56 +1,152 @@
 # DistAlgo 
 
-DistAlgo is a programming language for distributed algorithms. This project is
-an implementation of DistAlgo on Python.
+  DistAlgo is a very high-level language for specifying distributed
+  algorithms. This project implements a DistAlgo compiler with Python as the
+  target language. In the following text, the name 'DistAlgo' is used to refer
+  to the compiler and not the language.
+
+# Requirements
+
+## Python
+
+   Python version 3.4 or higher is required to run DistAlgo. Here we assume
+   your default `python' executable is version 3.4 or higher. Please note that
+   if your system has both Python 2.x and Python 3.x installed, you `python'
+   executable will most likely be Python 2. In that case, you should
+   substitute `python' with `python3' (or `pythonX.Y' where 'X.Y' is the exact
+   Python version you want to use) in all following command line examples.
+
+   To find out which version of Python is installed on your system, type:
+
+      python --version
+
+## Operating system
+
+   DistAlgo has been tested on GNU/Linux and Microsoft Windows systems. The
+   command line instructions contained in this document use GNU Bash syntax.
+   If you are using a different shell(e.g. the Windows 'cmd.exe' shell),
+   please adjust the commands accordingly.
 
 # Installation
 
-Installation of DistAlgo is optional. DistAlgo installation is handled through
-the Python distutils package. To see full usage description, type:
+  In all following commands, please substitute '<PROJROOT>' with the path of
+  the project's root directory(the directory containing this file).
 
-    `python3 setup.py --help`
+  Installation of DistAlgo is optional. You can either install DistAlgo by
+  using the Python `distutils' module, or by adding the DistAlgo project root
+  directory to your 'PYTHONPATH' environment variable.
 
-## To install DistAlgo as system-wide package:
+## Using `distutils'
 
-   `python3 setup.py install`
+   To see full usage description, type:
 
-## Or, to install DistAlgo for the current user:
+      cd <PROJROOT>; python setup.py --help
 
-   `python3 setup.py install --user`
+### The following command installs DistAlgo as system-wide package:
 
-## Alternatively, you can simply add the root directory to your PYTHONPATH
+      cd <PROJROOT>; python setup.py install
+
+### The following command installs DistAlgo for the current user:
+
+      cd <PROJROOT>; python setup.py install --user
+
+   Note that if you've install DistAlgo for both system and user, the user
+   installation takes precedence.
+
+## Alternatively, you can simply add the root directory to your 'PYTHONPATH'
    environment variable:
 
-   `export PYTHONPATH=<PROJROOT>:${PYTHONPATH}`
+      export PYTHONPATH=<PROJROOT>:${PYTHONPATH}
 
-After installation, the 'da' package will be available for use.
+   This will take precedence over `distutils' installations.
 
-Lastly, the 'bin' subdirectory contains two scripts, 'dac' and 'dar', that
-runs the compiler and runtime, respectively. These scripts takes care of
-properly setting 'sys.path' so no installation or modification of PYTHONPATH
-is necessary. Simply add the 'bin' directory to your PATH:
+  After installation, the 'da' module will be available for use.
 
-   `export PATH=<PROJROOT>/bin:${PATH}`
+  If you do not wish to install DistAlgo, the '<PROJROOT>/bin' directory
+  contains two scripts, 'dac' and 'dar', that runs the compiler and runtime,
+  respectively. These scripts take care of properly setting 'sys.path' so no
+  installation or modification of 'PYTHONPATH' is necessary. To avoid having
+  to type the full path to '<PROJROOT>/bin', add it to your 'PATH'
+  environment variable:
+
+     export PATH=<PROJROOT>/bin:${PATH}
+
+  NOTE: The scripts assume your Python executable is located at
+  "/usr/bin/python3". If your Python is installed to a different location you
+  must modify the first line in both the scripts to point to your Python
+  executable.
 
 # Running DistAlgo
 
+  The DistAlgo system consists of a compiler and a runtime. Under normal
+  circumstances, you should not need to invoke the compiler directly, since
+  the runtime will call the compiler if it detects the generated Python code
+  for your DistAlgo source file is missing or outdated.
+
+  For both the compiler and runtime, use the '-h' command line parameter 
+  to see a full description of available options.
+
 ## Invoking the compiler
 
-   To invoke the DistAlgo compiler, run the 'da.compiler' Python module:
+   To invoke the DistAlgo compiler, run the 'da.compiler' module, passing your
+   source file as argument:
 
-   `python3 -m da.compiler` (or `dac` if you use the script)
+      python -m da.compiler <SOURCE>
+ 
+   or if you use the script method:
+
+      dac <SOURCE>
 
 ## Invoking the runtime
 
    To run DistAlgo programs, pass the source file as an argument to the 'da'
-   Python module:
+   module:
 
-   `python3 -m da <SOURCE>` (or `dar <SOURCE>` if you use the script)
+     python -m da <SOURCE>
 
-To see a full description of available options, use
+   or if you use the script method:
 
-   `python3 -m da.compiler -h`
+     dar <SOURCE>
 
-and
+### Passing command line parameters to the DistAlgo program
 
-   `python3 -m da -h`
+    Command line parameters appearing before the '<SOURCE>' argument modifies
+    the behavior of the DistAlgo runtime. Anything appearing after the
+    '<SOURCE>' argument is passed to the DistAlgo program in the global
+    'sys.argv' list.
+
+    In the following command, the '-i' parameter is used by the runtime, while
+    the 'mutex.da' program receives the arguments 'a' and '1':
+
+        dar -i mutex.da a 1
+
+## Examples
+
+   This section assumes you've installed DistAlgo.
+
+   The following command runs the Lamport mutual exclusion example:
+
+       python -m da <PROJROOT>/examples/lamutex/orig.da
+
+   After running the above command, you should find a file
+   '<PROJROOT>/examples/lamutex/orig.py' which contains the generated Python
+   code for 'orig.da'.
+
+   The following command runs the same program, and passes '20' to 'orig.da'
+   (which causes the program to create 20 processes):
+
+       python -m da <PROJROOT>/examples/lamutex/orig.da 20
+
+   The following command runs the same program, but passes the '-f' argument
+   to the runtime (which tells it to create a log file for this run):
+
+       python -m da -f <PROJROOT>/examples/lamutex/orig.da
+
+   After running the above command, you should find a file "orig.da.log" under
+   the current directory.
+
+   The following command runs the same program, but passes the '-L debug'
+   argument to the runtime (which causes debugging output to be printed to the
+   console):
+
+       python -m da -L <PROJROOT>/examples/lamutex/orig.da
