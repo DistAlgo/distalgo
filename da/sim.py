@@ -239,22 +239,19 @@ class DistProcess(multiprocessing.Process):
     def _send(self, data, to):
         self.incr_logical_clock()
         if (self._fails('send')):
-            return set()
+            return
 
-        result = set()
         if (hasattr(to, '__iter__')):
             targets = to
         else:
             targets = [to]
         for t in targets:
-            if t.send(data, self._id, self._logical_clock):
-                result.add(t)
+            t.send(data, self._id, self._logical_clock)
 
         self._trigger_event(pattern.SentEvent((self._logical_clock,
                                                to, self._id),
                                               copy.deepcopy(data)))
         self._parent.send(('sent', 1), self._id)
-        return result
 
     def _recvmesgs(self):
         for mesg in self._id.recvmesgs():
