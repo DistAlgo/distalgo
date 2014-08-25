@@ -224,7 +224,7 @@ class DistProcess(multiprocessing.Process):
     def spawn(self, pcls, args):
         """Spawns a child process"""
         childp, ownp = multiprocessing.Pipe()
-        p = pcls(self._id, childp, self._channel)
+        p = pcls(self._id, childp, self._channel, self._cmdline)
         p.daemon = True
         p.start()
 
