@@ -21,7 +21,7 @@ from logging import FATAL
 from .compiler import ui as compiler
 from .endpoint import UdpEndPoint, TcpEndPoint
 from .sim import DistProcess
-from .common import api, deprecated, Null, api_registry
+from .common import api, deprecated, Null, api_registry, setup_root_logger
 
 DISTPY_SUFFIXES = [".da", ""]
 PYTHON_SUFFIX = ".py"
@@ -127,47 +127,11 @@ def use_channel(endpoint):
 def get_channel_type():
     return EndPointType
 
-def setup_root_logger():
-    rootlog = logging.getLogger("")
-
-    if not CmdlineParams.nolog:
-        rootlog.setLevel(logging.DEBUG)
-        formatter = logging.Formatter(
-            '[%(asctime)s]%(name)s:%(levelname)s: %(message)s')
-        rootlog._formatter = formatter
-
-        consolelvl = logging._nameToLevel[CmdlineParams.logconsolelevel.upper()]
-
-        ch = logging.StreamHandler()
-        ch.setFormatter(formatter)
-        ch.setLevel(consolelvl)
-        rootlog._consolelvl = consolelvl
-        rootlog.addHandler(ch)
-
-        if CmdlineParams.logfile:
-            filelvl = logging._nameToLevel[CmdlineParams.logfilelevel.upper()]
-            logfilename = CmdlineParams.logfilename \
-                          if CmdlineParams.logfilename is not None else \
-                             (os.path.basename(CmdlineParams.file) + ".log")
-            fh = logging.FileHandler(logfilename)
-            fh.setFormatter(formatter)
-            fh.setLevel(filelvl)
-            rootlog._filelvl = filelvl
-            rootlog.addHandler(fh)
-
-        if CmdlineParams.logdir is not None:
-            os.makedirs(CmdlineParams.logdir, exist_ok=True)
-            rootlog._logdir = CmdlineParams.logdir
-        else:
-            rootlog._logdir = None
-    else:
-        rootlog.addHandler(logging.NullHandler())
-
 def entrypoint(options):
     global CmdlineParams
     CmdlineParams = options
 
-    setup_root_logger()
+    setup_root_logger(options)
     target = options.file
     source_dir = os.path.dirname(target)
     basename = os.path.basename(target)
@@ -285,7 +249,7 @@ def createprocs(pcls, power, args=None):
     procs = set()
     for i in iterator:
         (childp, ownp) = multiprocessing.Pipe()
-        p = pcls(RootProcess, childp, EndPointType)
+        p = pcls(RootProcess, childp, EndPointType, CmdlineParams)
         if isinstance(i, str):
             p.set_name(i)
         # Buffer the pipe

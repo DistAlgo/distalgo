@@ -12,7 +12,7 @@ import traceback
 import multiprocessing
 
 from . import pattern
-from .common import Null, builtin
+from .common import Null, builtin, setup_root_logger
 
 class DistProcess(multiprocessing.Process):
     """Abstract base class for DistAlgo processes.
@@ -70,11 +70,14 @@ class DistProcess(multiprocessing.Process):
             except KeyboardInterrupt:
                 pass
 
-    def __init__(self, parent, initpipe, channel, name=None):
+    def __init__(self, parent, initpipe, channel, cmdline, name=None):
         multiprocessing.Process.__init__(self)
 
         self._running = False
+        self._parent = parent
+        self._initpipe = initpipe
         self._channel = channel
+        self._cmdline = cmdline
 
         self._logical_clock = 0
 
@@ -98,8 +101,6 @@ class DistProcess(multiprocessing.Process):
         self._dp_name = name
         self._log = None
 
-        self._parent = parent
-        self._initpipe = initpipe
         self._child_procs = []
 
     def _wait_for_go(self):
@@ -135,6 +136,9 @@ class DistProcess(multiprocessing.Process):
 
     def run(self):
         try:
+            if sys.platform == 'win32':
+                setup_root_logger(self._cmdline)
+
             signal.signal(signal.SIGTERM, self._sighandler)
 
             self._id = self._channel(self._dp_name, self.__class__)

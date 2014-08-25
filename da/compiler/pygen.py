@@ -177,7 +177,7 @@ def concat_bodies(subexprs, body):
     return prebody + body + postbody
 
 # List of arguments needed to initialize a process:
-PROC_INITARGS = ["parent", "initq", "channel"]
+PROC_INITARGS = ["parent", "initq", "channel", "cmdline"]
 
 PREAMBLE = parse(
     """

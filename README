@@ -50,7 +50,7 @@
 
       cd <PROJROOT>; python setup.py install --user
 
-   Note that if you've install DistAlgo for both system and user, the user
+   Note that if you've installed DistAlgo for both system and user, the user
    installation takes precedence.
 
 ## Alternatively, you can simply add the root directory to your 'PYTHONPATH'
@@ -61,6 +61,8 @@
    This will take precedence over `distutils' installations.
 
   After installation, the 'da' module will be available for use.
+
+## Using scripts without installing DistAlgo
 
   If you do not wish to install DistAlgo, the '<PROJROOT>/bin' directory
   contains two scripts, 'dac' and 'dar', that runs the compiler and runtime,
@@ -73,8 +75,17 @@
 
   NOTE: The scripts assume your Python executable is located at
   "/usr/bin/python3". If your Python is installed to a different location you
-  must modify the first line in both the scripts to point to your Python
+  must modify the first line in both scripts to point to your Python
   executable.
+
+  NOTE(Windows only): The Windows program loader does not recognize the
+  "Shebang"(#!) sequence, so the 'dac' and 'dar' python scripts will not work
+  under the cmd.exe shell. To work around this limitation, the 'dac.bat' and
+  'dar.bat' batch scripts are simple wrappers to launch 'dac' and 'dar' under
+  Windows. For all following examples, substitute 'dac' and 'dar' with
+  'dac.bat' and 'dar.bat', respectively. The batch scripts assume your Python
+  executable is 'python', if that is not the case then you must modify the
+  batch files with the full path to your Python executable.
 
 # Running DistAlgo
 
@@ -119,6 +130,20 @@
     the 'mutex.da' program receives the arguments 'a' and '1':
 
         dar -i mutex.da a 1
+
+### Quiting
+
+    If you wish to quit your program before it terminates, press "Ctrl-C".
+    Depending on the timing of this interrupt, you may see some exceptions
+    being thrown. This is expected behavior, simply press "Ctrl-C" again to
+    fully terminate the program.
+
+    WARNING(Cygwin with native Python only): If you're running native Windows
+    Python under a Cygwin terminal, the "Ctrl-C" KeyboardInterrupt will *not*
+    propagate to the child processes, so only the parent process will get
+    killed, and the children will continue to run in the background. In this
+    case, you will have to manually terminate the child processes from the
+    Windows task manager.
 
 ## Examples
 

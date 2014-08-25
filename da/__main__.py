@@ -6,6 +6,9 @@ __version__ = "1.0.0a4"
 
 from .api import entrypoint
 
+if hasattr(sys, '_real_argv'):
+    sys.argv[0] = sys._real_argv
+
 log = logging.getLogger(__name__)
 formatter = logging.Formatter(
     '[%(asctime)s]%(name)s:%(levelname)s: %(message)s')

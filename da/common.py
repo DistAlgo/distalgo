@@ -1,3 +1,5 @@
+import os
+import os.path
 import logging
 
 from inspect import signature, Parameter
@@ -10,6 +12,42 @@ log._formatter = formatter
 
 api_registry = dict()
 builtin_registry = dict()
+
+def setup_root_logger(params):
+    rootlog = logging.getLogger("")
+
+    if not params.nolog:
+        rootlog.setLevel(logging.DEBUG)
+        formatter = logging.Formatter(
+            '[%(asctime)s]%(name)s:%(levelname)s: %(message)s')
+        rootlog._formatter = formatter
+
+        consolelvl = logging._nameToLevel[params.logconsolelevel.upper()]
+
+        ch = logging.StreamHandler()
+        ch.setFormatter(formatter)
+        ch.setLevel(consolelvl)
+        rootlog._consolelvl = consolelvl
+        rootlog.addHandler(ch)
+
+        if params.logfile:
+            filelvl = logging._nameToLevel[params.logfilelevel.upper()]
+            logfilename = params.logfilename \
+                          if params.logfilename is not None else \
+                             (os.path.basename(params.file) + ".log")
+            fh = logging.FileHandler(logfilename)
+            fh.setFormatter(formatter)
+            fh.setLevel(filelvl)
+            rootlog._filelvl = filelvl
+            rootlog.addHandler(fh)
+
+        if params.logdir is not None:
+            os.makedirs(params.logdir, exist_ok=True)
+            rootlog._logdir = params.logdir
+        else:
+            rootlog._logdir = None
+    else:
+        rootlog.addHandler(logging.NullHandler())
 
 def deprecated(func):
     """Declare 'func' as deprecated.
