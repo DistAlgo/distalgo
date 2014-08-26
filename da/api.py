@@ -154,6 +154,7 @@ def entrypoint(options):
         name = options.incmodulename if options.incmodulename is not None \
                else module.__name__ + "_inc"
         module.IncModule = importlib.import_module(name)
+        CmdlineParams.IncModule = module.IncModule
 
     # Start the background statistics thread:
     RootLock.acquire()
