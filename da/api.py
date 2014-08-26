@@ -142,9 +142,9 @@ def entrypoint(options):
     sys.path.insert(0, source_dir)
     try:
         module = daimport(basename,
-                           force_recompile=options.recompile,
-                           compiler_args=options.compiler_flags.split(),
-                           indir=source_dir)
+                          force_recompile=options.recompile,
+                          compiler_args=options.compiler_flags.split(),
+                          indir=source_dir)
     except ImportError as e:
         die("ImportError: " + str(e))
     if not (hasattr(module, 'main') and
@@ -154,7 +154,6 @@ def entrypoint(options):
         name = options.incmodulename if options.incmodulename is not None \
                else module.__name__ + "_inc"
         module.IncModule = importlib.import_module(name)
-        CmdlineParams.IncModule = module.IncModule
 
     # Start the background statistics thread:
     RootLock.acquire()

@@ -5,7 +5,7 @@ from .pygen import *
 from .pypr import to_source
 from .utils import printd, printw
 
-INC_MODULE_VAR = pyAttr(pyAttr("self", "_cmdline"), "IncModule")
+INC_MODULE_VAR = "IncModule"
 
 QUERY_STUB_FORMAT = "Query_%d"
 ASSIGN_STUB_FORMAT = "Assign_%s"
@@ -311,7 +311,7 @@ class StubcallGenerator(PythonGenerator):
     def __init__(self, events):
         super().__init__()
         self.events = events
-        #self.preambles.append(Assign([pyName(INC_MODULE_VAR)], pyNone()))
+        self.preambles.append(Assign([pyName(INC_MODULE_VAR)], pyNone()))
 
     def history_initializers(self, node):
         return [Assign(

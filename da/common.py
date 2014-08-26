@@ -49,6 +49,14 @@ def setup_root_logger(params):
     else:
         rootlog.addHandler(logging.NullHandler())
 
+def load_inc_module(options, module_name):
+    if options.loadincmodule:
+        name = options.incmodulename if options.incmodulename is not None \
+               else module_name + "_inc"
+        return importlib.import_module(name)
+    else:
+        return None
+
 def deprecated(func):
     """Declare 'func' as deprecated.
 

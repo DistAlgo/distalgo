@@ -12,7 +12,7 @@ import traceback
 import multiprocessing
 
 from . import pattern
-from .common import Null, builtin, setup_root_logger
+from .common import Null, builtin, setup_root_logger, load_inc_module
 
 class DistProcess(multiprocessing.Process):
     """Abstract base class for DistAlgo processes.
@@ -139,6 +139,9 @@ class DistProcess(multiprocessing.Process):
         try:
             if sys.platform == 'win32':
                 setup_root_logger(self._cmdline)
+                cm = sys.modules[self.__class__.__module__]
+                cm.IncModule = load_inc_module(self._cmdline,
+                                               self.__class__.__module__)
 
             signal.signal(signal.SIGTERM, self._sighandler)
 
