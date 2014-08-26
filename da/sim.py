@@ -99,7 +99,7 @@ class DistProcess(multiprocessing.Process):
         self._waltime = 0
         self._is_timer_running = False
 
-        self._dp_name = None
+        self._dp_name = self._properties.get('name', None)
         self._log = None
 
         self._child_procs = []
@@ -222,10 +222,10 @@ class DistProcess(multiprocessing.Process):
         self._logical_clock += 1
 
     @builtin
-    def spawn(self, pcls, args):
+    def spawn(self, pcls, args, **props):
         """Spawns a child process"""
         childp, ownp = multiprocessing.Pipe()
-        p = pcls(self._id, childp, self._channel, self._cmdline)
+        p = pcls(self._id, childp, self._channel, self._cmdline, props)
         p.daemon = True
         p.start()
 
