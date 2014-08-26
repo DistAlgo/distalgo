@@ -16,31 +16,30 @@ class P(process):
         if await(each((c2, p2) in q, (reqc, self) <= (c2, p2)) and
                  each(p3 in ps, some(received(('Reply', c3), src=_p3),
                                      c3 > reqc))):
-         # critical section
+            # critical section
             task()
 
-         # to exit cs, deque and send releases to all
+            # to exit cs, deque and send releases to all
             --release
             q.remove((reqc, self))
             send(('Release', reqc), to=ps)
             output("release cs")
 
-        elif timeout(timemax):
+        elif timeout(None):
             --release
             q.remove((reqc, self))
             send(('Release', reqc), to=ps)
             output("timed out!")
 
     def recv(msg=('Request', reqts), src=source):
-        """When receiving requests from others, enque and reply
-        """
+        """When receiving requests from others, enque and reply"""
         q.add((reqts, source))
         send(('Reply', logical_clock()), to=source)
 
     def recv(msg=('Release', time), src=source):
         """When receiving release from others, deque"""
         if ((time, source) in q):
-          q.remove((time, source))
+            q.remove((time, source))
 
     def main():
         def announce():
