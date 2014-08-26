@@ -116,8 +116,8 @@ def dafile_to_pyfile(args):
         return 1
 
 def check_python_version():
-    if sys.version_info < (3, 3):
-        stderr.write("DistAlgo requires Python version 3.3 or newer.\n")
+    if sys.version_info < (3, 4):
+        stderr.write("DistAlgo requires Python version 3.4 or newer.\n")
         return False
     elif sys.version_info > (3, 5):
         stderr.write("Python 3.5 not yet supported.\n")
