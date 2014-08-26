@@ -20,25 +20,40 @@ def parseArgs():
     parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
     parser.add_argument("-s", "--perffile")
     parser.add_argument("-u", "--dumpfile")
-    parser.add_argument('--iterations', type=int, default=1)
-    parser.add_argument("--nolog", action="store_true", default=False)
-    parser.add_argument("-f", "--logfile", action="store_true", default=False)
-    parser.add_argument("--logfilename")
+    parser.add_argument('--iterations', type=int, default=1,
+                        help="number of times to run the program.")
+    parser.add_argument("--nolog", action="store_true", default=False,
+                        help="disables all logging output.")
+    parser.add_argument("-f", "--logfile", action="store_true", default=False,
+                        help="creates a log file for this run.")
+    parser.add_argument("--logfilename",
+                        help="file name of the log file, defaults to appending"
+                        "'.log' to the source file name.")
     parser.add_argument("--logdir")
     parser.add_argument("-L", "--logconsolelevel",
-                        choices=LogLevelNames, default="info")
+                        choices=LogLevelNames, default="info",
+                        help="severity level of logging messages to print to "
+                        "the console, defaults to 'info'.")
     parser.add_argument("-F", "--logfilelevel",
-                        choices=LogLevelNames, default="debug")
+                        choices=LogLevelNames, default="debug",
+                        help="severity level of logging messages to log to "
+                        "the log file, defaults to 'debug'.")
     parser.add_argument("-i", "--loadincmodule",
-                        action="store_true", default=False)
-    parser.add_argument("-m", "--incmodulename")
+                        action="store_true", default=False,
+                        help="if set, try to load the incrementalized "
+                        "interface module.")
+    parser.add_argument("-m", "--incmodulename",
+                        help="name of the incrementalized interface module, "
+                        "defaults to source module name + '_inc'. ")
     parser.add_argument("-r", "--recompile", dest="recompile",
-                        help="Force recompile DistAlgo source file. ",
+                        help="force recompile DistAlgo source file. ",
                         action="store_true", default=False)
-    parser.add_argument("-c", "--compiler-flags", default="")
+    parser.add_argument("-c", "--compiler-flags", default="",
+                        help="flags to pass to the compiler, if recompiling "
+                        "is required.")
     parser.add_argument("-v", "--version", action="version", version=__version__)
     parser.add_argument("file",
-                        help="DistAlgo file to execute.")
+                        help="DistAlgo source file to run.")
     parser.add_argument("args", nargs=argparse.REMAINDER,
                         help="arguments passed to program in sys.argv[1:].")
 
