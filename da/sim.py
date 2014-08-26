@@ -88,7 +88,7 @@ class DistProcess(multiprocessing.Process):
         self._jobqueue = []
         self._timer = None
         self._timer_expired = False
-        self._lock = threading.Lock()
+        self._lock = None
 
         # Performance counters:
         self._usrtime_st = 0
@@ -146,6 +146,7 @@ class DistProcess(multiprocessing.Process):
             pattern.initialize(self._id)
             self._log = logging.getLogger(str(self))
             self._start_comm_thread()
+            self._lock = threading.Lock()
             self._lock.acquire()
             self._wait_for_go()
 
