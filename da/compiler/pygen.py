@@ -177,7 +177,7 @@ def concat_bodies(subexprs, body):
     return prebody + body + postbody
 
 # List of arguments needed to initialize a process:
-PROC_INITARGS = ["parent", "initq", "channel", "cmdline"]
+PROC_INITARGS = ["parent", "initq", "channel", "cmdline", "props"]
 
 PREAMBLE = parse(
     """
@@ -505,7 +505,12 @@ class PythonGenerator(NodeVisitor):
 
     def visit_ApiCallExpr(self, node):
         ast = pyCall(pyAttr(pyAttr("da", "api"), node.func),
-                     [self.visit(a) for a in node.args])
+                     [self.visit(a) for a in node.args],
+                     [(key, self.visit(value)) for key, value in node.keywords],
+                     self.visit(node.starargs)
+                     if node.starargs is not None else None,
+                     self.visit(node.kwargs)
+                     if node.kwargs is not None else None)
         return propagate_attributes(ast.args, ast)
 
     def visit_BuiltinCallExpr(self, node):

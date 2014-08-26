@@ -183,3 +183,14 @@ def freeze(obj):
     else:
         # everything else just assume hashable & immutable, hahaha:
         return obj
+
+
+if __name__ == "__main__":
+    @api
+    def testapi(a : int, b : list) -> dict:
+        print (a, b)
+        return []
+
+    testapi(1, [2])
+    testapi(1, {})
+    print(api_registry)

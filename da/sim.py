@@ -70,7 +70,7 @@ class DistProcess(multiprocessing.Process):
             except KeyboardInterrupt:
                 pass
 
-    def __init__(self, parent, initpipe, channel, cmdline, name=None):
+    def __init__(self, parent, initpipe, channel, cmdline, props=None):
         multiprocessing.Process.__init__(self)
 
         self._running = False
@@ -78,16 +78,17 @@ class DistProcess(multiprocessing.Process):
         self._initpipe = initpipe
         self._channel = channel
         self._cmdline = cmdline
+        if props is not None:
+            self._properties = props
+        else:
+            self._properties = dict()
 
         self._logical_clock = 0
-
         self._events = []
         self._jobqueue = []
         self._timer = None
         self._timer_expired = False
-        self._failures = {'send': 0,
-                          'receive': 0,
-                          'crash': 0}
+        self._lock = threading.Lock()
 
         # Performance counters:
         self._usrtime_st = 0
@@ -98,7 +99,7 @@ class DistProcess(multiprocessing.Process):
         self._waltime = 0
         self._is_timer_running = False
 
-        self._dp_name = name
+        self._dp_name = None
         self._log = None
 
         self._child_procs = []
@@ -145,7 +146,7 @@ class DistProcess(multiprocessing.Process):
             pattern.initialize(self._id)
             self._log = logging.getLogger(str(self))
             self._start_comm_thread()
-
+            self._lock.acquire()
             self._wait_for_go()
 
             result = self.main()
@@ -239,6 +240,7 @@ class DistProcess(multiprocessing.Process):
     def _send(self, data, to):
         self.incr_logical_clock()
         if (self._fails('send')):
+            self.output("Simulated send fail: %s" % str(data), logging.WARNING)
             return
 
         if (hasattr(to, '__iter__')):
@@ -255,7 +257,10 @@ class DistProcess(multiprocessing.Process):
 
     def _recvmesgs(self):
         for mesg in self._id.recvmesgs():
-            if not (self._fails('receive')):
+            if self._fails('receive'):
+                self.output("Simulated receive fail: %s" % str(mesg),
+                            logging.WARNING)
+            else:
                 yield mesg
 
     def _timer_start(self):
@@ -266,9 +271,9 @@ class DistProcess(multiprocessing.Process):
         self._timer = None
 
     def _fails(self, failtype):
-        if not failtype in self._failures.keys():
+        if failtype not in self._properties:
             return False
-        if (random.randint(0, 100) < self._failures[failtype]):
+        if (random.random() < self._properties[failtype]):
             return True
         return False
 
@@ -283,8 +288,11 @@ class DistProcess(multiprocessing.Process):
             self.start_timers()
         elif name == "end":
             self.stop_timers()
-        if (self._fails('crash')):
-            self.output("Stuck in label: %s" % name)
+        if self._fails('hang'):
+            self.output("Hanged(@label %s)" % name, logging.WARNING)
+            self._lock.acquire()
+        if self._fails('crash'):
+            self.output("Crashed(@label %s)" % name, logging.WARNING)
             self.exit(10)
 
         if timeout is not None:
@@ -364,16 +372,6 @@ class DistProcess(multiprocessing.Process):
             s += "[" + str(self._id) + "]"
         return s
 
-
     ### Various attribute setters:
-    def set_send_fail_rate(self, rate):
-        self._failures['send'] = rate
-
-    def set_receive_fail_rate(self, rate):
-        self._failures['receive'] = rate
-
-    def set_crash_rate(self, rate):
-        self._failures['crash'] = rate
-
     def set_name(self, name):
         self._dp_name = name

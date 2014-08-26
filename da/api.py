@@ -4,6 +4,7 @@ import time
 import time
 import stat
 import types
+import pickle
 import signal
 import logging
 import importlib
@@ -199,7 +200,7 @@ def entrypoint(options):
         if options.dumpfile is not None:
             dumpfd = open(options.dumpfile, "wb")
         if dumpfd is not None:
-            store_statistics(stats, dumpfd)
+            pickle.dump(stats, fd)
             dumpfd.close()
 
     except KeyboardInterrupt as e:
@@ -219,7 +220,7 @@ def entrypoint(options):
     log.info("Terminating...")
 
 @api
-def createprocs(pcls, power, args=None):
+def createprocs(pcls, power, args=None, **props):
     if not issubclass(pcls, DistProcess):
         log.error("Can not create non-DistProcess.")
         return set()
@@ -249,7 +250,7 @@ def createprocs(pcls, power, args=None):
     procs = set()
     for i in iterator:
         (childp, ownp) = multiprocessing.Pipe()
-        p = pcls(RootProcess, childp, EndPointType, CmdlineParams)
+        p = pcls(RootProcess, childp, EndPointType, CmdlineParams, props)
         if isinstance(i, str):
             p.set_name(i)
         # Buffer the pipe
@@ -432,15 +433,6 @@ def aggregate_statistics():
 
     return result
 
-def store_statistics(stats, fd):
-    import pickle
-
-    pickle.dump(stats, fd)
-
-def config_total_units(num):
-    global TotalUnits
-    TotalUnits = num
-
 def set_proc_attribute(procs, attr, values):
     if isinstance(procs, dict):
         ps = procs.values()
@@ -454,14 +446,3 @@ def die(mesg = None):
     if mesg != None:
         sys.stderr.write(mesg + "\n")
     sys.exit(1)
-
-
-if __name__ == "__main__":
-    @api
-    def testapi(a : int, b : list) -> dict:
-        print (a, b)
-        return []
-
-    testapi(1, [2])
-    testapi(1, {})
-    print(api_registry)
