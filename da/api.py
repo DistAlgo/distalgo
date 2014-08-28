@@ -31,7 +31,6 @@ CounterLock = threading.Lock()
 RootProcess = None
 RootLock = threading.Lock()
 EndPointType = ep.UdpEndPoint
-PrintProcStats = False
 TotalUnits = None
 ProcessIds = []
 
@@ -94,10 +93,6 @@ def daimport(filename, force_recompile=False, compiler_args=[], indir=None):
 
     return importlib.import_module(purename)
 
-def maximum(iterable):
-    if (len(iterable) == 0): return -1
-    else: return max(iterable)
-
 @api
 def use_channel(endpoint):
     global EndPointType
@@ -117,9 +112,6 @@ def use_channel(endpoint):
                 "Can not change channel type after creating child processes.")
         return
     EndPointType = ept
-
-def get_channel_type():
-    return EndPointType
 
 def entrypoint():
     GlobalOptions = common.get_global_options()
@@ -318,12 +310,6 @@ def collect_statistics():
                     PerformanceCounters[src][event_type] = count
                 else:
                     PerformanceCounters[src][event_type] += count
-
-                # if event_type == 'totaltime':
-                #     completed += 1
-                #     if TotalUnits != None and completed == TotalUnits:
-                #         raise KeyboardInterrupt()
-
             else:
                 log.debug("Unknown proc: " + str(src))
             CounterLock.release()
@@ -335,10 +321,6 @@ def collect_statistics():
         err_info = sys.exc_info()
         log.debug("Caught unexpected global exception: %r", e)
         traceback.print_tb(err_info[2])
-
-def config_print_individual_proc_stats(p):
-    global PrintProcStats
-    PrintProcStats = p
 
 def init_performance_counters(procs):
     global PerformanceCounters
