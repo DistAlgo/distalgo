@@ -13,17 +13,10 @@ import traceback
 import multiprocessing
 import os.path
 
-from logging import DEBUG
-from logging import INFO
-from logging import ERROR
-from logging import CRITICAL
-from logging import FATAL
+from . import compiler, common, sim, endpoint as ep
 
-from .compiler import ui as compiler
-from .endpoint import UdpEndPoint, TcpEndPoint
-from .sim import DistProcess
-from .common import api, deprecated, Null, api_registry, \
-    setup_root_logger, load_inc_module, get_global_options
+api = common.api
+deprecated = common.deprecated
 
 DISTPY_SUFFIXES = [".da", ""]
 PYTHON_SUFFIX = ".py"
@@ -37,7 +30,7 @@ PerformanceCounters = {}
 CounterLock = threading.Lock()
 RootProcess = None
 RootLock = threading.Lock()
-EndPointType = UdpEndPoint
+EndPointType = ep.UdpEndPoint
 PrintProcStats = False
 TotalUnits = None
 ProcessIds = []
@@ -89,7 +82,7 @@ def daimport(filename, force_recompile=False, compiler_args=[], indir=None):
         oldargv = sys.argv
         try:
             argv = oldargv[0:0] + compiler_args + [fullpath]
-            res = compiler.main(argv)
+            res = compiler.ui.main(argv)
         except Exception as err:
             raise RuntimeError("Compiler failure!", err)
         finally:
@@ -111,9 +104,9 @@ def use_channel(endpoint):
 
     ept = None
     if endpoint == "udp":
-        ept = UdpEndPoint
+        ept = ep.UdpEndPoint
     elif endpoint == "tcp":
-        ept = TcpEndPoint
+        ept = ep.TcpEndPoint
     else:
         log.error("Unknown channel type %s", endpoint)
         return
@@ -129,8 +122,7 @@ def get_channel_type():
     return EndPointType
 
 def entrypoint():
-    GlobalOptions = get_global_options()
-    setup_root_logger()
+    GlobalOptions = common.get_global_options()
     target = GlobalOptions.file
     source_dir = os.path.dirname(target)
     basename = os.path.basename(target)
@@ -148,7 +140,10 @@ def entrypoint():
     if not (hasattr(module, 'main') and
             isinstance(module.main, types.FunctionType)):
         die("'main' function not defined!")
-    module.IncModule = load_inc_module(module.__name__)
+    GlobalOptions.main_module_name = module.__name__
+    if GlobalOptions.inc_module_name is None:
+        GlobalOptions.inc_module_name = module.__name__ + "_inc"
+    common.sysinit()
 
     # Start the background statistics thread:
     RootLock.acquire()
@@ -216,7 +211,7 @@ def entrypoint():
 
 @api
 def createprocs(pcls, power, args=None, **props):
-    if not issubclass(pcls, DistProcess):
+    if not issubclass(pcls, sim.DistProcess):
         log.error("Can not create non-DistProcess.")
         return set()
 

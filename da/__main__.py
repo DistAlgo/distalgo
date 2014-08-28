@@ -39,15 +39,17 @@ def parseArgs():
                         choices=LogLevelNames, default="debug",
                         help="severity level of logging messages to log to "
                         "the log file, defaults to 'debug'.")
-    parser.add_argument("-i", "--loadincmodule",
+    parser.add_argument("-i", "--load-inc-module",
                         action="store_true", default=False,
                         help="if set, try to load the incrementalized "
                         "interface module.")
-    # parser.add_argument("-i", "--instrument-module",
-    #                     action="store_true", default=False,
-    #                     help="if set, try to load the incrementalized "
-    #                     "interface module.")
-    parser.add_argument("-m", "--incmodulename",
+    parser.add_argument("-C", "--control-module-name", default=None,
+                        help="name of the control module. If set, "
+                        "results from the inc-module will be compared "
+                        "against results from this module. Any mismatch will "
+                        "raise IntrumentationError. Defaults to no control "
+                        "module.")
+    parser.add_argument("-m", "--inc-module-name",
                         help="name of the incrementalized interface module, "
                         "defaults to source module name + '_inc'. ")
     parser.add_argument("-r", "--recompile", dest="recompile",

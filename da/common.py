@@ -1,4 +1,5 @@
 import os
+import sys
 import os.path
 import logging
 import importlib
@@ -22,6 +23,10 @@ def set_global_options(params):
 
 def get_global_options():
     return GlobalOptions
+
+def sysinit():
+    setup_root_logger()
+    load_modules()
 
 def setup_root_logger():
     rootlog = logging.getLogger("")
@@ -59,14 +64,16 @@ def setup_root_logger():
     else:
         rootlog.addHandler(logging.NullHandler())
 
-def load_inc_module(module_name):
-    if GlobalOptions.loadincmodule:
-        name = GlobalOptions.incmodulename \
-               if GlobalOptions.incmodulename is not None \
-               else module_name + "_inc"
-        return importlib.import_module(name)
+def load_modules():
+    if not GlobalOptions.load_inc_module:
+        return
+    main = sys.modules[GlobalOptions.main_module_name]
+    inc = importlib.import_module(GlobalOptions.inc_module_name)
+    if GlobalOptions.control_module_name is not None:
+        ctrl = importlib.import_module(GlobalOptions.control_module_name)
+        main.IncModule = ModuleIntrument(ctrl, inc)
     else:
-        return None
+        main.IncModule = inc
 
 def deprecated(func):
     """Declare 'func' as deprecated.
@@ -152,6 +159,66 @@ class Null(object):
     def __getattribute__(self, attr): return self
     def __setattr__(self, attr, value): pass
     def __delattr__(self, attr): pass
+
+class IntrumentationError(Exception): pass
+
+class FunctionInstrument(object):
+    def __init__(self, control_func, subject_func):
+        super().__setattr__('_control', control_func)
+        super().__setattr__('_subject', subject_func)
+
+    def __call__(self, *args, **kwargs):
+        ctrl_result = self._control(*args, **kwargs)
+        subj_result = self._subject(*args, **kwargs)
+        if ctrl_result != subj_result:
+            raise IntrumentationError("Result mismatch for %s: "
+                                      "control returned %s; "
+                                      "subject returned %s." %
+                                      (self._control.__name__,
+                                       str(ctrl_result),
+                                       str(subj_result)))
+        return subj_result
+
+    def __setattr__(self, attr, value):
+        super().__setattr__(attr, value)
+        setattr(self._control, attr, value)
+        setattr(self._subject, attr, value)
+
+    def __delattr__(self, attr):
+        super().__delattr__(attr)
+        delattr(self._control, attr)
+        delattr(self._subject, attr)
+
+class ModuleIntrument(object):
+    def __init__(self, control, subject):
+        super().__setattr__('_control', control)
+        super().__setattr__('_subject', subject)
+
+    def __getattribute__(self, attr):
+        ctrl_attr = getattr(super().__getattribute__('_control'), attr)
+        subj_attr = getattr(super().__getattribute__('_subject'), attr)
+        if type(ctrl_attr) is not type(subj_attr):
+            raise IntrumentationError("Attribute mismatch for %s:"
+                                      "control is type %s; "
+                                      "subject is type %s." %
+                                      (attr, str(type(ctrl_attr)),
+                                       str(type(subj_attr))))
+        if hasattr(ctrl_attr, '__call__') and \
+           (ctrl_attr.__name__.startswith("Query_") or
+            ctrl_attr.__name__ == "init"):
+                return FunctionInstrument(ctrl_attr, subj_attr)
+        else:
+            return subj_attr
+
+    def __setattr__(self, attr, value):
+        setattr(self._control, attr, value)
+        setattr(self._subject, attr, value)
+        super().__setattr__(attr, value)
+
+    def __delattr__(self, attr):
+        delattr(self._control, attr)
+        delattr(self._subject, attr)
+        super().__delattr__(attr)
 
 class frozendict(dict):
     """Hashable immutable dict implementation

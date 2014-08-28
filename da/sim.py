@@ -11,9 +11,9 @@ import threading
 import traceback
 import multiprocessing
 
-from . import pattern
-from .common import Null, builtin, setup_root_logger, load_inc_module, \
-    set_global_options, get_global_options
+from . import pattern, common
+
+builtin = common.builtin
 
 class DistProcess(multiprocessing.Process):
     """Abstract base class for DistAlgo processes.
@@ -78,7 +78,7 @@ class DistProcess(multiprocessing.Process):
         self._parent = parent
         self._initpipe = initpipe
         self._channel = channel
-        self._cmdline = get_global_options()
+        self._cmdline = common.get_global_options()
         if props is not None:
             self._properties = props
         else:
@@ -139,13 +139,10 @@ class DistProcess(multiprocessing.Process):
     def run(self):
         try:
             if sys.platform == 'win32':
-                set_global_options(self._cmdline)
-                setup_root_logger()
-                cm = sys.modules[self.__class__.__module__]
-                cm.IncModule = load_inc_module(self.__class__.__module__)
+                common.set_global_options(self._cmdline)
+                common.sysinit()
 
             signal.signal(signal.SIGTERM, self._sighandler)
-
             self._id = self._channel(self._dp_name, self.__class__)
             pattern.initialize(self._id)
             self._log = logging.getLogger(str(self))
