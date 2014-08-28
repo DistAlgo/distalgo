@@ -486,7 +486,8 @@ class IncInterfaceGenerator(PythonGenerator):
             right = self.visit(node.right)
             gen = comprehension(target, right, conds)
             elem = self.jb_tuple_optimize(pyTuple(node.left.ordered_freevars))
-            ast = pySize(ListComp(elem, [gen]))
+            ast = pySize(ListComp(elem, [gen])) if not self.jbstyle \
+                  else pySize(SetComp(elem, [gen]))
             return ast
         else:
             return super().visit_ComparisonExpr(node)
@@ -643,7 +644,7 @@ class IncInterfaceGenerator(PythonGenerator):
         inner_quantifier = None
         outer_generators = []
         inner_generators = []
-        elements = None
+        elements = []
         while (isinstance(node, dast.QuantifiedExpr) and
                (inner_quantifier is None or
                 node.operator is inner_quantifier)):
@@ -651,13 +652,15 @@ class IncInterfaceGenerator(PythonGenerator):
                 inner_quantifier = node.operator
             if inner_quantifier is None:
                 outer_generators += [self.visit(dom) for dom in node.domains]
+                elements += [self.visit(name)
+                             for dom in node.domains
+                             for name in dom.freevars]
             else:
                 inner_generators += [self.visit(dom) for dom in node.domains]
             node = node.predicate
 
         assert node is not None
-        elements = self.jb_tuple_optimize(
-            pyTuple([gen.target for gen in outer_generators]))
+        elements = self.jb_tuple_optimize(pyTuple(elements))
         generators = outer_generators + inner_generators
         bexp = self.visit(node)
         if inner_quantifier is None:
@@ -707,11 +710,10 @@ class IncInterfaceGenerator(PythonGenerator):
         """
         pred = apply_demorgan_rule(node.predicate)
         if isinstance(pred, dast.LogicalExpr):
-            iprintd("do_table4_transformation: found logical expression,"
-                   " trying transformation.")
             # Rule 1:
             if (pred.operator is dast.AndOp and
                     node.operator is dast.ExistentialOp):
+                iprintd("do_table4_transformation: using rule 1")
                 for i, e in enumerate(pred.subexprs):
                     newnode = node.clone()
                     newnode.domains[-1].domain = domain_for_condition(
@@ -723,6 +725,7 @@ class IncInterfaceGenerator(PythonGenerator):
             # Rule 2:
             elif (pred.operator is dast.OrOp and
                     node.operator is dast.ExistentialOp):
+                iprintd("do_table4_transformation: using rule 2")
                 expr = dast.LogicalExpr(node.parent)
                 expr.operator = dast.OrOp
                 for cond in pred.subexprs:
@@ -732,6 +735,7 @@ class IncInterfaceGenerator(PythonGenerator):
             # Rule 4:
             elif (pred.operator is dast.AndOp and
                     node.operator is dast.UniversalOp):
+                iprintd("do_table4_transformation: using rule 4")
                 expr = dast.LogicalExpr(node.parent)
                 expr.operator = dast.AndOp
                 for cond in pred.subexprs:
@@ -741,6 +745,7 @@ class IncInterfaceGenerator(PythonGenerator):
             # Rule 5:
             elif (pred.operator is dast.OrOp and
                     node.operator is dast.UniversalOp):
+                iprintd("do_table4_transformation: using rule 5")
                 for i, e in enumerate(pred.subexprs):
                     e = dast.LogicalExpr(e.parent,
                                          op=dast.NotOp,
