@@ -12,7 +12,8 @@ import traceback
 import multiprocessing
 
 from . import pattern
-from .common import Null, builtin, setup_root_logger, load_inc_module
+from .common import Null, builtin, setup_root_logger, load_inc_module, \
+    set_global_options, get_global_options
 
 class DistProcess(multiprocessing.Process):
     """Abstract base class for DistAlgo processes.
@@ -70,14 +71,14 @@ class DistProcess(multiprocessing.Process):
             except KeyboardInterrupt:
                 pass
 
-    def __init__(self, parent, initpipe, channel, cmdline, props=None):
+    def __init__(self, parent, initpipe, channel, props=None):
         multiprocessing.Process.__init__(self)
 
         self._running = False
         self._parent = parent
         self._initpipe = initpipe
         self._channel = channel
-        self._cmdline = cmdline
+        self._cmdline = get_global_options()
         if props is not None:
             self._properties = props
         else:
@@ -138,10 +139,10 @@ class DistProcess(multiprocessing.Process):
     def run(self):
         try:
             if sys.platform == 'win32':
-                setup_root_logger(self._cmdline)
+                set_global_options(self._cmdline)
+                setup_root_logger()
                 cm = sys.modules[self.__class__.__module__]
-                cm.IncModule = load_inc_module(self._cmdline,
-                                               self.__class__.__module__)
+                cm.IncModule = load_inc_module(self.__class__.__module__)
 
             signal.signal(signal.SIGTERM, self._sighandler)
 
@@ -229,7 +230,7 @@ class DistProcess(multiprocessing.Process):
     def spawn(self, pcls, args, **props):
         """Spawns a child process"""
         childp, ownp = multiprocessing.Pipe()
-        p = pcls(self._id, childp, self._channel, self._cmdline, props)
+        p = pcls(self._id, childp, self._channel, props)
         p.daemon = True
         p.start()
 

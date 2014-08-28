@@ -5,6 +5,7 @@ import argparse
 __version__ = "1.0.0a4"
 
 from .api import entrypoint
+from .common import set_global_options
 
 if hasattr(sys, '_real_argv'):
     sys.argv[0] = sys._real_argv
@@ -42,6 +43,10 @@ def parseArgs():
                         action="store_true", default=False,
                         help="if set, try to load the incrementalized "
                         "interface module.")
+    # parser.add_argument("-i", "--instrument-module",
+    #                     action="store_true", default=False,
+    #                     help="if set, try to load the incrementalized "
+    #                     "interface module.")
     parser.add_argument("-m", "--incmodulename",
                         help="name of the incrementalized interface module, "
                         "defaults to source module name + '_inc'. ")
@@ -65,7 +70,8 @@ def libmain():
     variables, and calls the 'main' function of the DistAlgo program.
     """
 
-    entrypoint(parseArgs())
+    set_global_options(parseArgs())
+    entrypoint()
 
 def die(mesg = None):
     if mesg != None:

@@ -22,7 +22,8 @@ from logging import FATAL
 from .compiler import ui as compiler
 from .endpoint import UdpEndPoint, TcpEndPoint
 from .sim import DistProcess
-from .common import api, deprecated, Null, api_registry, setup_root_logger
+from .common import api, deprecated, Null, api_registry, \
+    setup_root_logger, load_inc_module, get_global_options
 
 DISTPY_SUFFIXES = [".da", ""]
 PYTHON_SUFFIX = ".py"
@@ -32,7 +33,6 @@ formatter = logging.Formatter(
     '[%(asctime)s]%(name)s:%(levelname)s: %(message)s')
 log._formatter = formatter
 
-CmdlineParams = Null()
 PerformanceCounters = {}
 CounterLock = threading.Lock()
 RootProcess = None
@@ -128,12 +128,10 @@ def use_channel(endpoint):
 def get_channel_type():
     return EndPointType
 
-def entrypoint(options):
-    global CmdlineParams
-    CmdlineParams = options
-
-    setup_root_logger(options)
-    target = options.file
+def entrypoint():
+    GlobalOptions = get_global_options()
+    setup_root_logger()
+    target = GlobalOptions.file
     source_dir = os.path.dirname(target)
     basename = os.path.basename(target)
     if not os.access(target, os.R_OK):
@@ -142,18 +140,15 @@ def entrypoint(options):
     sys.path.insert(0, source_dir)
     try:
         module = daimport(basename,
-                          force_recompile=options.recompile,
-                          compiler_args=options.compiler_flags.split(),
+                          force_recompile=GlobalOptions.recompile,
+                          compiler_args=GlobalOptions.compiler_flags.split(),
                           indir=source_dir)
     except ImportError as e:
         die("ImportError: " + str(e))
     if not (hasattr(module, 'main') and
             isinstance(module.main, types.FunctionType)):
         die("'main' function not defined!")
-    if options.loadincmodule:
-        name = options.incmodulename if options.incmodulename is not None \
-               else module.__name__ + "_inc"
-        module.IncModule = importlib.import_module(name)
+    module.IncModule = load_inc_module(module.__name__)
 
     # Start the background statistics thread:
     RootLock.acquire()
@@ -162,11 +157,11 @@ def entrypoint(options):
     stat_th.daemon = True
     stat_th.start()
 
-    niters = options.iterations
+    niters = GlobalOptions.iterations
     stats = {'sent' : 0, 'usrtime': 0, 'systime' : 0, 'time' : 0,
               'units' : 0, 'mem' : 0}
     # Start main program
-    sys.argv = [target] + options.args
+    sys.argv = [target] + GlobalOptions.args
     try:
         for i in range(0, niters):
             log.info("Running iteration %d ..." % (i+1))
@@ -190,15 +185,15 @@ def entrypoint(options):
             stats[k] /= niters
 
         perffd = None
-        if options.perffile is not None:
-            perffd = open(options.perffile, "w")
+        if GlobalOptions.perffile is not None:
+            perffd = open(GlobalOptions.perffile, "w")
         if perffd is not None:
             print_simple_statistics(perffd)
             perffd.close()
 
         dumpfd = None
-        if options.dumpfile is not None:
-            dumpfd = open(options.dumpfile, "wb")
+        if GlobalOptions.dumpfile is not None:
+            dumpfd = open(GlobalOptions.dumpfile, "wb")
         if dumpfd is not None:
             pickle.dump(stats, fd)
             dumpfd.close()
@@ -250,7 +245,7 @@ def createprocs(pcls, power, args=None, **props):
     procs = set()
     for i in iterator:
         (childp, ownp) = multiprocessing.Pipe()
-        p = pcls(RootProcess, childp, EndPointType, CmdlineParams, props)
+        p = pcls(RootProcess, childp, EndPointType, props)
         if isinstance(i, str):
             p.set_name(i)
         # Buffer the pipe

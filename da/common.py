@@ -6,6 +6,8 @@ import importlib
 from inspect import signature, Parameter
 from functools import wraps
 
+GlobalOptions = None
+
 log = logging.getLogger(__name__)
 formatter = logging.Formatter(
     '[%(asctime)s]%(name)s:%(levelname)s: %(message)s')
@@ -14,16 +16,23 @@ log._formatter = formatter
 api_registry = dict()
 builtin_registry = dict()
 
-def setup_root_logger(params):
+def set_global_options(params):
+    global GlobalOptions
+    GlobalOptions = params
+
+def get_global_options():
+    return GlobalOptions
+
+def setup_root_logger():
     rootlog = logging.getLogger("")
 
-    if not params.nolog:
+    if not GlobalOptions.nolog:
         rootlog.setLevel(logging.DEBUG)
         formatter = logging.Formatter(
             '[%(asctime)s]%(name)s:%(levelname)s: %(message)s')
         rootlog._formatter = formatter
 
-        consolelvl = logging._nameToLevel[params.logconsolelevel.upper()]
+        consolelvl = logging._nameToLevel[GlobalOptions.logconsolelevel.upper()]
 
         ch = logging.StreamHandler()
         ch.setFormatter(formatter)
@@ -31,28 +40,29 @@ def setup_root_logger(params):
         rootlog._consolelvl = consolelvl
         rootlog.addHandler(ch)
 
-        if params.logfile:
-            filelvl = logging._nameToLevel[params.logfilelevel.upper()]
-            logfilename = params.logfilename \
-                          if params.logfilename is not None else \
-                             (os.path.basename(params.file) + ".log")
+        if GlobalOptions.logfile:
+            filelvl = logging._nameToLevel[GlobalOptions.logfilelevel.upper()]
+            logfilename = GlobalOptions.logfilename \
+                          if GlobalOptions.logfilename is not None else \
+                             (os.path.basename(GlobalOptions.file) + ".log")
             fh = logging.FileHandler(logfilename)
             fh.setFormatter(formatter)
             fh.setLevel(filelvl)
             rootlog._filelvl = filelvl
             rootlog.addHandler(fh)
 
-        if params.logdir is not None:
-            os.makedirs(params.logdir, exist_ok=True)
-            rootlog._logdir = params.logdir
+        if GlobalOptions.logdir is not None:
+            os.makedirs(GlobalOptions.logdir, exist_ok=True)
+            rootlog._logdir = GlobalOptions.logdir
         else:
             rootlog._logdir = None
     else:
         rootlog.addHandler(logging.NullHandler())
 
-def load_inc_module(options, module_name):
-    if options.loadincmodule:
-        name = options.incmodulename if options.incmodulename is not None \
+def load_inc_module(module_name):
+    if GlobalOptions.loadincmodule:
+        name = GlobalOptions.incmodulename \
+               if GlobalOptions.incmodulename is not None \
                else module_name + "_inc"
         return importlib.import_module(name)
     else:
