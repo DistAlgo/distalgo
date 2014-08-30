@@ -51,25 +51,23 @@ def find_file_on_paths(filename, paths):
             pass
     return None, None
 
-@api
-def daimport(filename, force_recompile=False, compiler_args=[], indir=None):
+def strip_suffix(filename):
+    """Returns a filename minus it's extension."""
+
     dotidx = filename.rfind(".")
+    return filename[:dotidx] if dotidx != -1 else filename
+
+@api
+def daimport(module_name, force_recompile=False, compiler_args=[], indir=None):
     paths = sys.path if indir is None else [indir]
-    if dotidx == -1:
-        # filename does not contain suffix, let's try each one
-        purename = filename
-        for suffix in DISTPY_SUFFIXES:
-            fullpath, mode = find_file_on_paths(filename + suffix, paths)
-            if fullpath is not None:
-                break
-    else:
-        purename = filename[:dotidx]
-        fullpath, mode = find_file_on_paths(filename, paths)
+    pathname = module_name.replace(".", "/")
+    for suffix in DISTPY_SUFFIXES:
+        fullpath, mode = find_file_on_paths(pathname + suffix, paths)
+        if fullpath is not None:
+            break
     if fullpath is None:
-        raise ImportError("Module %s not found." % filename)
-    dotidx = fullpath.rfind(".")
-    pyname = (fullpath[:dotidx] + PYTHON_SUFFIX) \
-             if dotidx != -1 else (fullpath + PYTHON_SUFFIX)
+        raise ImportError("Module %s not found." % module_name)
+    pyname = strip_suffix(fullpath) + PYTHON_SUFFIX
     try:
         pymode = os.stat(pyname)
     except OSError:
@@ -91,7 +89,7 @@ def daimport(filename, force_recompile=False, compiler_args=[], indir=None):
             raise ImportError("Unable to compile %s, errno: %d" %
                               (fullpath, res))
 
-    return importlib.import_module(purename)
+    return importlib.import_module(module_name)
 
 @api
 def use_channel(endpoint):
@@ -117,7 +115,7 @@ def entrypoint():
     GlobalOptions = common.get_global_options()
     target = GlobalOptions.file
     source_dir = os.path.dirname(target)
-    basename = os.path.basename(target)
+    basename = strip_suffix(os.path.basename(target))
     if not os.access(target, os.R_OK):
         die("Can not access source file %s" % target)
 
