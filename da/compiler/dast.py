@@ -1899,7 +1899,7 @@ class Event(DistNode):
 
     @property
     def name(self):
-        return "%s_%d" % ((self.type).__name__, self.index)
+        return "_%s%s_%d" % (self.process.name, (self.type).__name__, self.index)
 
     @property
     def ordered_boundvars(self):
@@ -1978,7 +1978,8 @@ class EventHandler(Function):
     def name(self):
         if super().name is not None:
             return super().name
-        return "event_handler_%d" % self.index
+        return "_%s_handler_%d" % (self.first_parent_of_type(Process).name,
+                                   self.index)
 
 class Process(CompoundStmt, ArgumentsContainer):
 

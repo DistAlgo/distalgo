@@ -289,9 +289,9 @@ class PythonGenerator(NodeVisitor):
                                              "__init__"),
                                  args=[pyName(n) for n in PROC_INITARGS]))]
         histories = self.history_initializers(node)
-        events = [Assign(targets=[pyAttr("self", "_events")],
-                         value=pyList([self.generate_event_def(evt)
-                                       for evt in node.events]))]
+        events = [pyCall(func=pyAttr(pyAttr("self", "_events"), "extend"),
+                         args=[pyList([self.generate_event_def(evt)
+                                       for evt in node.events])])]
         return pyFunctionDef(name="__init__",
                              args=(["self"] + PROC_INITARGS),
                              body=(supercall + histories + events))
