@@ -132,6 +132,7 @@ def entrypoint():
     if not (hasattr(module, 'main') and
             isinstance(module.main, types.FunctionType)):
         die("'main' function not defined!")
+    GlobalOptions.this_module_name = module.__name__
     GlobalOptions.main_module_name = module.__name__
     if GlobalOptions.inc_module_name is None:
         GlobalOptions.inc_module_name = module.__name__ + "_inc"

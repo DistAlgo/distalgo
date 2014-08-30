@@ -67,7 +67,7 @@ def setup_root_logger():
 def load_modules():
     if not GlobalOptions.load_inc_module:
         return
-    main = sys.modules[GlobalOptions.main_module_name]
+    main = sys.modules[GlobalOptions.this_module_name]
     inc = importlib.import_module(GlobalOptions.inc_module_name)
     if GlobalOptions.control_module_name is not None:
         ctrl = importlib.import_module(GlobalOptions.control_module_name)
@@ -211,14 +211,14 @@ class ModuleIntrument(object):
             return subj_attr
 
     def __setattr__(self, attr, value):
+        super().__setattr__(attr, value)
         setattr(self._control, attr, value)
         setattr(self._subject, attr, value)
-        super().__setattr__(attr, value)
 
     def __delattr__(self, attr):
+        super().__delattr__(attr)
         delattr(self._control, attr)
         delattr(self._subject, attr)
-        super().__delattr__(attr)
 
 class frozendict(dict):
     """Hashable immutable dict implementation
