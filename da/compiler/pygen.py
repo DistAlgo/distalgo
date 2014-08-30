@@ -253,8 +253,6 @@ class PythonGenerator(NodeVisitor):
 
     def visit_Program(self, node):
         body = []
-        for p in node.processes:
-            body.extend(self.visit(p))
         body.extend(self.body(node.body))
         return Module(self.preambles + body + self.postambles)
 
@@ -373,8 +371,8 @@ class PythonGenerator(NodeVisitor):
         printd("has methods:%r" % node.methods)
         cd = ClassDef()
         cd.name = node.name
-        cd.bases = [pyAttr("da", "DistProcess")]
-        cd.bases.extend(self.bases(node.bases))
+        cd.bases = self.bases(node.bases)
+        cd.bases.append(pyAttr("da", "DistProcess"))
         # ########################################
         # TODO: just pass these through until we figure out a use for them:
         cd.keywords = node.ast.keywords

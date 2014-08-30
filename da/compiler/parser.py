@@ -604,6 +604,7 @@ class Parser(NodeVisitor):
             proc.decorators, _, _ = self.parse_decorators(node)
             self.push_state(proc)
             self.program.processes.append(proc)
+            self.program.body.append(proc)
 
             initfun = node.body[0]
             self.current_block = proc.initializers
