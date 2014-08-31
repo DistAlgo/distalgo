@@ -244,7 +244,7 @@ def gen_inc_module(daast, cmdline_args=dict(), filename=""):
                     printw("Update %s inside query %s is ignored!" %
                            (node, query))
                     break
-                elif query.is_child_of(node):
+                elif query is node or query.is_child_of(node):
                     printw("Query %s inside update %s is ignored!" %
                            (query, node))
                     break
