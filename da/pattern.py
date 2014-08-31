@@ -165,7 +165,7 @@ class Event:
         """Generates a tuple representation for this event."""
         return (type(self),
                 (self.timestamp, freeze(self.destination), freeze(self.source)),
-                self.message)
+                freeze(self.message))
 
     def __str__(self):
         buf = ["<", type(self).__name__,
