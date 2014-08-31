@@ -264,7 +264,7 @@ def freeze(obj):
     elif isinstance(obj, dict) and not isinstance(obj, frozendict):
         # dict -> frozendict
         return frozendict((freeze(k), freeze(v)) for k, v in obj.items())
-    elif hasattr(obj, '__iter__'):
+    elif isinstance(obj, tuple):
         return type(obj)(freeze(e) for e in obj)
     else:
         # everything else just assume hashable & immutable, hahaha:
@@ -280,3 +280,6 @@ if __name__ == "__main__":
     testapi(1, [2])
     testapi(1, {})
     print(api_registry)
+
+    t = ('a', 1)
+    print("Freeze " + str(t) + "->" + str(freeze(t)))
