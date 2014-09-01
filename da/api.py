@@ -60,7 +60,7 @@ def strip_suffix(filename):
 @api
 def daimport(module_name, force_recompile=False, compiler_args=[], indir=None):
     paths = sys.path if indir is None else [indir]
-    pathname = module_name.replace(".", "/")
+    pathname = module_name.replace(".", os.sep)
     for suffix in DISTPY_SUFFIXES:
         fullpath, mode = find_file_on_paths(pathname + suffix, paths)
         if fullpath is not None:
