@@ -139,7 +139,7 @@ class DistProcess(multiprocessing.Process):
     def run(self):
         try:
             self._cmdline.this_module_name = self.__class__.__module__
-            if sys.platform == 'win32':
+            if multiprocessing.get_start_method() == 'spawn':
                 common.set_global_options(self._cmdline)
                 common.sysinit()
 
