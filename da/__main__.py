@@ -58,6 +58,10 @@ def parseArgs():
     parser.add_argument("-c", "--compiler-flags", default="",
                         help="flags to pass to the compiler, if recompiling "
                         "is required.")
+    parser.add_argument("--start-method", default=None, choices=['fork', 'spawn'],
+                        help="choose the start method for spawning child processes."
+                        " 'fork' is the default method on UNIX-like systems,"
+                        " 'spawn' is the default method on Windows systems.")
     parser.add_argument("-v", "--version", action="version", version=__version__)
     parser.add_argument("file",
                         help="DistAlgo source file to run.")

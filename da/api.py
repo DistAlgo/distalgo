@@ -113,6 +113,9 @@ def use_channel(endpoint):
 
 def entrypoint():
     GlobalOptions = common.get_global_options()
+    if GlobalOptions.start_method != \
+       multiprocessing.get_start_method(allow_none=True):
+        multiprocessing.set_start_method(GlobalOptions.start_method)
     target = GlobalOptions.file
     source_dir = os.path.dirname(target)
     basename = strip_suffix(os.path.basename(target))
