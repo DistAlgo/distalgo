@@ -124,9 +124,11 @@ def {1}({0}):
     temp = {0}
     if type({0}) is set:
         {0} = runtimelib.Set()
+        globals()['{0}'] = {0}
         for elt in temp:
             {0}.add(elt)
-    globals()['{0}'] = {0}
+    else:
+        globals()['{0}'] = {0}
     return {0}
 """
     src = blueprint.format(varname, funname)
