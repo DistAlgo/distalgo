@@ -8,6 +8,7 @@ from .utils import printe, printw, printd
 
 # DistAlgo keywords
 KW_PROCESS_DEF = "process"
+KW_CONFIG = "config"
 KW_RECV_QUERY = "received"
 KW_SENT_QUERY = "sent"
 KW_RECV_EVENT = "recv"
@@ -20,14 +21,14 @@ KW_EVENT_LABEL = "at"
 KW_DECORATOR_LABEL = "labels"
 KW_EXISTENTIAL_QUANT = "some"
 KW_UNIVERSAL_QUANT = "each"
-KW_AGGREGATE_SIZE = "len"
-KW_AGGREGATE_MIN = "min"
-KW_AGGREGATE_MAX = "max"
-KW_AGGREGATE_SUM = "sum"
-KW_TYPE_SET = "set"
-KW_TYPE_TUPLE = "tuple"
-KW_TYPE_LIST = "list"
-KW_TYPE_DICT = "dict"
+KW_AGGREGATE_SIZE = "lenof"
+KW_AGGREGATE_MIN = "minof"
+KW_AGGREGATE_MAX = "maxof"
+KW_AGGREGATE_SUM = "sumof"
+KW_COMP_SET = "setof"
+KW_COMP_TUPLE = "tupleof"
+KW_COMP_LIST = "listof"
+KW_COMP_DICT = "dictof"
 KW_AWAIT = "await"
 KW_AWAIT_TIMEOUT = "timeout"
 KW_SEND = "send"
@@ -111,13 +112,13 @@ KnownUpdateMethods = {
     "delete", "remove", "pop", "clear", "discard"
 }
 
-TypeConstructors = {KW_TYPE_SET, KW_TYPE_TUPLE, KW_TYPE_DICT, KW_TYPE_LIST}
-
 ApiMethods = common.api_registry.keys()
 
 BuiltinMethods = common.builtin_registry.keys()
 
 PythonBuiltins = dir(builtins)
+
+ComprehensionTypes = {KW_COMP_SET, KW_COMP_TUPLE, KW_COMP_DICT, KW_COMP_LIST}
 
 AggregateKeywords = {KW_AGGREGATE_MAX, KW_AGGREGATE_MIN,
                      KW_AGGREGATE_SIZE, KW_AGGREGATE_SUM}
@@ -591,10 +592,17 @@ class Parser(NodeVisitor):
             if type(self.current_parent) is not dast.Program:
                 self.error("Process definition must be at top level.", node)
                 return
-            if not is_setup(node.body[0]):
-                self.error("The first method of a Process must be 'setup'.",
-                           node.body[0])
-                self.errcnt += 1
+            initfun = None
+            bodyidx = None
+            for idx, s in enumerate(node.body):
+                if is_setup(s):
+                    if initfun is None:
+                        initfun = s
+                        bodyidx = idx
+                    else:
+                        self.error("Duplicate setup() definition.", s)
+            if initfun is None:
+                self.error("Process missing 'setup()' definition.", node)
                 return
 
             n = self.current_scope.add_name(node.name)
@@ -606,12 +614,12 @@ class Parser(NodeVisitor):
             self.program.processes.append(proc)
             self.program.body.append(proc)
 
-            initfun = node.body[0]
             self.current_block = proc.initializers
             self.signature(initfun.args)
             self.body(initfun.body)
             self.current_block = proc.body
-            self.proc_body(node.body[1:])
+            del node.body[bodyidx]
+            self.proc_body(node.body)
             self.pop_state()
 
         else:
@@ -776,6 +784,8 @@ class Parser(NodeVisitor):
             return False
         errmsg = None
         if len(node.args) >= minargs and len(node.args) <= maxargs:
+            if keywords is None:
+                return True
             for kw in node.keywords:
                 if kw.arg in keywords:
                     keywords -= {kw.arg}
@@ -855,6 +865,11 @@ class Parser(NodeVisitor):
                 if len(e.args) == 2:
                     stmtobj.level = self.visit(e.args[1])
 
+            elif (isinstance(self.current_parent, dast.Process) and
+                  self.expr_check(KW_CONFIG, 0, 0, e, keywords=None)):
+                self.current_process.configurations.extend(
+                    self.parse_config_section(e))
+
             # 'yield' and 'yield from' should be statements, handle them here:
             elif type(e) is Yield:
                 stmtobj = self.create_stmt(dast.YieldStmt, node)
@@ -928,15 +943,7 @@ class Parser(NodeVisitor):
     def visit_For(self, node):
         s = self.create_stmt(dast.ForStmt, node)
         self.current_context = Assignment()
-
-        # DistAlgo: overload "for" to allow pattern matching
-        s.target = self.parse_pattern_expr(node.target)
-
-        self.current_context = IterRead(s.target)
-        s.iter = self.visit(node.iter)
-        # If iterating over 'received' or 'sent', back-patch event pattern:
-        if isinstance(s.iter, dast.HistoryExpr):
-            s.target = self.pattern_from_event(s.iter.event)
+        s.domain = self.parse_domain_spec(node)
         self.current_context = Read()
         self.current_block = s.body
         self.body(node.body)
@@ -1272,12 +1279,21 @@ class Parser(NodeVisitor):
               type(node.ops[0]) is In):
             expr = self.create_expr(dast.DomainSpec, node)
             expr.pattern = self.parse_pattern_expr(node.left)
-            self.current_context = Read(expr.pattern)
+            self.current_context = IterRead(expr.pattern)
             expr.domain = self.visit(node.comparators[0])
             self.pop_state()
             return expr
+        elif isinstance(node, comprehension) or isinstance(node, For):
+            expr = self.create_expr(dast.DomainSpec, node)
+            expr.pattern = self.parse_pattern_expr(node.target)
+            self.current_context = IterRead(expr.pattern)
+            expr.domain = self.visit(node.iter)
+            if isinstance(expr.domain, dast.HistoryExpr):
+                expr.pattern = self.pattern_from_event(expr.domain.event)
+            self.pop_state()
+            return expr
         else:
-            raise MalformedStatementError("Malformed domain specifier.")
+            raise MalformedStatementError("malformed domain specifier.")
 
     def parse_quantified_expr(self, node):
         if node.func.id == KW_EXISTENTIAL_QUANT:
@@ -1288,44 +1304,130 @@ class Parser(NodeVisitor):
             raise MalformedStatementError("Unknown quantifier.")
 
         expr = self.create_expr(dast.QuantifiedExpr, node, {'op': context})
-        pred = None
-        # Find predicate: first try the "st" keyword:
-        for kw in node.keywords:
-            if kw.arg == KW_SUCH_THAT:
-                if pred is None:
-                    pred = kw.value
-                else:
-                    self.warn("Multiple predicates in quantified expression, "
-                              "first one is used, the rest are ignored.", node)
-            else:
-                self.error("Unknown keyword '%s' in quantified expression." %
-                           kw.arg, node)
-        # ..if no keyword found, then use the last positional argument:
-        if pred is None:
-            if len(node.args) == 0:
-                self.error("Empty quantified expression.", node)
-            else:
-                domains = node.args[:-1]
-                pred = node.args[-1]
-        else:
-            domains = node.args
-        if len(domains) == 0:
-            self.warn("No domain specifiers in quantified expression.", node)
-
         try:
-            expr.domains = [self.parse_domain_spec(node) for node in domains]
-            self.current_context = Read()
-            expr.predicate = self.visit(pred)
+            expr.domains, predicates = self.parse_domains_and_predicate(node)
+            if len(predicates) > 1:
+                self.warn("Multiple predicates in quantified expression, "
+                          "first one is used, the rest are ignored.", node)
+            expr.predicate = predicates[0]
         finally:
             self.pop_state()
         return expr
+
+    def parse_comprehension(self, node):
+        if node.func.id == KW_COMP_SET:
+            expr_type = dast.SetCompExpr
+        elif node.func.id == KW_COMP_LIST:
+            expr_type = dast.ListCompExpr
+        elif node.func.id == KW_COMP_DICT:
+            expr_type = dast.DictCompExpr
+        elif node.func.id == KW_COMP_TUPLE:
+            expr_type = dast.TupleCompExpr
+
+        expr = self.create_expr(expr_type, node)
+        first_arg = node.args[0]
+        node.args = node.args[1:]
+        try:
+            expr.domains, expr.conditions = self.parse_domains_and_predicate(node)
+            if expr_type is dast.DictCompExpr:
+                if not (isinstance(first_arg, Tuple) and
+                        len(first_arg.elts) == 2):
+                    self.error("Malformed element in dict comprehension.",
+                               first_arg)
+                else:
+                    kv = dast.KeyValue(expr)
+                    kv.key = self.visit(node.key)
+                    kv.value = self.visit(node.value)
+                    expr.elem = kv
+            else:
+                expr.elem = self.visit(first_arg)
+        finally:
+            self.pop_state()
+        return expr
+
+    def parse_aggregates(self, node):
+        if node.func.id == KW_AGGREGATE_SUM:
+            expr_type = dast.SumExpr
+        elif node.func.id == KW_AGGREGATE_SIZE:
+            expr_type = dast.SizeExpr
+        elif node.func.id == KW_AGGREGATE_MIN:
+            expr_type = dast.MinExpr
+        elif node.func.id == KW_AGGREGATE_MAX:
+            expr_type = dast.MaxExpr
+
+        expr = self.create_expr(expr_type, node)
+        first_arg = node.args[0]
+        node.args = node.args[1:]
+        try:
+            expr.domains, expr.conditions = self.parse_domains_and_predicate(node)
+            expr.elem = self.visit(first_arg)
+        finally:
+            self.pop_state()
+        return expr
+
+    def parse_domains_and_predicate(self, node):
+        preds = []
+        # Find predicate:
+        for kw in node.keywords:
+            if kw.arg == KW_SUCH_THAT:
+                preds.append(kw.value)
+            else:
+                self.error("Unknown keyword '%s' in comprehension expression." %
+                           kw.arg, node)
+        # ..if no predicate found, then default to True:
+        if len(preds) == 0:
+            preds= [NameConstant(True)]
+        domains = node.args
+        if len(domains) == 0:
+            self.warn("No domain specifiers in comprehension expression.", node)
+        dadomains = [self.parse_domain_spec(node) for node in domains]
+        self.current_context = Read()
+        dapredicates = [self.visit(pred) for pred in preds]
+        return dadomains, dapredicates
+
+    def parse_config_section(self, node):
+        res = []
+        for kw in node.keywords:
+            key = kw.arg
+            vnode = kw.value
+            value = None
+            if isinstance(vnode, Name):
+                value = vnode.id
+            elif isinstance(vnode, Num):
+                value = vnode.n
+            elif isinstance(vnode, Str) or isinstance(vnode, Bytes):
+                value = vnode.s
+            elif isinstance(vnode, NameConstant):
+                value = vnode.value
+            else:
+                self.error("Invalid configuration value.", vnode)
+            if value is not None:
+                res.append((key, value))
+        return res
 
     def visit_Call(self, node):
         if self.call_check(Quantifiers, 1, None, node):
             try:
                 return self.parse_quantified_expr(node)
-            except MalformedStatementError:
-                self.error("Malformed quantification expression.", node)
+            except MalformedStatementError as e:
+                self.error("Malformed quantification expression: " + str(e),
+                           node)
+                return dast.SimpleExpr(self.current_parent, node)
+
+        if self.call_check(ComprehensionTypes, 2, None, node):
+            try:
+                return self.parse_comprehension(node)
+            except MalformedStatementError as e:
+                self.error("Malformed comprehension expression: " + str(e),
+                           node)
+                return dast.SimpleExpr(self.current_parent, node)
+
+        if self.call_check(AggregateKeywords, 2, None, node):
+            try:
+                return self.parse_aggregates(node)
+            except MalformedStatementError as e:
+                self.error("Malformed aggregate expression: " + str(e),
+                           node)
                 return dast.SimpleExpr(self.current_parent, node)
 
         if (self.current_process is not None and
@@ -1360,21 +1462,6 @@ class Parser(NodeVisitor):
                 self.pop_state()
                 return outer
 
-        if self.call_check(AggregateKeywords, 1, 1, node):
-            if not self.ensure_one_arg(node.func.id, node):
-                return
-            if node.func.id == KW_AGGREGATE_SIZE:
-                expr = self.create_expr(dast.SizeExpr, node)
-            elif node.func.id == KW_AGGREGATE_MAX:
-                expr = self.create_expr(dast.MaxExpr, node)
-            elif node.func.id == KW_AGGREGATE_SUM:
-                expr = self.create_expr(dast.SumExpr, node)
-            else:
-                expr = self.create_expr(dast.MinExpr, node)
-            expr.value = self.visit(node.args[0])
-            self.pop_state()
-            return expr
-
         if self.call_check(ApiMethods, None, None, node):
             self.debug("Api method call: " + node.func.id, node)
             expr = self.create_expr(dast.ApiCallExpr, node)
@@ -1384,9 +1471,7 @@ class Parser(NodeVisitor):
             expr = self.create_expr(dast.BuiltinCallExpr, node)
             expr.func = node.func.id
         else:
-            if self.call_check(TypeConstructors, 0, 1, node):
-                self.debug("Built-in %s type construction:" % node.func.id, node)
-            elif isinstance(node.func, Name):
+            if isinstance(node.func, Name):
                 self.debug("Method call: " + str(node.func.id), node)
             expr = self.create_expr(dast.CallExpr, node)
             self.current_context = FunCall()
@@ -1663,15 +1748,8 @@ class Parser(NodeVisitor):
             expr.unlock()
             self.current_context = Assignment()
             # DistAlgo: overload 'in' to allow pattern matching:
-            target = self.parse_pattern_expr(g.target)
-            expr.targets.append(target)
+            expr.domains.append(self.parse_domain_spec(g))
             expr.lock()
-            self.current_context = IterRead(target)
-            expr.iters.append(self.visit(g.iter))
-            # If iterating over history, back-patch pattern from event:
-            if isinstance(expr.iters[-1], dast.HistoryExpr):
-                expr.targets[-1] = self.pattern_from_event(expr.iters[-1].event)
-
             self.current_context = Read()
             expr.conditions.extend([self.visit(i) for i in g.ifs])
         if isinstance(node, DictComp):

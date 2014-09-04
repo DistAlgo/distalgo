@@ -990,48 +990,35 @@ class QuantifiedExpr(BooleanExpr):
 
 class ComprehensionExpr(Expression, LockableNameScope):
 
-    _fields = ['elem', 'iters', 'targets', 'conditions']
+    _fields = ['elem', 'domains', 'conditions']
 
     def __init__(self, parent, ast=None):
         super().__init__(parent, ast)
         self.elem = None
-        self.targets = []
-        self.iters = []
+        self.domains = []
         self.conditions = self.subexprs
 
     def clone(self):
         node = super().clone()
         node.elem = self.elem.clone() if self.elem is not None else None
-        node.targets = [t.clone() for t in self.targets]
-        node.iters = [i.clone() for i in self.iters]
+        node.domains = [d.clone() for d in self.domains]
         return node
 
     @property
     def ordered_nameobjs(self):
         return list(chain(*[e.ordered_nameobjs
-                            for e in chain(self.targets, self.iters,
+                            for e in chain([self.elem],
+                                           self.domains,
                                            self.conditions)
                             if e is not None]))
 
 class GeneratorExpr(ComprehensionExpr): pass
 class SetCompExpr(ComprehensionExpr): pass
 class ListCompExpr(ComprehensionExpr): pass
+class TupleCompExpr(ComprehensionExpr): pass
 class DictCompExpr(ComprehensionExpr): pass
 
-class AggregateExpr(Expression):
-
-    def __init__(self, parent, ast=None):
-        super().__init__(parent, ast)
-        self.subexprs = [None]
-
-    @property
-    def value(self):
-        return self.subexprs[0]
-
-    @value.setter
-    def value(self, val):
-        self.subexprs[0] = val
-
+class AggregateExpr(ComprehensionExpr): pass
 class MaxExpr(AggregateExpr): pass
 class MinExpr(AggregateExpr): pass
 class SizeExpr(AggregateExpr): pass
@@ -1559,6 +1546,7 @@ class Program(CompoundStmt, NameScope):
 
     def __init__(self, parent=None, ast=None):
         super().__init__(parent, ast)
+        self.configurations = []
         self.processes = []
         self.entry_point = None
 
@@ -1681,12 +1669,11 @@ class WhileStmt(LoopStmt):
 
 class ForStmt(LoopStmt):
 
-    _fields = ['target', 'iter', 'body', 'elsebody']
+    _fields = ['domain', 'body', 'elsebody']
 
     def __init__(self, parent, ast=None):
         super().__init__(parent, ast)
-        self.target = None
-        self.iter = None
+        self.domain = None
         self.body = []
         self.elsebody = []
 
@@ -1995,6 +1982,8 @@ class Process(CompoundStmt, ArgumentsContainer):
         self.bases = bases
         # List of decorator expressions:
         self.decorators = []
+        # List of configurations:
+        self.configurations = []
         # Body of the 'setup' function:
         self.initializers = []
         # List of member methods:

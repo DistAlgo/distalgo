@@ -1,30 +1,31 @@
-
+import sys
 class Pong(process):
-    def setup(): pass
+    def setup(total_pings): pass
 
     def main():
-        await(False)
+        await(lenof(p, received(('Ping',), src=p)) == total_pings)
 
     def recv(msg=('Ping',), src=p):
         output("Pinged")
         send(('Pong',), to=p)
 
 class Ping(process):
-    def setup(p): pass
+    def setup(p, nrounds): pass
 
     def main():
-        while True:
+        for i in range(nrounds):
             clk = logical_clock()
             send(('Ping',), to=p)
-            await(some(received(('Pong',), clk=rclk), (rclk > clk)))
-            work()
+            await(some(received(('Pong',), clk=rclk), has=(rclk > clk)))
 
     def recv(msg=('Pong',)):
         output("Ponged.")
 
 def main():
-    pong = createprocs(Pong, 1)
-    ping = createprocs(Ping, 3)
-    setupprocs(ping, [pong])
+    nrounds = int(sys.argv[1]) if len(sys.argv) > 1 else 3
+    npings = int(sys.argv[2]) if len(sys.argv) > 2 else 3
+    pong = createprocs(Pong, 1, [nrounds * npings])
+    ping = createprocs(Ping, npings)
+    setupprocs(ping, [pong, nrounds])
     startprocs(pong)
     startprocs(ping)

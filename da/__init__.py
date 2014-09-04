@@ -1,12 +1,12 @@
 # runtime package
 
-from . import api
-from . import pattern as pat
-from . import compiler
+from . import common, api, pattern as pat, compiler, sim
 
 from .__main__ import libmain, __version__
-from .sim import DistProcess
 
-send = api.send
-daimport = api.daimport
-__all__ = ["__version__", "pat", "api", "libmain", "compiler", "send", "daimport"]
+DistProcess = sim.DistProcess
+__all__ = ["__version__", "pat", "api", "libmain", "compiler", "DistProcess"]
+
+for name in common.api_registry.keys():
+    globals()[name] = common.api_registry[name]
+    __all__.append(name)

@@ -6,11 +6,15 @@ class P(process):
 
     def main():
         distance = 1
-        while distance < 1025:
+        while True:
             send(('Out', self, distance), to={left, right})
-            if await(received(('Out', self, _))):
-                output("I am leader!")
-                await(False)
+            if await(some(received(('Out', self, d)))):
+                output("I am leader at distance %d!"%d)
+                send(('Leader', self), to={left, right})
+                break
+            elif some(received(('Leader', leader))):
+                output("Leader is " + str(leader))
+                break
             elif (received(('In', self), src=_left) and
                   received(('In', self), src=_right)):
                 distance *= 2
@@ -26,6 +30,9 @@ class P(process):
     def recv(msg=('In', v), src=source):
         if v > self:
             send(('In', v), to=(right if source == left else left))
+
+    def recv(msg=("Leader", leader), src=source):
+        send(('Leader', leader), to=(right if source == left else left))
 
 def main():
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 10

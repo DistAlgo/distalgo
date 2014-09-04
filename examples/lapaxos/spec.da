@@ -1,23 +1,26 @@
 import sys
 TIMEOUT = 1.5
 class Proposer(process):
-    def setup(acceptors, maj):
+    def setup(acceptors, nrounds):
+        maj = len(acceptors)/2
         propNum = (0, self)
         propVal = self
 
     def main():
-        while True:
+        count = 0
+        while count < nrounds:
             --start
             send(('Prepare', propNum), to=acceptors)
             --propose
-            if await(len({a for a in received(('Promise', _propNum, _, _, a))}) > maj):
+            if await(len(setof(a, received(('Promise', _propNum, _, _, a)))) > maj):
                 _, propVal = max({(votednum, votedval)
                                   for _ in received(('Promise', _propNum, votednum, votedval, _))} |
                                  {(propNum, propVal)})
                 send(('Propose', propNum, propVal), to=acceptors)
-                if await(len({a for a in received(('Accept', _propNum, _propVal, a))}) > maj):
+                if await(len(setof(a, received(('Accept', _propNum, _propVal, a)))) > maj):
                     --end
                     output("Succeeded in proposing %r"%propVal)
+                    count += 1
                     continue
                 elif timeout(TIMEOUT): pass
             elif timeout(TIMEOUT): pass
@@ -25,31 +28,34 @@ class Proposer(process):
             output("Failed ballot %s, retrying." % str(propNum))
             # Try again with a higher proposal number
             propNum = (propNum[0]+1, self)
+        send(('Done', self), to=acceptors)
 
 class Acceptor(process):
-    def setup():
+    def setup(proposers):
         min_propnum = (-1, self)
 
     def main():
-        await(False)
+        await(each(p in proposers, has=received(('Done', _p))))
 
     def recv(msg=('Prepare', n), src=source):
-        if (n > max({propnum for propnum in sent(('Promise', propnum, _, _, self))} |
+        if (n > max(setof(propnum, sent(('Promise', propnum, _, _, _))) |
                     {min_propnum})):
-            maxpn, votedval = max({(mpn, vv) for _ in sent(('Accept', mpn, vv, self))} |
+            maxpn, votedval = max(setof((mpn, vv), sent(('Accept', mpn, vv, _))) |
                                   {(min_propnum, self)})
             send(('Promise', n, maxpn, votedval, self), to=source)
 
     def recv(msg=('Propose', n, v), src=source):
-        if (n >= max({propnum for _ in sent(('Promise', propnum, _, _, self))} |
+        if (n >= max(setof(propnum, sent(('Promise', propnum, _, _, _))) |
                      {min_propnum})):
             send(('Accept', n, v, self), to=source)
 
 def main():
     nproposers = int(sys.argv[1]) if len(sys.argv) > 1 else 10
     nacceptors = int(sys.argv[2]) if len(sys.argv) > 2 else 25
+    nrounds = int(sys.argv[3]) if len(sys.argv) > 3 else 1
 
-    acceptors = createprocs(Acceptor, nacceptors, [])
-    proposers = createprocs(Proposer, nproposers, [acceptors, nacceptors/2])
+    acceptors = createprocs(Acceptor, nacceptors)
+    proposers = createprocs(Proposer, nproposers, [acceptors, nrounds])
+    setupprocs(acceptors, [proposers])
     startprocs(acceptors)
     startprocs(proposers)

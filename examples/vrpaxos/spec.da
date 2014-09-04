@@ -17,18 +17,18 @@ class Replica(process):
 
     def propose(p):
         #you ignore if p is already been issued
-        if not some((_, _p) in decisions, True):
+        if not (_, _p) in decisions:
             #find the largest available slot
-            maxs = max(s for s, _ in chain(proposals, decisions, {(0, 0)}))
+            maxs = maxof(s, (s, _) in chain(proposals, decisions, {(0, 0)}))
             #within maximum, find smallest which is not yet been decided
-            s1 = min(s for s in range(1, maxs + 1 + 1)
-                     if not some((_s, _) in chain(proposals, decisions), True))
+            s1 = minof(s, s in range(1, maxs + 1 + 1),
+                       has=(not (_s, _) in chain(proposals, decisions)))
             proposals.add((s1, p))
             send(('Propose', s1, p), to=leaders)
 
     def perform(p):
         k, cid, op = p
-        if some((s, _p) in decisions, (s < slot_num)):
+        if some((s, _p) in decisions, has=(s < slot_num)):
             slot_num += 1
         else:
             #next, result = operations[op](state) # Perform the operation on state here - get result and return
@@ -45,8 +45,8 @@ class Replica(process):
 
     def recv(msg=('Decision', s, p)):
         decisions.add((s,p))
-        while some((_slot_num, p1) in decisions, True):
-            while some((_slot_num, p2) in decisions, (p2 != p1)):
+        while some((_slot_num, p1) in decisions):
+            while some((_slot_num, p2) in decisions, has=(p2 != p1)):
                 propose(p2)
             perform(p1)
 
@@ -134,11 +134,11 @@ class Leader(process):
         output("Terminating..")
 
     def recv(msg=('Propose', s, p)):
-        if not some((_s, _) in proposals, True):
+        if not (_s, _) in proposals:
             proposals.add((s,p))
             if active:
                 # Spwan commander only if not decided
-                if not some((_s, _) in decided, True):
+                if not (_s, _) in decided:
                     spawn(Commander, [self, acceptors, replicas, (ballot_num, s, p)])
 
     def recv(msg=('Adopted', _ballot_num, pvals)):
@@ -159,12 +159,11 @@ class Leader(process):
         decided.add((s,p))
 
     def circle_plus(x, y):
-        return y | {(s, p) for (s, p) in x
-                    if not some((_s, _) in y, True)}
+        return y | {(s, p) for (s, p) in x if not (_s, _) in y}
 
     def pmax(pvals):
         return {(s, p) for (b, s, p) in pvals
-                if each((b1, _s, _) in pvals, (b1 <= b))}
+                if each((b1, _s, _) in pvals, has=(b1 <= b))}
 
 
 class Client(process):

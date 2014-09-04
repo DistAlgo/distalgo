@@ -13,9 +13,9 @@ class P(process):
         send(('Request', reqc), to=ps)
 
         --sync
-        if await(each((c2, p2) in q, (reqc, self) <= (c2, p2)) and
-                 each(p3 in ps, some(received(('Reply', c3), src=_p3),
-                                     c3 > reqc))):
+        if await(each((c2, p2) in q, has=((reqc, self) <= (c2, p2))) and
+                 each(p3 in ps, has=some(received(('Reply', c3), src=_p3),
+                                         has=(c3 > reqc)))):
             # critical section
             task()
 
@@ -49,7 +49,7 @@ class P(process):
             cs(announce)
         --end
         bcast(Done(), to=ps)
-        await(each(p in ps, received(('Done',), src=_p)))
+        await(each(p in ps, has=received(('Done',), src=_p)))
         output("Terminating...")
 
 

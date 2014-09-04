@@ -31,13 +31,13 @@ class P (process):
 
     def request_pending(p):
         # p has a request after it last had the token
-        return some(received(('request', c, _p)), c > token[p])
+        return some(received(('request', c, _p)), has=(c > token[p]))
 
     def token_present():
         return (orig_token and not sent(('access', _)) or
                 some(received(('access', token1)),
-                     not some(sent(('access', token2)),
-                              token2[self] > token1[self])))
+                     has=(not some(sent(('access', token2)),
+                                   has=(token2[self] > token1[self])))))
 
     def main():
         def anounce():
@@ -47,7 +47,7 @@ class P (process):
         for i in range(nrounds):
             cs(anounce)
         send(('Done',), to=ps)
-        await(each(p in ps, received(('Done',), src=_p)))
+        await(each(p in ps, has=received(('Done',), src=_p)))
         output("Done!")
 
 def main():

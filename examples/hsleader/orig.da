@@ -13,10 +13,14 @@ class P(process):
 
             if await(status == "Leader"):
                 output("I am leader at phase %d!"%phase)
-                await(False)
+                send(('Leader', self), to={left, right})
+                break
             elif (phase_left and phase_right):
                 phase += 1
                 phase_left, phase_right = False, False
+            elif some(received(('Leader', leader))):
+                output("Leader is " + str(leader))
+                break
 
     def recv(msg=('Token', v, direction, h), src=source):
         if source == left and direction == 'out':
@@ -35,7 +39,6 @@ class P(process):
             elif v == self:
                 status = "Leader"
 
-
         elif source == left and direction == 'in':
             if v > self:
                 send(('Token', v, 'in', 1), to=right)
@@ -47,6 +50,12 @@ class P(process):
                 send(('Token', v, 'in', 1), to=left)
             elif v == self:
                 phase_right = True
+
+    def recv(msg=('Leader', leader), src=source):
+        if source == left:
+            send(('Leader', leader), to=right)
+        else:
+            send(('Leader', leader), to=left)
 
 def main():
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 10

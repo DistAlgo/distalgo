@@ -11,7 +11,7 @@ import threading
 import traceback
 import multiprocessing
 
-from . import pattern, common
+from . import pattern, common, endpoint
 
 builtin = common.builtin
 
@@ -136,6 +136,20 @@ class DistProcess(multiprocessing.Process):
             os.kill(cpid, signal.SIGTERM)
         sys.exit(0)
 
+    _config_object = dict()
+
+    @classmethod
+    def _configure(cls, **props):
+        cls._config_object.update(props)
+
+    def _get_channel_type(self):
+        result = endpoint.UdpEndPoint
+        if 'channel' in self._get_config():
+            config = self._get_config()['channel']
+            if 'reliable' in config or 'fifo' in config:
+                result = endpoint.TcpEndPoint
+        return result
+
     def run(self):
         try:
             self._cmdline.this_module_name = self.__class__.__module__
@@ -199,13 +213,13 @@ class DistProcess(multiprocessing.Process):
     @builtin
     def reset_received(self):
         for attr in dir(self):
-            if attr.startswith("ReceivedEvent_"):
+            if attr.find("ReceivedEvent_") != -1:
                 getattr(self, attr).clear()
 
     @builtin
     def reset_sent(self):
         for attr in dir(self):
-            if attr.startswith("SentEvent_"):
+            if attr.find("SentEvent_") != -1:
                 getattr(self, attr).clear()
 
     @builtin

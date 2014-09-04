@@ -36,6 +36,13 @@ OperatorMap = {
     dast.AndOp : And,
     dast.OrOp : Or
 }
+
+AggregateMap = {
+    dast.MaxExpr : "max",
+    dast.MinExpr : "min",
+    dast.SizeExpr : "len",
+    dast.SumExpr : "sum"
+}
 # New matrix multiplication operator since 3.4:
 if sys.version_info > (3, 5):
     OperatorMap[dast.MatMultOp] = MatMult
@@ -317,24 +324,6 @@ class PythonGenerator(NodeVisitor):
                 body.extend((self.visit(handler)))
         return body
 
-    def generate_pattern_domain(self, pattern, domain):
-        assert pattern is not None
-        assert domain is not None
-        pat = self.visit(pattern)
-        domain = self.visit(domain)
-        context = [(v.unique_name, self.visit(v.value))
-                   for v in pattern.ordered_boundpatterns]
-        # FIXME: variable ordering?????:
-        order = pyTuple([Str(v.name) for v in pattern.freevars])
-        varelts = [self.visit(v) for v in pattern.freevars]
-        iterater = pyCall(pyAttr(pat, "filter"), [domain, order],
-                          keywords=context)
-        if len(varelts) > 0:
-            target = pyTuple(varelts)
-        else:
-            target = pyName("_dummyvar")
-        return target, iterater
-
     def visit_Arguments(self, node):
         """Generates the argument lists for functions and lambdas."""
         args = [arg(ident.name, None) for ident in node.args]
@@ -526,17 +515,29 @@ class PythonGenerator(NodeVisitor):
             return propagate_attributes(ast.values, ast)
 
     def visit_DomainSpec(self, node):
-        target, iterater = self.generate_pattern_domain(node.pattern,
-                                                        node.domain)
-        ast = For(target, iterater, [], [])
-        return propagate_attributes([ast.iter], ast)
+        pat = self.visit(node.pattern)
+        domain = self.visit(node.domain)
+        context = [(v.unique_name, self.visit(v.value))
+                   for v in node.pattern.ordered_boundpatterns]
+        # FIXME: variable ordering?????:
+        order = pyTuple([Str(v.name) for v in node.pattern.freevars])
+        varelts = [self.visit(v) for v in node.pattern.freevars]
+        iterater = pyCall(pyAttr(pat, "filter"), [domain, order],
+                          keywords=context)
+        if len(varelts) > 0:
+            target = pyTuple(varelts)
+        else:
+            target = pyName("_dummyvar")
+        return target, iterater
 
     def visit_QuantifiedExpr(self, node):
         nameset = node.freevars
         body = funcbody = []
 
         for domspec in node.domains:
-            body.append(self.visit(domspec))
+            target, iterater = self.visit(domspec)
+            ast = For(target, iterater, [], [])
+            body.append(propagate_attributes([ast.iter], ast))
             body = body[0].body
         postbody = []
         ifcond = self.visit(node.predicate)
@@ -591,15 +592,15 @@ class PythonGenerator(NodeVisitor):
 
     def visit_ComprehensionExpr(self, node):
         generators = []
-        for tgt, it in zip(node.targets, node.iters):
-            if isinstance(tgt, dast.PatternExpr):
-                tast, iast = self.generate_pattern_domain(tgt, it)
-            else:
-                tast = self.visit(tgt)
-                iast = self.visit(it)
+        for dom in node.domains:
+            tast, iast = self.visit(dom)
             comp = comprehension(tast, iast, [])
             generators.append(propagate_attributes((tast, iast), comp))
-        generators[-1].ifs = [self.visit(cond) for cond in node.conditions]
+
+        # We can omit the 'ifs' if the only condition is 'True':
+        if not (len(node.conditions) == 1 and
+                isinstance(node.conditions[0], dast.TrueExpr)):
+            generators[-1].ifs = [self.visit(cond) for cond in node.conditions]
         propagate_attributes(generators[-1].ifs, generators[-1])
 
         if type(node) is dast.DictCompExpr:
@@ -607,44 +608,34 @@ class PythonGenerator(NodeVisitor):
             value = self.visit(node.elem.value)
             ast = propagate_attributes((key, value),
                                        DictComp(key, value, generators))
+            return propagate_attributes(generators, ast)
         else:
             elem = self.visit(node.elem)
             if type(node) is dast.SetCompExpr:
                 ast = SetComp(elem, generators)
             elif type(node) is dast.ListCompExpr:
                 ast = ListComp(elem, generators)
+            elif type(node) is dast.TupleCompExpr:
+                ast = pyCall("tuple", args=[GeneratorExp(elem, generators)])
             elif type(node) is dast.GeneratorExpr:
                 ast = GeneratorExp(elem, generators)
+            elif isinstance(node, dast.AggregateExpr):
+                ast = pyCall(AggregateMap[type(node)],
+                             [ListComp(elem, generators)])
             else:
                 self.error("Unknown expression", node)
                 return None
-            ast = propagate_attributes([elem], ast)
-        return propagate_attributes(ast.generators, ast)
+            return propagate_attributes(generators + [elem], ast)
 
     visit_GeneratorExpr = visit_ComprehensionExpr
     visit_SetCompExpr = visit_ComprehensionExpr
     visit_ListCompExpr = visit_ComprehensionExpr
     visit_DictCompExpr = visit_ComprehensionExpr
-
-    def visit_MaxExpr(self, node):
-        ast = pyCall(func=pyName("max"),
-                     args=[self.visit(node.value)])
-        return propagate_attributes(ast.args, ast)
-
-    def visit_MinExpr(self, node):
-        ast = pyCall(func=pyName("min"),
-                     args=[self.visit(node.value)])
-        return propagate_attributes(ast.args, ast)
-
-    def visit_SizeExpr(self, node):
-        ast = pyCall(func=pyName("len"),
-                     args=[self.visit(node.value)])
-        return propagate_attributes(ast.args, ast)
-
-    def visit_SumExpr(self, node):
-        ast = pyCall(func=pyName("sum"),
-                     args=[self.visit(node.value)])
-        return propagate_attributes(ast.args, ast)
+    visit_TupleCompExpr = visit_ComprehensionExpr
+    visit_MaxExpr = visit_ComprehensionExpr
+    visit_MinExpr = visit_ComprehensionExpr
+    visit_SumExpr = visit_ComprehensionExpr
+    visit_SizeExpr = visit_ComprehensionExpr
 
     def visit_ComparisonExpr(self, node):
         left = self.visit(node.left)
@@ -756,12 +747,7 @@ class PythonGenerator(NodeVisitor):
         return concat_bodies([test], [ast])
 
     def visit_ForStmt(self, node):
-        if isinstance(node.target, dast.PatternExpr):
-            target, iterater = self.generate_pattern_domain(node.target,
-                                                            node.iter)
-        else:
-            target = self.visit(node.target)
-            iterater = self.visit(node.iter)
+        target, iterater = self.visit(node.domain)
         body = self.body(node.body)
         orelse = self.body(node.elsebody)
         ast = For(target, iterater, body, orelse)
