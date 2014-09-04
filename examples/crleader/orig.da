@@ -28,7 +28,7 @@ class P(process):
 
 def main():
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 5
-    ps = list(createprocs(P, n))
+    ps = list(new(P, n))
     for i, p in enumerate(ps):
-        setupprocs({p}, (ps[(i+1 if i < (len(ps)-1) else 0)],))
-    startprocs(ps)
+        setup({p}, (ps[(i+1 if i < (len(ps)-1) else 0)],))
+    start(ps)

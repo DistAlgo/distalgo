@@ -52,11 +52,11 @@ def main():
     nprocs = int(sys.argv[1]) if len(sys.argv) > 1 else 10
     nrounds = int(sys.argv[2]) if len(sys.argv) > 2 else 1
      # create n process
-    ps = createprocs(P, nprocs)
+    ps = new(P, nprocs)
 
     # setup the processes
     lucky = ps.pop()
 
-    setupprocs(ps, (ps|{lucky}, False, nrounds))
-    setupprocs({lucky}, (ps|{lucky}, True, nrounds))
-    startprocs(ps|{lucky})
+    setup(ps, (ps|{lucky}, False, nrounds))
+    setup({lucky}, (ps|{lucky}, True, nrounds))
+    start(ps|{lucky})

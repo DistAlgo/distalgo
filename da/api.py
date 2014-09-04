@@ -204,7 +204,7 @@ def entrypoint():
     log.info("Terminating...")
 
 @api
-def createprocs(pcls, power, args=None, **props):
+def new(pcls, power, args=None, **props):
     if not issubclass(pcls, sim.DistProcess):
         log.error("Can not create non-DistProcess.")
         return set()
@@ -254,7 +254,7 @@ def createprocs(pcls, power, args=None, **props):
         ProcessIds.append(cid)
 
     if (args != None):
-        setupprocs(result, args)
+        setup(result, args)
 
     if isinstance(power, int):
         return set(result.values())
@@ -262,7 +262,7 @@ def createprocs(pcls, power, args=None, **props):
         return result
 
 @api
-def setupprocs(pids, args):
+def setup(pids, args):
     if isinstance(pids, dict):
         pset = pids.values()
     else:
@@ -272,7 +272,7 @@ def setupprocs(pids, args):
         p._initpipe.send(("setup", args))
 
 @api
-def startprocs(procs):
+def start(procs):
     if isinstance(procs, dict):
         ps = procs.values()
     else:

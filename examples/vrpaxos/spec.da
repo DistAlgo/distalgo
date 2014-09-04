@@ -208,15 +208,15 @@ def main():
 
     use_channel("tcp")
 
-    acceptors = createprocs(Acceptor, nacceptors, [])
-    replicas = createprocs(Replica, nreplicas)
-    leaders = createprocs(Leader, nleaders, (acceptors, replicas))
-    clients = createprocs(Client, nclients, (replicas, nops))
-    setupprocs(replicas, (leaders, dict()))
+    acceptors = new(Acceptor, nacceptors, [])
+    replicas = new(Replica, nreplicas)
+    leaders = new(Leader, nleaders, (acceptors, replicas))
+    clients = new(Client, nclients, (replicas, nops))
+    setup(replicas, (leaders, dict()))
 
-    startprocs(acceptors)
-    startprocs(replicas | leaders)
-    startprocs(clients)
+    start(acceptors)
+    start(replicas | leaders)
+    start(clients)
     for c in clients: c.join()
     print("Done.")
     da.send(('Done',), to=(acceptors|replicas|leaders))

@@ -59,8 +59,8 @@ def main():
     timeout = int(sys.argv[3]) if len(sys.argv) > 3 else 10
 
     use_channel("tcp")
-    ps = createprocs(P, nprocs)
+    ps = new(P, nprocs)
     # setup the processes
-    for p in ps: setupprocs({p}, [ps-{p}, nrounds, timeout])
+    for p in ps: setup({p}, [ps-{p}, nrounds, timeout])
     # start the processes
-    startprocs(ps)
+    start(ps)

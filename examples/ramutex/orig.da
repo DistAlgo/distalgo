@@ -48,8 +48,8 @@ def main():
     nprocs = int(sys.argv[1]) if len(sys.argv) > 1 else 10
     nrounds = int(sys.argv[2]) if len(sys.argv) > 2 else 1
 
-    ps = createprocs(P, nprocs)
+    ps = new(P, nprocs)
     # setup the processes
-    for p in ps: setupprocs({p}, [ps-{p}, nrounds])
+    for p in ps: setup({p}, [ps-{p}, nrounds])
     # start the processes
-    startprocs(ps)
+    start(ps)

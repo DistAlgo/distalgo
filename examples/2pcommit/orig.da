@@ -60,8 +60,8 @@ def main():
 
     use_channel("udp")
 
-    accpts = createprocs(Cohort, nacceptors, [fail_rate])
-    propsrs = createprocs(Coordinator, 1, [nproposers, accpts])
+    accpts = new(Cohort, nacceptors, [fail_rate])
+    propsrs = new(Coordinator, 1, [nproposers, accpts])
 
-    startprocs(accpts | propsrs)
+    start(accpts | propsrs)
 

@@ -24,8 +24,8 @@ class Ping(process):
 def main():
     nrounds = int(sys.argv[1]) if len(sys.argv) > 1 else 3
     npings = int(sys.argv[2]) if len(sys.argv) > 2 else 3
-    pong = createprocs(Pong, 1, [nrounds * npings])
-    ping = createprocs(Ping, npings)
-    setupprocs(ping, [pong, nrounds])
-    startprocs(pong)
-    startprocs(ping)
+    pong = new(Pong, 1, [nrounds * npings])
+    ping = new(Ping, npings)
+    setup(ping, [pong, nrounds])
+    start(pong)
+    start(ping)
