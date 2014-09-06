@@ -857,17 +857,31 @@ class LogicalExpr(BooleanExpr):
         else:
             return None
 
-class KeyValue(DistNode):
+class KeyValue(Expression):
     def __init__(self, parent, ast=None):
         super().__init__(parent, ast)
-        self.expr = parent
-        self.key = None
-        self.value = None
+        self.subexprs = [None, None]
 
     def clone(self):
         node = super().clone()
         node.subexprs = [e.clone() for e in self.subexprs]
         return node
+
+    @property
+    def key(self):
+        return self.subexprs[0]
+
+    @property
+    def value(self):
+        return self.subexprs[1]
+
+    @key.setter
+    def key(self, key):
+        self.subexprs[0] = key
+
+    @value.setter
+    def value(self, value):
+        self.subexprs[1] = value
 
 class QuantifierOperator(DistNode): pass
 class ExistentialOp(QuantifierOperator): pass

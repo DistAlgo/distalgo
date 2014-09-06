@@ -68,8 +68,7 @@ def domain_for_condition(domainspec, condition):
     expr = dast.SetCompExpr(domainspec.parent)
     expr.elem = dast.TupleExpr(expr)
     expr.elem.subexprs = domainspec.pattern.ordered_freevars
-    expr.targets.append(domainspec.pattern)
-    expr.iters.append(domainspec.domain)
+    expr.domains.append(domainspec)
     expr.conditions.append(condition)
     return expr
 
@@ -358,6 +357,8 @@ class QueryExtractor(NodeVisitor):
         self.queries = []
 
     def visit_QuantifiedExpr(self, node):
+        if node.immediate_container_of_type(dast.Process) is None:
+            return
         # We try to find the largest node that contains the query:
         par = node.last_parent_of_type(dast.BooleanExpr)
         if par is None:
@@ -366,6 +367,8 @@ class QueryExtractor(NodeVisitor):
             self.queries.append(par)
 
     def visit_ComplexExpr(self, node):
+        if node.immediate_container_of_type(dast.Process) is None:
+            return
         par = node.last_parent_of_type(dast.Expression)
         if par is None:
             par = node
@@ -495,15 +498,7 @@ class IncInterfaceGenerator(PythonGenerator):
             return super().visit_ComparisonExpr(node)
 
     def visit_ComprehensionExpr(self, node):
-        generators = []
-        for target, dom in zip(node.targets, node.iters):
-            if isinstance(target, dast.PatternExpr):
-                pytgt, pyconds = self.visit(target)
-            else:
-                pytgt = self.visit(target)
-                pyconds = []
-            pydom = self.visit(dom)
-            generators.append(comprehension(pytgt, pydom, pyconds))
+        generators = [self.visit(dom) for dom in node.domains]
         generators[-1].ifs.extend([self.visit(cond) for cond in
                                    node.conditions])
 
@@ -517,6 +512,8 @@ class IncInterfaceGenerator(PythonGenerator):
                 ast = SetComp(elem, generators)
             elif isinstance(node, dast.ListCompExpr):
                 ast = ListComp(elem, generators)
+            elif isinstance(node, dast.TupleCompExpr):
+                ast = pyCall("tuple", args=[GeneratorExp(elem, generators)])
             elif isinstance(node, dast.GeneratorExpr):
                 ast = GeneratorExp(elem, generators)
             else:
@@ -528,6 +525,7 @@ class IncInterfaceGenerator(PythonGenerator):
     visit_SetCompExpr = visit_ComprehensionExpr
     visit_ListCompExpr = visit_ComprehensionExpr
     visit_DictCompExpr = visit_ComprehensionExpr
+    visit_TupleCompExpr = visit_ComprehensionExpr
 
     def visit_Event(self, node):
         assert node.type is not None

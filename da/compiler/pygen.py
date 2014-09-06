@@ -528,15 +528,15 @@ class PythonGenerator(NodeVisitor):
             target = pyTuple(varelts)
         else:
             target = pyName("_dummyvar")
-        return target, iterater
+        return comprehension(target, iterater, [])
 
     def visit_QuantifiedExpr(self, node):
         nameset = node.freevars
         body = funcbody = []
 
         for domspec in node.domains:
-            target, iterater = self.visit(domspec)
-            ast = For(target, iterater, [], [])
+            comp = self.visit(domspec)
+            ast = For(comp.target, comp.iter, [], [])
             body.append(propagate_attributes([ast.iter], ast))
             body = body[0].body
         postbody = []
@@ -593,9 +593,9 @@ class PythonGenerator(NodeVisitor):
     def visit_ComprehensionExpr(self, node):
         generators = []
         for dom in node.domains:
-            tast, iast = self.visit(dom)
-            comp = comprehension(tast, iast, [])
-            generators.append(propagate_attributes((tast, iast), comp))
+            comp = self.visit(dom)
+            generators.append(propagate_attributes((comp.target, comp.iter),
+                                                   comp))
 
         # We can omit the 'ifs' if the only condition is 'True':
         if not (len(node.conditions) == 1 and
@@ -747,11 +747,11 @@ class PythonGenerator(NodeVisitor):
         return concat_bodies([test], [ast])
 
     def visit_ForStmt(self, node):
-        target, iterater = self.visit(node.domain)
+        comp = self.visit(node.domain)
         body = self.body(node.body)
         orelse = self.body(node.elsebody)
-        ast = For(target, iterater, body, orelse)
-        return concat_bodies((target, iterater), [ast])
+        ast = For(comp.target, comp.iter, body, orelse)
+        return concat_bodies((comp.target, comp.iter), [ast])
 
     def visit_TryStmt(self, node):
         body = self.body(node.body)
