@@ -565,12 +565,14 @@ class Expression(DistNode):
         return self.first_parent_of_type(Statement)
 
     def __str__(self):
-        s = type(self).__name__ + "("
+        s = [type(self).__name__, "("]
         for e in self.subexprs:
-            s += str(e)
-            s += ","
-        s += ")"
-        return s
+            s.append(str(e))
+            s.append(", ")
+        if len(self.subexprs) > 0:
+            del s[-1]
+        s.append(")")
+        return "".join(s)
 
     def __eq__(self, target):
         if target is None:
@@ -857,6 +859,17 @@ class LogicalExpr(BooleanExpr):
         else:
             return None
 
+    def __str__(self):
+        s = [type(self).__name__, "("]
+        s.extend(["op=", self.operator.__name__, ", "])
+        for e in self.subexprs:
+            s.append(str(e))
+            s.append(", ")
+        if len(self.subexprs) > 0:
+            del s[-1]
+        s.append(")")
+        return "".join(s)
+
 class KeyValue(Expression):
     def __init__(self, parent, ast=None):
         super().__init__(parent, ast)
@@ -882,6 +895,11 @@ class KeyValue(Expression):
     @value.setter
     def value(self, value):
         self.subexprs[1] = value
+
+    def __str__(self):
+        s = [str(self.key), " : ", str(self.value)]
+        return "".join(s)
+
 
 class QuantifierOperator(DistNode): pass
 class ExistentialOp(QuantifierOperator): pass
@@ -950,6 +968,9 @@ class DomainSpec(Expression):
         assert isinstance(expr, Expression)
         self.subexprs[1] = expr
 
+    def __str__(self):
+        return str(self.pattern) + " in " + str(self.domain)
+
 class QuantifiedExpr(BooleanExpr):
 
     _fields = ['domains', 'operator'] + BooleanExpr._fields
@@ -1002,6 +1023,19 @@ class QuantifiedExpr(BooleanExpr):
         assert isinstance(expr, Expression)
         self.subexprs[0] = expr
 
+    def __str__(self):
+        s = [type(self).__name__, "("]
+        s.extend(["op=", self.operator.__name__, ", "])
+        for e in self.domains:
+            s.append(str(e))
+            s.append(", ")
+        if len(self.subexprs) > 0:
+            del s[-1]
+        s.append(" | ")
+        s.append(str(self.predicate))
+        s.append(")")
+        return "".join(s)
+
 class ComprehensionExpr(Expression, LockableNameScope):
 
     _fields = ['elem', 'domains', 'conditions']
@@ -1025,6 +1059,22 @@ class ComprehensionExpr(Expression, LockableNameScope):
                                            self.domains,
                                            self.conditions)
                             if e is not None]))
+
+    def __str__(self):
+        s = [type(self).__name__, "(", str(self.elem), ": "]
+        for d in self.domains:
+            s.append(str(d))
+            s.append(", ")
+        if len(self.domains) > 0:
+            del s[-1]
+        s.append(" | ")
+        for d in self.conditions:
+            s.append(str(d))
+            s.append(", ")
+        if len(self.conditions) > 0:
+            del s[-1]
+        s.append(")")
+        return "".join(s)
 
 class GeneratorExpr(ComprehensionExpr): pass
 class SetCompExpr(ComprehensionExpr): pass
@@ -1221,7 +1271,7 @@ class PatternElement(DistNode):
         return chain(self.ordered_boundvars, self.ordered_freevars)
 
     def __str__(self):
-        return type(self).__name__ + ("(%s)" % self.value)
+        return type(self).__name__ + ("{%s}" % str(self.value))
 
     def match(self, target):
         """Compare two Elements to see if they describe the same pattern.
@@ -1318,6 +1368,16 @@ class TuplePattern(PatternElement):
     def ordered_freevars(self):
         return list(chain(*[v.ordered_freevars for v in self.value]))
 
+    def __str__(self):
+        s = [type(self).__name__, "{("]
+        for e in self.value:
+            s.append(str(e))
+            s.append(", ")
+        if len(self.value) > 0:
+            del s[-1]
+        s.append(")}")
+        return "".join(s)
+
 class ListPattern(PatternElement):
     def __init__(self, parent, ast=None, value=None):
         assert isinstance(value, list)
@@ -1342,6 +1402,16 @@ class ListPattern(PatternElement):
     @property
     def ordered_freevars(self):
         return list(chain(*[v.ordered_freevars for v in self.value]))
+
+    def __str__(self):
+        s = [type(self).__name__, "{("]
+        for e in self.value:
+            s.append(str(e))
+            s.append(", ")
+        if len(self.value) > 0:
+            del s[-1]
+        s.append(")}")
+        return "".join(s)
 
 class PatternExpr(Expression):
 
@@ -1960,6 +2030,8 @@ class Event(DistNode):
                 return False
         return True
 
+    def __str__(self):
+        return self.name
 
 class EventHandler(Function):
 
