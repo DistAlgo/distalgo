@@ -1935,6 +1935,11 @@ class OutputStmt(SimpleStmt):
         self.message = None
         self.level = None
 
+class ResetStmt(SimpleStmt):
+
+    def __init__(self, parent, ast=None):
+        super().__init__(parent, ast)
+
 class EventType: pass
 class ReceivedEvent(EventType): pass
 class SentEvent(EventType): pass

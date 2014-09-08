@@ -336,6 +336,17 @@ class StubcallGenerator(PythonGenerator):
         else:
             return super().history_stub(node)
 
+    def visit_ResetStmt(self, node):
+        node = node.first_parent_of_type(dast.Process)
+        return [Assign(
+            targets=[pyAttr("self", evt.name)],
+            value=(pyCall(func=pyAttr(INC_MODULE_VAR,
+                                      ASSIGN_STUB_FORMAT % (evt.process.name +
+                                                            evt.name)),
+                          args=[pySet([])])
+                   if evt in self.events else pyList([])))
+                for evt in node.events if evt.record_history]
+
 class EventExtractor(NodeVisitor):
     """Extracts event specs from queries.
 

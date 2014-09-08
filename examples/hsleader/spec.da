@@ -18,7 +18,7 @@ class P(process):
             elif (received(('In', self), src=_left) and
                   received(('In', self), src=_right)):
                 distance *= 2
-                reset_received()
+                reset("Received")
 
     def recv(msg=('Out', v, d), src=source):
         if v > self:

@@ -9,7 +9,7 @@ class P(process):
                 setof(v, v in V,
                       has=(not some(sent(('Value', V2, _)), has=(v in V2)))),
                 self), to=ps)
-          reset_received()
+          reset("Received")
           await(received(('Value', _, _)))
           V |= setof(v, received(('Value', V2, _)), v in V2)
        x = min(V)

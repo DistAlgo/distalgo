@@ -40,6 +40,7 @@ KW_TRUE = "True"
 KW_FALSE = "False"
 KW_NULL = "None"
 KW_SUCH_THAT = "has"
+KW_RESET = "reset"
 
 def is_setup(node):
     """Returns True if this node defines a function named 'setup'."""
@@ -864,6 +865,14 @@ class Parser(NodeVisitor):
                 stmtobj.message = self.visit(e.args[0])
                 if len(e.args) == 2:
                     stmtobj.level = self.visit(e.args[1])
+
+            elif self.current_process is not None and \
+                 self.expr_check(KW_RESET, 0, 1, e):
+                stmtobj = self.create_stmt(dast.ResetStmt, node)
+                if len(e.args) > 0:
+                    stmtobj.expr = self.visit(e.args[0])
+                    if not isinstance(stmtobj.expr, dast.ConstantExpr):
+                        self.error("Invalid reset statement.", e)
 
             elif (isinstance(self.current_parent, dast.Process) and
                   self.expr_check(KW_CONFIG, 0, 0, e, keywords=None)):

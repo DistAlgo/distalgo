@@ -934,6 +934,19 @@ class PythonGenerator(NodeVisitor):
         ast = pyCall(func=pyAttr("self", "output"), args=args)
         return concat_bodies(ast.args, [ast])
 
+    def visit_ResetStmt(self, node):
+        blueprint = """
+for attr in dir(self):
+    if attr.find("{0}Event_") != -1:
+        getattr(self, attr).clear()
+"""
+        if node.expr is None:
+            typestr = ""
+        else:
+            typestr = str(node.expr.value)
+        src = blueprint.format(typestr)
+        return parse(src).body
+
     def history_stub(self, node):
         if node.record_history:
             return pyTrue()
