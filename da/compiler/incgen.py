@@ -68,8 +68,11 @@ def domain_for_condition(domainspec, condition):
     expr = dast.SetCompExpr(domainspec.parent)
     expr.elem = dast.TupleExpr(expr)
     expr.elem.subexprs = domainspec.pattern.ordered_freevars
-    expr.domains.append(domainspec)
+    expr.domains.append(domainspec.clone())
     expr.conditions.append(condition)
+    domainspec.pattern = dast.TuplePattern(domainspec)
+    domainspec.pattern.value = [dast.FreePattern(domainspec.pattern, value=fv)
+                                for fv in expr.elem.subexprs]
     return expr
 
 def ast_eq(left, right):
