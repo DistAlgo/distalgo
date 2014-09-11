@@ -283,14 +283,14 @@ def gen_inc_module(daast, cmdline_args=dict(), filename=""):
                 node.ast_override = updcall
 
     for event in all_events:
-        uname = UPDATE_STUB_FORMAT % (event.process.name + event.name, 0)
-        aname = ASSIGN_STUB_FORMAT % (event.process.name + event.name)
+        uname = UPDATE_STUB_FORMAT % (event.name, 0)
+        aname = ASSIGN_STUB_FORMAT % event.name
         updfun = pyFunctionDef(name=uname,
                                args=[event.name, "element"],
                                body=[pyCall(
                                    func=pyAttr(event.name, "add"),
                                    args=[pyName("element")])])
-        module.body.append(gen_assign_stub(aname, "initevent", jbstyle))
+        module.body.append(gen_assign_stub(aname, event.name, jbstyle))
         module.body.append(updfun)
 
     # Inject calls to stub init for each process:
@@ -321,8 +321,7 @@ class StubcallGenerator(PythonGenerator):
         return [Assign(
             targets=[pyAttr("self", evt.name)],
             value=(pyCall(func=pyAttr(INC_MODULE_VAR,
-                                      ASSIGN_STUB_FORMAT % (evt.process.name +
-                                                            evt.name)),
+                                      ASSIGN_STUB_FORMAT % evt.name),
                           args=[pySet([])])
                    if evt in self.events else pyList([])))
                 for evt in node.events if evt.record_history]
@@ -332,7 +331,7 @@ class StubcallGenerator(PythonGenerator):
         if node.record_history and node in self.events:
             return pyAttr(INC_MODULE_VAR,
                           UPDATE_STUB_FORMAT %
-                          (node.process.name + node.name, 0))
+                          (node.name, 0))
         else:
             return super().history_stub(node)
 
@@ -341,8 +340,7 @@ class StubcallGenerator(PythonGenerator):
         return [Assign(
             targets=[pyAttr("self", evt.name)],
             value=(pyCall(func=pyAttr(INC_MODULE_VAR,
-                                      ASSIGN_STUB_FORMAT % (evt.process.name +
-                                                            evt.name)),
+                                      ASSIGN_STUB_FORMAT % evt.name),
                           args=[pySet([])])
                    if evt in self.events else pyList([])))
                 for evt in node.events if evt.record_history]
