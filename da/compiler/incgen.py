@@ -514,7 +514,9 @@ class IncInterfaceGenerator(PythonGenerator):
     def visit_ComprehensionExpr(self, node):
         generators = [self.visit(dom) for dom in node.domains]
         generators[-1].ifs.extend([self.visit(cond) for cond in
-                                   node.conditions])
+                                   node.conditions
+                                   # Don't add redundant 'if True's:
+                                   if not isinstance(cond, dast.TrueExpr)])
 
         if type(node) is dast.DictCompExpr:
             key = self.visit(node.elem.key)
