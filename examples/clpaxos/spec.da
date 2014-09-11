@@ -11,15 +11,15 @@ class Proposer(process):
             work()
             --prepare
             send(('Prepare', propNum, self), to=acceptors)
-            if await(lenof(a, received(('Promise', _propNum, _, _, a))) > quorumsize):
+            if await(len(setof(a, received(('Promise', _propNum, _, _, a)))) > quorumsize):
                 --propose
                 voted = max(setof((n, v),
                                   received(('Promise', _propNum, n, v, _)),
-                                  has=(lenof(a, received(('Promise', _propNum, _n, _v, a))) > f)) |
+                                  has=(len(setof(a, received(('Promise', _propNum, _n, _v, a)))) > f)) |
                             {((-1, self), propVal)})[1]
 
                 send(('OneC', propNum, voted, self), to=acceptors)
-                if await(lenof(a, received(('TwoAv', _propNum, _voted, a))) > quorumsize):
+                if await(len(setof(a, received(('TwoAv', _propNum, _voted, a)))) > quorumsize):
                     --end
                     output("Succeeded proposing %r" % voted)
                     count += 1
@@ -38,7 +38,7 @@ class Acceptor(process):
     def main():
         while True:
             if await(some(received(('TwoAV', n, v, _)),
-                          has=(lenof(a, received(('TwoAV', _n, _v, a))) > quorumsize and
+                          has=(len(setof(a, received(('TwoAV', _n, _v, a)))) > quorumsize and
                                not sent(('TwoB', _n, _v))))):
                 send(('TwoB', n, v), to=peers)
             elif each(p in proposers, has=received(('Done',), src=_p)):
@@ -46,7 +46,7 @@ class Acceptor(process):
 
     def recv(msg=('Prepare', n, p)):
         if n > maxpromised():
-            vn, vv = max({(vpn, vv) for _ in sent(('TwoAv', vpn, vv, self))} |
+            vn, vv = max(setof((vpn, vv), sent(('TwoAv', vpn, vv, self))) |
                          {((-1, self), None)})
             send(('Promise', n, vn, vv, self), to=peers)
 
@@ -55,7 +55,7 @@ class Acceptor(process):
             send(('TwoAv', n, v, self), to=peers)
 
     def maxpromised():
-        return max({n for n in sent(('Promise', n, _, _, _))} | {(-2, self)})
+        return max(setof(n, sent(('Promise', n, _, _, _))) | {(-2, self)})
 
     def islegal(n, v):
         voted = {(vn, vv)
