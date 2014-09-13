@@ -2,7 +2,7 @@ import sys
 TIMEOUT = 1.5
 class Proposer(process):
     def setup(acceptors, nrounds):
-        maj = len(acceptors)/2
+        maj = int(len(acceptors)/2) + 1
         propNum = (0, self)
         propVal = self
 
@@ -12,12 +12,13 @@ class Proposer(process):
             --start
             send(('Prepare', propNum), to=acceptors)
             --propose
-            if await(len(setof(a, received(('Promise', _propNum, _, _, a)))) > maj):
-                _, propVal = max({(votednum, votedval)
-                                  for _ in received(('Promise', _propNum, votednum, votedval, _))} |
-                                 {(propNum, propVal)})
+            if await(len(setof(a, received(('Promise', _propNum, _, a)))) >= maj):
+                _, pval = max(setof((votednum, votedval),
+                                    received(('Promise', _propNum, (votednum, votedval), _))))
+                if pval is not None:
+                    propVal = pval
                 send(('Propose', propNum, propVal), to=acceptors)
-                if await(len(setof(a, received(('Accept', _propNum, _propVal, a)))) > maj):
+                if await(len(setof(a, received(('Accept', _propNum, _propVal, a)))) >= maj):
                     --end
                     output("Succeeded in proposing %r"%propVal)
                     count += 1
@@ -38,14 +39,15 @@ class Acceptor(process):
         await(each(p in proposers, has=received(('Done', _p))))
 
     def recv(msg=('Prepare', n), src=source):
-        if (n > max(setof(propnum, sent(('Promise', propnum, _, _, _))) |
+        if (n > max(setof(propnum, sent(('Promise', propnum, _, _))) |
                     {min_propnum})):
-            maxpn, votedval = max(setof((mpn, vv), sent(('Accept', mpn, vv, _))) |
-                                  {(min_propnum, self)})
-            send(('Promise', n, maxpn, votedval, self), to=source)
+            send(('Promise', n,
+                  max(setof((mpn, vv), sent(('Accept', mpn, vv, _))) |
+                      {(min_propnum, None)}),
+                  self), to=source)
 
     def recv(msg=('Propose', n, v), src=source):
-        if (n >= max(setof(propnum, sent(('Promise', propnum, _, _, _))) |
+        if (n >= max(setof(propnum, sent(('Promise', propnum, _, _))) |
                      {min_propnum})):
             send(('Accept', n, v, self), to=source)
 
