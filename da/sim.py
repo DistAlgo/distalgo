@@ -211,18 +211,6 @@ class DistProcess(multiprocessing.Process):
         self._log.log(level, message)
 
     @builtin
-    def reset_received(self):
-        for attr in dir(self):
-            if attr.find("ReceivedEvent_") != -1:
-                getattr(self, attr).clear()
-
-    @builtin
-    def reset_sent(self):
-        for attr in dir(self):
-            if attr.find("SentEvent_") != -1:
-                getattr(self, attr).clear()
-
-    @builtin
     def work(self):
         """Waste some random amount of time."""
         time.sleep(random.randint(0, 200) / 100)
