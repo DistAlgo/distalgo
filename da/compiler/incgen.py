@@ -10,6 +10,8 @@ INC_MODULE_VAR = "IncModule"
 QUERY_STUB_FORMAT = "Query_%d"
 ASSIGN_STUB_FORMAT = "Assign_%s"
 UPDATE_STUB_FORMAT = "Update_%s_%d"
+INIT_STUB_FORMAT = "Init_Event_%s"
+RESET_STUB_FORMAT = "Reset_%s_Events"
 
 SELF_ID_NAME = "SELF_ID"
 
@@ -129,6 +131,34 @@ def {1}({0}):
     src = blueprint.format(varname, funname)
     return parse(src).body[0]
 
+def gen_reset_stub(process, events, jbstyle=False):
+    """Generate the event reset stub."""
+
+    args = [evt.name for evt in process.events if evt in events]
+    body = [pyCall(func=pyAttr(evt.name, "clear"))
+            for evt in process.events if evt in events]
+    if len(body) > 0:
+        return [pyFunctionDef(name=RESET_STUB_FORMAT % process.name,
+                              args=args, body=body)]
+    else:
+        return []
+
+def gen_init_event_stub(event, jbstyle=False):
+    """Generate the event init stub."""
+
+    blueprint = """
+def {0}():
+    globals()['{1}'] = []
+    return globals()['{1}']
+""" if not jbstyle else """
+def {0}():
+    globals()['{1}'] = runtimelib.Set()
+    return globals()['{1}']
+"""
+
+    src = blueprint.format(INIT_STUB_FORMAT % event.name, event.name)
+    return parse(src).body[0]
+
 def gen_inc_module(daast, cmdline_args=dict(), filename=""):
     """Generates the interface file from a DistPy AST."""
 
@@ -145,7 +175,7 @@ def gen_inc_module(daast, cmdline_args=dict(), filename=""):
 
     # Generate the query functions and accumulate set of parameters:
     all_params = []
-    all_events = []
+    all_events = []        # Events have to be handled separately
     # Use the IncInterfaceGenerator for the inc module:
     iig = IncInterfaceGenerator(**cmdline_args)
     pg = PythonGenerator()
@@ -275,6 +305,7 @@ def gen_inc_module(daast, cmdline_args=dict(), filename=""):
                 module.body.append(updfun)
                 node.ast_override = updcall
 
+    # Generate stubs for events:
     for event in all_events:
         uname = UPDATE_STUB_FORMAT % (event.name, 0)
         aname = ASSIGN_STUB_FORMAT % event.name
@@ -284,10 +315,12 @@ def gen_inc_module(daast, cmdline_args=dict(), filename=""):
                                    func=pyAttr(event.name, "add"),
                                    args=[pyName("element")])])
         module.body.append(gen_assign_stub(aname, event.name, jbstyle))
+        module.body.append(gen_init_event_stub(event, jbstyle))
         module.body.append(updfun)
 
     # Inject calls to stub init for each process:
     for proc in daast.processes:
+        module.body.extend(gen_reset_stub(proc, all_events))
         if not hasattr(proc.initializers[0], "prebody"):
             proc.initializers[0].prebody = []
         proc.initializers[0].prebody.insert(
@@ -314,8 +347,7 @@ class StubcallGenerator(PythonGenerator):
         return [Assign(
             targets=[pyAttr("self", evt.name)],
             value=(pyCall(func=pyAttr(INC_MODULE_VAR,
-                                      ASSIGN_STUB_FORMAT % evt.name),
-                          args=[pySet([])])
+                                      INIT_STUB_FORMAT % evt.name))
                    if evt in self.events else pyList([])))
                 for evt in node.events if evt.record_history]
 
@@ -329,14 +361,19 @@ class StubcallGenerator(PythonGenerator):
             return super().history_stub(node)
 
     def visit_ResetStmt(self, node):
-        node = node.first_parent_of_type(dast.Process)
-        return [Assign(
-            targets=[pyAttr("self", evt.name)],
-            value=(pyCall(func=pyAttr(INC_MODULE_VAR,
-                                      ASSIGN_STUB_FORMAT % evt.name),
-                          args=[pySet([])])
-                   if evt in self.events else pyList([])))
-                for evt in node.events if evt.record_history]
+        proc = node.first_parent_of_type(dast.Process)
+        # Call the inc reset stub for all events used in queries:
+        stmts = [pyCall(func=pyAttr(INC_MODULE_VAR,
+                                    RESET_STUB_FORMAT % proc.name),
+                        args=[pyAttr("self", evt.name)
+                              for evt in proc.events
+                              if evt.record_history
+                              if evt in self.events])]
+        # Clear all remaining events:
+        stmts.extend([pyCall(func=pyAttr(pyAttr("self", evt.name), "clear"))
+                      for evt in proc.events
+                      if evt.record_history if evt not in self.events])
+        return stmts
 
 class EventExtractor(NodeVisitor):
     """Extracts event specs from queries.
@@ -360,9 +397,10 @@ class QueryExtractor(NodeVisitor):
 
     def __init__(self):
         self.queries = []
+        self.processes = []
 
     def visit_QuantifiedExpr(self, node):
-        if node.immediate_container_of_type(dast.Process) is None:
+        if node.first_parent_of_type(dast.Process) is None:
             return
         # We try to find the largest node that contains the query:
         par = node.last_parent_of_type(dast.BooleanExpr)
@@ -372,7 +410,7 @@ class QueryExtractor(NodeVisitor):
             self.queries.append(par)
 
     def visit_ComplexExpr(self, node):
-        if node.immediate_container_of_type(dast.Process) is None:
+        if node.first_parent_of_type(dast.Process) is None:
             return
         par = node.last_parent_of_type(dast.Expression)
         if par is None:
@@ -384,7 +422,7 @@ class QueryExtractor(NodeVisitor):
     visit_SetCompExpr = visit_ComplexExpr
     visit_ListCompExpr = visit_ComplexExpr
     visit_DictCompExpr = visit_ComplexExpr
-
+    visit_TupleCompExpr = visit_ComplexExpr
     visit_ReceivedExpr = visit_ComplexExpr
     visit_SentExpr = visit_ComplexExpr
 
