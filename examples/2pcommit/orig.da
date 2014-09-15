@@ -8,12 +8,12 @@ class Coordinator(process):
     def main():
         --start
         send(('Prepare', tid), to=cohorts)
-        if await(each(c in cohorts, received(('Vote', 'ready', _tid, _c)))):
+        if await(each(c in cohorts, has=received(('Vote', 'ready', _tid, _c)))):
             send(('Commit', tid), to=cohorts)
-            await(each(c in cohorts, received(('Done', _tid, _c))))
+            await(each(c in cohorts, has=received(('Done', _tid, _c))))
             output('log complete record for' + str(tid))
-        elif each(c in cohorts, received(('Vote', _, _tid, _c))):
-            s = {c for c in received(("Vote", "ready", _tid, c))}
+        elif each(c in cohorts, has=received(('Vote', _, _tid, _c))):
+            s = setof(c, received(("Vote", "ready", _tid, c)))
             send(('Abort', tid), to=s)
         --end
         terminate()
