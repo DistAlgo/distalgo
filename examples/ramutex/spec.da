@@ -18,7 +18,7 @@ class P(process):
                                has=((c, p) >= (ownc, self)))))
 
     def recv(msg=('request', c, p)):
-        if each(received(('request', c, self)), has=((c, p) < (ownc, self))):
+        if each(received(('request', _c, self)), has=((c, p) < (ownc, self))):
             send(('ack', logical_clock(), self), to=p)
 
     def main():
