@@ -2,7 +2,7 @@ import sys
 import logging
 import argparse
 
-__version__ = "1.0.0a4"
+__version__ = "1.0.0a5"
 
 from .api import entrypoint
 from .common import set_global_options
