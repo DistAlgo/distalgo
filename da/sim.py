@@ -107,7 +107,7 @@ class DistProcess(multiprocessing.Process):
 
     def _wait_for_go(self):
         self._log.debug("Sending id to parent...")
-        self._initpipe.send(self._id)
+        self._initpipe.send(self.id)
         while True:
             act = self._initpipe.recv()
 
@@ -158,8 +158,8 @@ class DistProcess(multiprocessing.Process):
                 common.sysinit()
 
             signal.signal(signal.SIGTERM, self._sighandler)
-            self._id = self._channel(self._dp_name, self.__class__)
-            pattern.initialize(self._id)
+            self.id = self._channel(self._dp_name, self.__class__)
+            pattern.initialize(self.id)
             self._log = logging.getLogger(str(self))
             self._start_comm_thread()
             self._lock = threading.Lock()
@@ -193,14 +193,14 @@ class DistProcess(multiprocessing.Process):
             self._is_timer_running = False
 
     def report_times(self):
-        self._parent.send(('totalusrtime', self._usrtime), self._id)
-        self._parent.send(('totalsystime', self._systime), self._id)
-        self._parent.send(('totaltime', self._waltime), self._id)
+        self._parent.send(('totalusrtime', self._usrtime), self.id)
+        self._parent.send(('totalsystime', self._systime), self.id)
+        self._parent.send(('totaltime', self._waltime), self.id)
 
     def report_mem(self):
         import pympler.asizeof
         memusage = pympler.asizeof.asizeof(self) / 1024
-        self._parent.send(('mem', memusage), self._id)
+        self._parent.send(('mem', memusage), self.id)
 
     @builtin
     def exit(self, code):
@@ -230,7 +230,7 @@ class DistProcess(multiprocessing.Process):
     def spawn(self, pcls, args, **props):
         """Spawns a child process"""
         childp, ownp = multiprocessing.Pipe()
-        p = pcls(self._id, childp, self._channel, props)
+        p = pcls(self.id, childp, self._channel, props)
         p.daemon = True
         p.start()
 
@@ -253,15 +253,15 @@ class DistProcess(multiprocessing.Process):
         else:
             targets = [to]
         for t in targets:
-            t.send(data, self._id, self._logical_clock)
+            t.send(data, self.id, self._logical_clock)
 
         self._trigger_event(pattern.SentEvent((self._logical_clock,
-                                               to, self._id),
+                                               to, self.id),
                                               copy.deepcopy(data)))
-        self._parent.send(('sent', 1), self._id)
+        self._parent.send(('sent', 1), self.id)
 
     def _recvmesgs(self):
-        for mesg in self._id.recvmesgs():
+        for mesg in self.id.recvmesgs():
             if self._fails('receive'):
                 self.output("Simulated receive fail: %s" % str(mesg),
                             logging.WARNING)
@@ -374,7 +374,7 @@ class DistProcess(multiprocessing.Process):
         if self._dp_name is not None:
             s += "[" + self._dp_name + "]"
         else:
-            s += "[" + str(self._id) + "]"
+            s += "[" + str(self.id) + "]"
         return s
 
     ### Various attribute setters:
