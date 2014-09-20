@@ -91,18 +91,20 @@ def daimport(module_name, force_recompile=False, compiler_args=[], indir=None):
 
     return importlib.import_module(module_name)
 
-@api
-def use_channel(endpoint):
+def use_channel(channel_properties):
     global EndPointType
 
-    ept = None
-    if endpoint == "udp":
-        ept = ep.UdpEndPoint
-    elif endpoint == "tcp":
-        ept = ep.TcpEndPoint
-    else:
-        log.error("Unknown channel type %s", endpoint)
-        return
+    ept = ep.UdpEndPoint
+    if not hasattr(channel_properties, '__iter__'):
+        channel_properties = [channel_properties]
+    for prop in channel_properties:
+        if prop == "fifo":
+            ept = ep.TcpEndPoint
+        elif prop == "reliable":
+            ept = ep.TcpEndPoint
+        elif prop not in {"unfifo", "unreliable"}:
+            log.error("Unknown channel property %s", prop)
+            return
 
     if RootProcess is not None:
         if EndPointType != ept:
@@ -110,6 +112,13 @@ def use_channel(endpoint):
                 "Can not change channel type after creating child processes.")
         return
     EndPointType = ept
+
+@api
+def config(**properties):
+    # We only handle 'channel' for now...
+    for prop in properties:
+        if prop == 'channel':
+            use_channel(properties['channel'])
 
 def entrypoint():
     GlobalOptions = common.get_global_options()

@@ -58,7 +58,7 @@ def main():
     nrounds = int(sys.argv[2]) if len(sys.argv) > 2 else 1
     timeout = int(sys.argv[3]) if len(sys.argv) > 3 else 10
 
-    use_channel("tcp")
+    config(channel="fifo")
     ps = new(P, nprocs)
     # setup the processes
     for p in ps: setup({p}, [ps-{p}, nrounds, timeout])

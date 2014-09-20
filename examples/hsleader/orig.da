@@ -59,7 +59,7 @@ class P(process):
 
 def main():
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 10
-    use_channel("tcp")
+    config(channel="fifo")
     topology = list(new(P, n))
     random.shuffle(topology)
     for i, p in enumerate(topology):
