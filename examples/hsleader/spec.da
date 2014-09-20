@@ -15,23 +15,23 @@ class P(process):
             elif some(received(('Leader', leader))):
                 output("Leader is " + str(leader))
                 break
-            elif (received(('In', self.id), src=_left) and
-                  received(('In', self.id), src=_right)):
+            elif (received(('In', self.id), from_=_left) and
+                  received(('In', self.id), from_=_right)):
                 distance *= 2
                 reset("Received")
 
-    def recv(msg=('Out', v, d), src=source):
+    def recv(msg=('Out', v, d), from_=source):
         if v > self.id:
             if d > 1:
                 send(('Out', v, d-1), to=(right if source == left else left))
             elif d == 1:
                 send(('In', v), to=source)
 
-    def recv(msg=('In', v), src=source):
+    def recv(msg=('In', v), from_=source):
         if v > self.id:
             send(('In', v), to=(right if source == left else left))
 
-    def recv(msg=("Leader", leader), src=source):
+    def recv(msg=("Leader", leader), from_=source):
         send(('Leader', leader), to=(right if source == left else left))
 
 def main():

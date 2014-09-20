@@ -41,7 +41,7 @@ class Acceptor(process):
                           has=(len(setof(a, received(('TwoAV', _n, _v, a)))) > quorumsize and
                                not sent(('TwoB', _n, _v))))):
                 send(('TwoB', n, v), to=peers)
-            elif each(p in proposers, has=received(('Done',), src=_p)):
+            elif each(p in proposers, has=received(('Done',), from_=_p)):
                 break
 
     def recv(msg=('Prepare', n, p)):

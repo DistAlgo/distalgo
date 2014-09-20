@@ -27,7 +27,7 @@ class P(process):
         for i in range(n):
             cs(anounce)
         send(('Done',), to=s)
-        await(each(p in s, has=received(('Done',), src=_p)))
+        await(each(p in s, has=received(('Done',), from_=_p)))
         output("Done!")
 
 def main():

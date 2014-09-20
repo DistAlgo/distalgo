@@ -14,7 +14,7 @@ class P(process):
 
         --sync
         if await(each((c2, p2) in q, has=((reqc, self.id) <= (c2, p2))) and
-                 each(p3 in ps, has=some(received(('Reply', c3), src=_p3),
+                 each(p3 in ps, has=some(received(('Reply', c3), from_=_p3),
                                          has=(c3 > reqc)))):
             # critical section
             task()
@@ -31,12 +31,12 @@ class P(process):
             send(('Release', reqc), to=ps)
             output("timed out!")
 
-    def recv(msg=('Request', reqts), src=source):
+    def recv(msg=('Request', reqts), from_=source):
         """When receiving requests from others, enque and reply"""
         q.add((reqts, source))
         send(('Reply', logical_clock()), to=source)
 
-    def recv(msg=('Release', time), src=source):
+    def recv(msg=('Release', time), from_=source):
         """When receiving release from others, deque"""
         if ((time, source) in q):
             q.remove((time, source))
@@ -49,7 +49,7 @@ class P(process):
             cs(announce)
         --end
         bcast(Done(), to=ps)
-        await(each(p in ps, has=received(('Done',), src=_p)))
+        await(each(p in ps, has=received(('Done',), from_=_p)))
         output("Terminating...")
 
 

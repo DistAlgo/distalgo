@@ -3,9 +3,9 @@ class Pong(process):
     def setup(total_pings): pass
 
     def main():
-        await(lenof(p, received(('Ping',), src=p)) == total_pings)
+        await(lenof(p, received(('Ping',), from_=p)) == total_pings)
 
-    def recv(msg=('Ping',), src=p):
+    def recv(msg=('Ping',), from_=p):
         output("Pinged")
         send(('Pong',), to=p)
 

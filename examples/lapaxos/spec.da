@@ -38,7 +38,7 @@ class Acceptor(process):
     def main():
         await(each(p in proposers, has=received(('Done', _p))))
 
-    def recv(msg=('Prepare', n), src=source):
+    def recv(msg=('Prepare', n), from_=source):
         if (n > max(setof(propnum, sent(('Promise', propnum, _, _))) |
                     {min_propnum})):
             send(('Promise', n,
@@ -46,7 +46,7 @@ class Acceptor(process):
                       {(min_propnum, None)}),
                   self.id), to=source)
 
-    def recv(msg=('Propose', n, v), src=source):
+    def recv(msg=('Propose', n, v), from_=source):
         if (n >= max(setof(propnum, sent(('Promise', propnum, _, _))) |
                      {min_propnum})):
             send(('Accept', n, v, self.id), to=source)
