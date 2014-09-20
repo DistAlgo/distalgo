@@ -3,17 +3,17 @@ import random
 
 class P(process):
     def setup(left, right):
-        status = "Unknown"      # Current status, can be {"Unknown", "Leader"}
-        phase_left, phase_right = False, False
-        phase = 0
+        self.status = "Unknown"      # Current status, can be {"Unknown", "Leader"}
+        self.phase_left, self.phase_right = False, False
+        self.phase = 0
 
     def main():
         while True:
-            send(('Token', self, 'out', 1 << phase), to={left, right})
+            send(('Token', self.id, 'out', 1 << phase), to={left, right})
 
             if await(status == "Leader"):
                 output("I am leader at phase %d!"%phase)
-                send(('Leader', self), to={left, right})
+                send(('Leader', self.id), to={left, right})
                 break
             elif (phase_left and phase_right):
                 phase += 1
@@ -24,31 +24,31 @@ class P(process):
 
     def recv(msg=('Token', v, direction, h), src=source):
         if source == left and direction == 'out':
-            if v > self and h > 1:
+            if v > self.id and h > 1:
                 send(('Token', v, 'out', h-1), to=right)
-            elif v > self and h == 1:
+            elif v > self.id and h == 1:
                 send(('Token', v, 'in', 1), to=left)
-            elif v == self:
+            elif v == self.id:
                 status = "Leader"
 
         elif source == right and direction == 'out':
-            if v > self and h > 1:
+            if v > self.id and h > 1:
                 send(('Token', v, 'out', h-1), to=left)
-            elif v > self and h == 1:
+            elif v > self.id and h == 1:
                 send(('Token', v, 'in', 1), to=right)
-            elif v == self:
+            elif v == self.id:
                 status = "Leader"
 
         elif source == left and direction == 'in':
-            if v > self:
+            if v > self.id:
                 send(('Token', v, 'in', 1), to=right)
-            elif v == self:
+            elif v == self.id:
                 phase_left = True
 
         elif source == right and direction == 'in':
-            if v > self:
+            if v > self.id:
                 send(('Token', v, 'in', 1), to=left)
-            elif v == self:
+            elif v == self.id:
                 phase_right = True
 
     def recv(msg=('Leader', leader), src=source):

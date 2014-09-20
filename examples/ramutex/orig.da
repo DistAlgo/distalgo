@@ -1,9 +1,9 @@
 import sys
 class P(process):
     def setup(ps, nrounds):
-      reqc = None
-      waiting = set()
-      replied = set()
+      self.reqc = None
+      self.waiting = set()
+      self.replied = set()
 
     def cs(task):
       # to enter cs, enque and send request to all, then await replies from all
@@ -29,13 +29,13 @@ class P(process):
             output("In cs!")
         for i in range(nrounds) :
             cs(anounce)
-        send(('Done', self), to=ps)
+        send(('Done', self.id), to=ps)
         await(each(p in ps, has=received(('Done', _p))))
         output("Terminating..")
 
     # when receiving requests from others, enque and reply
     def recv(msg=('Request', timestamp), src=source):
-        if (reqc == None or (timestamp, source) < (reqc, self)):
+        if (reqc == None or (timestamp, source) < (reqc, self.id)):
             send(Reply(logical_clock()), to=source)
         else:
             waiting.add(source)

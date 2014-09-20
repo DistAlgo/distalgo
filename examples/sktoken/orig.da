@@ -1,22 +1,22 @@
 import sys
 class P(process):
-    def setup(ps, orig_token, nrounds): # other procs, and whether self holds token
-        RN = dict((p, 0) for p in ps)        # last request number received
+    def setup(ps, orig_token, nrounds): # other procs, and whether self.id holds token
+        self.RN = dict((p, 0) for p in ps)        # last request number received
         # Token structure:
-        Q = []                   # queue of pending requests
-        LN = dict((p, 0) for p in ps) # last request number for which token was granted
+        self.Q = []                   # queue of pending requests
+        self.LN = dict((p, 0) for p in ps) # last request number for which token was granted
 
     def cs(task):
         -- request
         if not haveToken():
-            RN[self] += 1
-            send(('request', self, RN[self]), to=ps)
-            #await(some(rcvd(('token', _, _LN1)), LN1[self] < rn))
+            RN[self.id] += 1
+            send(('request', self.id, RN[self.id]), to=ps)
+            #await(some(rcvd(('token', _, _LN1)), LN1[self.id] < rn))
             await(haveToken())
 
         task()                   #critical section
 
-        LN[self] = RN[self]
+        LN[self.id] = RN[self.id]
         Q.extend(listof(p, p in ps, has=(p not in Q and RN[p] == LN[p] + 1)))
         if len(Q) > 0:
             p = Q.pop()
@@ -35,7 +35,7 @@ class P(process):
         return (orig_token and not sent(('token', _, _)) or
                 some(received(('token', _, LN1)),
                      has=(not some(sent(('token', _, LN2)),
-                                   has=(LN2[self] > LN1[self])))))
+                                   has=(LN2[self.id] > LN1[self.id])))))
 
     def main():
         def anounce():

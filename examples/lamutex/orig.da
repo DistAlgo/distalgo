@@ -2,18 +2,18 @@ import sys
 
 class P(process):
     def setup(ps, n, timemax):
-        q = set()
+        self.q = set()
 
     def cs(task):
         """To enter cs, enque and send request to all, then await replies from all
         """
         --start
         reqc = logical_clock()
-        q.add((reqc, self))
+        q.add((reqc, self.id))
         send(('Request', reqc), to=ps)
 
         --sync
-        if await(each((c2, p2) in q, has=((reqc, self) <= (c2, p2))) and
+        if await(each((c2, p2) in q, has=((reqc, self.id) <= (c2, p2))) and
                  each(p3 in ps, has=some(received(('Reply', c3), src=_p3),
                                          has=(c3 > reqc)))):
             # critical section
@@ -21,13 +21,13 @@ class P(process):
 
             # to exit cs, deque and send releases to all
             --release
-            q.remove((reqc, self))
+            q.remove((reqc, self.id))
             send(('Release', reqc), to=ps)
             output("release cs")
 
         elif timeout(None):
             --release
-            q.remove((reqc, self))
+            q.remove((reqc, self.id))
             send(('Release', reqc), to=ps)
             output("timed out!")
 

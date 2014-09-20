@@ -2,23 +2,23 @@ import sys
 
 class Proposer(process):
     def setup(acceptors, quorumsize, f, nrounds, timeout):
-        propNum = (0, self)          # Current proposal(ballot) number
-        propVal = self          # Own value to propose
+        self.propNum = (0, self.id)          # Current proposal(ballot) number
+        self.propVal = self.id          # Own value to propose
 
     def main():
         count = 0
         while count < nrounds:
             work()
             --prepare
-            send(('Prepare', propNum, self), to=acceptors)
+            send(('Prepare', propNum, self.id), to=acceptors)
             if await(len(setof(a, received(('Promise', _propNum, _, _, a)))) > quorumsize):
                 --propose
                 voted = max(setof((n, v),
                                   received(('Promise', _propNum, n, v, _)),
                                   has=(len(setof(a, received(('Promise', _propNum, _n, _v, a)))) > f)) |
-                            {((-1, self), propVal)})[1]
+                            {((-1, self.id), propVal)})[1]
 
-                send(('OneC', propNum, voted, self), to=acceptors)
+                send(('OneC', propNum, voted, self.id), to=acceptors)
                 if await(len(setof(a, received(('TwoAv', _propNum, _voted, a)))) > quorumsize):
                     --end
                     output("Succeeded proposing %r" % voted)
@@ -28,12 +28,12 @@ class Proposer(process):
                     output("Failed to Propose in time, retrying.")
             elif timeout(timeout):
                 output("Failed to Prepare in time, retrying.")
-            propNum = (propNum[0] + 1, self)
+            propNum = (propNum[0] + 1, self.id)
         send(('Done',), to=acceptors)
 
 class Acceptor(process):
     def setup(acceptors, proposers, quorumsize, f):
-        peers = acceptors | proposers
+        self.peers = acceptors | proposers
 
     def main():
         while True:
@@ -46,16 +46,16 @@ class Acceptor(process):
 
     def recv(msg=('Prepare', n, p)):
         if n > maxpromised():
-            vn, vv = max(setof((vpn, vv), sent(('TwoAv', vpn, vv, self))) |
-                         {((-1, self), None)})
-            send(('Promise', n, vn, vv, self), to=peers)
+            vn, vv = max(setof((vpn, vv), sent(('TwoAv', vpn, vv, self.id))) |
+                         {((-1, self.id), None)})
+            send(('Promise', n, vn, vv, self.id), to=peers)
 
     def recv(msg=('OneC', n, v, p)):
-        if (n >= maxpromised() and islegal(n, v) and (not sent(('TwoAv', _n, _, self)))):
-            send(('TwoAv', n, v, self), to=peers)
+        if (n >= maxpromised() and islegal(n, v) and (not sent(('TwoAv', _n, _, self.id)))):
+            send(('TwoAv', n, v, self.id), to=peers)
 
     def maxpromised():
-        return max(setof(n, sent(('Promise', n, _, _, _))) | {(-2, self)})
+        return max(setof(n, sent(('Promise', n, _, _, _))) | {(-2, self.id)})
 
     def islegal(n, v):
         voted = {(vn, vv)

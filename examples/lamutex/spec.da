@@ -7,25 +7,25 @@ class P(process):
     def cs(task):
         --request
         c = logical_clock()
-        send(('Request', c, self), to=s)
+        send(('Request', c, self.id), to=s)
         await(each(received(('Request', c2, p2)),
-                   has=((c, self) < (c2, p2) or received(('Release', _c2, _p2)))) and
+                   has=((c, self.id) < (c2, p2) or received(('Release', _c2, _p2)))) and
               each(p3 in s, has=some(received(('Ack', c3, _p3)), has=(c3 > c))))
         --cs
         task()
         --release
         output("Release CS!")
-        send(('Release', c, self), to=s)
+        send(('Release', c, self.id), to=s)
 
     def recv(msg=('Request', _, p2)):
-        send(('Ack', logical_clock(), self), to=p2)
+        send(('Ack', logical_clock(), self.id), to=p2)
 
     def main():
         def announce():
             output("In cs!")
         for i in range(n):
             cs(announce)
-        send(('Done', self), to=s)
+        send(('Done', self.id), to=s)
         await(each(p in s, has=received(('Done', _p))))
         output("Terminating..")
 

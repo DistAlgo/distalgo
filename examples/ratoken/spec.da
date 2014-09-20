@@ -1,16 +1,16 @@
 import sys
 class P (process):
     def setup(ps, nrounds, orig_token):
-        clock = 0
-        token = dict((p, 0) for p in ps)
+        self.clock = 0
+        self.token = dict((p, 0) for p in ps)
 
     def cs(task):
         --request
         if not token_present():
             clock += 1
-            send(('request', clock, self), to=ps)
+            send(('request', clock, self.id), to=ps)
             await(token_present())
-        token[self] = clock
+        token[self.id] = clock
 
         task()                  # critical section
 
@@ -37,7 +37,7 @@ class P (process):
         return (orig_token and not sent(('access', _)) or
                 some(received(('access', token1)),
                      has=(not some(sent(('access', token2)),
-                                   has=(token2[self] > token1[self])))))
+                                   has=(token2[self.id] > token1[self.id])))))
 
     def main():
         def anounce():

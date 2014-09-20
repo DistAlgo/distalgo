@@ -1,14 +1,14 @@
 import sys
 class P(process):
    def setup(ps, v, maxfail):
-       V = {v}          # set of values to agree on, intially own value v
+       self.V = {v}          # set of values to agree on, intially own value v
 
    def main():
        for rnd in range(1, maxfail):
           send(('Value',
                 setof(v, v in V,
                       has=(not some(sent(('Value', V2, _)), has=(v in V2)))),
-                self), to=ps)
+                self.id), to=ps)
           reset("Received")
           await(received(('Value', _, _)))
           V |= setof(v, received(('Value', V2, _)), v in V2)

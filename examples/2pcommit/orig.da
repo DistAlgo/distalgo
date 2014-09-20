@@ -32,13 +32,13 @@ class Cohort(process):
     def recv(msg=('Prepare', tid), src=coord):
         if prepared(tid):
             output("ready:" + str(tid))
-            send(('Vote', 'ready', tid, self), to=coord)
+            send(('Vote', 'ready', tid, self.id), to=coord)
         else:
             output("failed:"  + str(tid))
-            send(('Vote', 'abort', tid, self), to=coord)
+            send(('Vote', 'abort', tid, self.id), to=coord)
 
     def recv(msg=('Commit', tid), src=fro):
-        send(('Done', tid, self), to=fro)
+        send(('Done', tid, self.id), to=fro)
         commit(tid)
 
     def recv(msg=('Abort', tid)):

@@ -7,28 +7,28 @@ class P(process):
     def main():
         distance = 1
         while True:
-            send(('Out', self, distance), to={left, right})
-            if await(some(received(('Out', self, d)))):
+            send(('Out', self.id, distance), to={left, right})
+            if await(some(received(('Out', self.id, d)))):
                 output("I am leader at distance %d!"%d)
-                send(('Leader', self), to={left, right})
+                send(('Leader', self.id), to={left, right})
                 break
             elif some(received(('Leader', leader))):
                 output("Leader is " + str(leader))
                 break
-            elif (received(('In', self), src=_left) and
-                  received(('In', self), src=_right)):
+            elif (received(('In', self.id), src=_left) and
+                  received(('In', self.id), src=_right)):
                 distance *= 2
                 reset("Received")
 
     def recv(msg=('Out', v, d), src=source):
-        if v > self:
+        if v > self.id:
             if d > 1:
                 send(('Out', v, d-1), to=(right if source == left else left))
             elif d == 1:
                 send(('In', v), to=source)
 
     def recv(msg=('In', v), src=source):
-        if v > self:
+        if v > self.id:
             send(('In', v), to=(right if source == left else left))
 
     def recv(msg=("Leader", leader), src=source):

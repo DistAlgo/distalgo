@@ -2,23 +2,23 @@ import sys
 
 class P(process):
     def setup(left):
-        leaderid = None
+        self.leaderid = None
 
     def initiate():
-        send(('Election', self), to=left)
+        send(('Election', self.id), to=left)
 
     def recv(msg=('Election', p)):
-        if p > self:
+        if p > self.id:
             send(('Election', p), to=left)
-        if p < self:
-            if not sent(('Election', self)):
-                send(('Election', self), to=left)
-        if p == self:
-            send(('Leader', self), to=left)
+        if p < self.id:
+            if not sent(('Election', self.id)):
+                send(('Election', self.id), to=left)
+        if p == self.id:
+            send(('Leader', self.id), to=left)
 
     def recv(msg=('Leader', leader)):
         leaderid = leader
-        if leader != self:
+        if leader != self.id:
             send(('Leader', leader), to=left)
 
     def main():

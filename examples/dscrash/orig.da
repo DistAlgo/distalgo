@@ -2,9 +2,9 @@ import sys
 
 class P(process):
     def setup(ps, v, maxfail):
-        x = -1
-        V = {v: False}
-        receiveflag = False
+        self.x = -1
+        self.V = {v: False}
+        self.receiveflag = False
 
     def main():
           --start
