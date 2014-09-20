@@ -246,16 +246,10 @@ def gen_inc_module(daast, cmdline_args=dict(), filename=""):
             if isinstance(node, dast.Arguments):
                 # this is a function or process argument
                 node = node.parent
-                if isinstance(node, dast.Process):
-                    if not hasattr(node.initializers[0], "prebody"):
-                        node.initializers[0].prebody = []
-                    assert len(node.initializers) > 0
-                    node.initializers[0].prebody.insert(0, asscall)
-                else:
-                    if not hasattr(node.body[0], "prebody"):
-                        node.body[0].prebody = []
-                    assert len(node.body) > 0
-                    node.body[0].prebody.insert(0, asscall)
+                if not hasattr(node.body[0], "prebody"):
+                    node.body[0].prebody = []
+                assert len(node.body) > 0
+                node.body[0].prebody.insert(0, asscall)
             elif not (isinstance(node, dast.Function) and
                       isinstance(node.parent, dast.Process)):
                 # This is a normal assignment
@@ -321,9 +315,10 @@ def gen_inc_module(daast, cmdline_args=dict(), filename=""):
     # Inject calls to stub init for each process:
     for proc in daast.processes:
         module.body.extend(gen_reset_stub(proc, all_events))
-        if not hasattr(proc.initializers[0], "prebody"):
-            proc.initializers[0].prebody = []
-        proc.initializers[0].prebody.insert(
+        setup_body = proc.body[0].body
+        if not hasattr(setup_body[0], "prebody"):
+            setup_body[0].prebody = []
+        setup_body[0].prebody.insert(
             0, pyCall(
                 func=pyAttr(INC_MODULE_VAR, "init"),
                 args=[pyAttr("self", "_id")]))

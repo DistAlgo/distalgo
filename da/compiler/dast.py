@@ -383,6 +383,7 @@ class NamedVar(DistNode):
     def __init__(self, parent=None, ast=None, name=""):
         super().__init__(ast)
         self.name = name
+        self._scope = None
         self.assignments = []
         self.updates = []
         self.reads = []
@@ -401,6 +402,9 @@ class NamedVar(DistNode):
         self.updates.extend(target.updates)
         self.reads.extend(target.reads)
         self.aliases.extend(target.aliases)
+
+    def set_scope(self, scope):
+        self._scope = scope
 
     def add_assignment(self, node, typectx=object):
         """Add a node where this variable is being assigned to.
@@ -457,6 +461,8 @@ class NamedVar(DistNode):
 
         """
 
+        if self._scope is not None:
+            return self._scope
         if len(self.assignments) > 0:
             return self.assignments[0][0].parent.scope
         elif len(self.updates) > 0:
@@ -2075,8 +2081,6 @@ class Process(CompoundStmt, ArgumentsContainer):
         self.decorators = []
         # List of configurations:
         self.configurations = []
-        # Body of the 'setup' function:
-        self.initializers = []
         # List of member methods:
         self.methods = []
         # 'main' method:

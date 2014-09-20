@@ -303,19 +303,6 @@ class PythonGenerator(NodeVisitor):
                              args=(["self"] + PROC_INITARGS),
                              body=(supercall + histories + events))
 
-    def generate_setup(self, node):
-        """Generate the 'setup' method for a process."""
-        args = self.visit(node.args)
-        args.args.insert(0, arg("self", None))
-        body = ([Assign(targets=[pyAttr("self", name, Store())],
-                       value=pyName(name)) for name in node.names] +
-                self.body(node.initializers))
-        return FunctionDef(name="setup",
-                           args=args,
-                           body=body,
-                           decorator_list=[],
-                           returns=None)
-
     def generate_handlers(self, node):
         """Generate the message handlers of a process."""
         body = []
@@ -368,8 +355,7 @@ class PythonGenerator(NodeVisitor):
         cd.starargs = node.ast.starargs
         cd.kwargs = node.ast.kwargs
         # ########################################
-        cd.body = [self.generate_init(node),
-                   self.generate_setup(node)]
+        cd.body = [self.generate_init(node)]
         if node.entry_point is not None:
             cd.body.extend(self.visit(node.entry_point))
         cd.decorator_list = [self.visit(d) for d in node.decorators]
@@ -381,9 +367,13 @@ class PythonGenerator(NodeVisitor):
         fd = FunctionDef()
         fd.name = node.name
         fd.args = self.visit(node.args)
-        if type(node.parent) is dast.Process:
-            fd.args.args.insert(0, arg("self", None))
         fd.body = self.body(node.body)
+        if isinstance(node.parent, dast.Process):
+            fd.args.args.insert(0, arg("self", None))
+            if node.name == "setup":
+                fd.body = ([Assign(targets=[pyAttr("self", name, Store())],
+                                   value=pyName(name))
+                            for name in node.parent.names] + fd.body)
         fd.decorator_list = [self.visit(d) for d in node.decorators]
         fd.returns = None
         return [fd]
@@ -446,7 +436,7 @@ class PythonGenerator(NodeVisitor):
             return Num(node.value)
 
     def visit_SelfExpr(self, node):
-        return pyAttr("self", "_id")
+        return pyName("self")
 
     def visit_TrueExpr(self, node):
         return pyTrue()
@@ -706,7 +696,7 @@ class PythonGenerator(NodeVisitor):
         return Lambda(args, self.visit(node.body))
 
     def visit_NamedVar(self, node):
-        if type(node.scope) is dast.Process:
+        if isinstance(node.scope, dast.Process):
             return pyAttr("self", node.name)
         else:
             return pyName(node.name)

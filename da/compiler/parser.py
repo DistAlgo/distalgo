@@ -42,7 +42,7 @@ KW_NULL = "None"
 KW_SUCH_THAT = "has"
 KW_RESET = "reset"
 
-def is_setup(node):
+def is_setup_func(node):
     """Returns True if this node defines a function named 'setup'."""
 
     return (isinstance(node, FunctionDef) and
@@ -328,6 +328,12 @@ class Parser(NodeVisitor):
          self.current_label,
          self.current_block) = self.state_stack.pop()
 
+    def is_in_setup(self):
+        if self.current_process is None:
+            return False
+        elif isinstance(self.current_scope, dast.Function):
+            return self.current_scope.name == "setup"
+
     @property
     def current_parent(self):
         return self.node_stack[-1]
@@ -594,11 +600,11 @@ class Parser(NodeVisitor):
         if isproc:
             if type(self.current_parent) is not dast.Program:
                 self.error("Process definition must be at top level.", node)
-                return
+
             initfun = None
             bodyidx = None
             for idx, s in enumerate(node.body):
-                if is_setup(s):
+                if is_setup_func(s):
                     if initfun is None:
                         initfun = s
                         bodyidx = idx
@@ -617,12 +623,11 @@ class Parser(NodeVisitor):
             self.program.processes.append(proc)
             self.program.body.append(proc)
 
-            self.current_block = proc.initializers
             self.signature(initfun.args)
-            self.body(initfun.body)
             self.current_block = proc.body
-            del node.body[bodyidx]
-            self.proc_body(node.body)
+            # setup() has to be parsed first:
+            self.proc_body([node.body[bodyidx]] +
+                           node.body[:bodyidx] + node.body[(bodyidx+1):])
             self.pop_state()
 
         else:
@@ -1125,6 +1130,28 @@ class Parser(NodeVisitor):
         expr.value = self.visit(node.value)
         expr.attr = node.attr
         self.pop_state()
+        if isinstance(expr.value, dast.SelfExpr):
+            # Need to update the namedvar object
+            n = self.current_process.find_name(expr.attr)
+            if n is None:
+                if (self.is_in_setup() and
+                        isinstance(self.current_context, Assignment)):
+                    self.debug("Adding name '%s' to process scope"
+                               " from setup()." % expr.attr, node)
+                    n = self.current_process.add_name(expr.attr)
+                    n.add_assignment(expr)
+                    n.set_scope(self.current_process)
+                else:
+                    self.error("Undefined process state variable: " +
+                               str(expr.attr), node)
+            else:
+                if isinstance(self.current_process, Assignment):
+                    n.add_assignment(expr)
+                elif isinstance(self.current_process, Update) or \
+                     isinstance(self.current_process, Delete):
+                    n.add_update(expr)
+                else:
+                    n.add_read(expr)
         return expr
 
     def ensure_one_arg(self, name, node):
@@ -1504,18 +1531,18 @@ class Parser(NodeVisitor):
         return expr
 
     def visit_Name(self, node):
-        if node.id in {KW_SELF, KW_TRUE, KW_FALSE, KW_NULL}:
+        if node.id in {KW_TRUE, KW_FALSE, KW_NULL}:
             if type(self.current_context) in {Assignment, Update, Delete}:
                 self.warn("Constant expression in update context.", node)
 
-            if node.id == KW_SELF:
-                return self.create_expr(dast.SelfExpr, node, nopush=True)
-            elif node.id == KW_TRUE:
+            if node.id == KW_TRUE:
                 return self.create_expr(dast.TrueExpr, node, nopush=True)
             elif node.id == KW_FALSE:
                 return self.create_expr(dast.FalseExpr, node, nopush=True)
             elif node.id == KW_NULL:
                 return self.create_expr(dast.NoneExpr, node, nopush=True)
+        if self.current_process is not None and node.id == KW_SELF:
+            return self.create_expr(dast.SelfExpr, node, nopush=True)
 
         if (self.current_process is not None and
                 (node.id in {KW_RECV_QUERY, KW_SENT_QUERY})):
@@ -1551,8 +1578,9 @@ class Parser(NodeVisitor):
              isinstance(self.current_context, Delete):
             n = self.current_scope.find_name(node.id, local=False)
             if n is None:
-                self.debug("Adding name %s to %s" % (node.id,
-                                                     self.current_scope), node)
+                self.warn("Possible use of uninitialized variable '%s'" %
+                          node.id, node)
+                self.debug(str(self.current_scope.parent_scope), node)
                 n = self.current_scope.add_name(node.id)
             n.add_update(expr)
         elif isinstance(self.current_context, Read) or \
