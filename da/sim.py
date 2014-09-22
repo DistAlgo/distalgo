@@ -84,7 +84,7 @@ class DistProcess(multiprocessing.Process):
         else:
             self._properties = dict()
 
-        self._logical_clock = 0
+        self._logical_clock = None
         self._events = []
         self._jobqueue = []
         self._timer = None
@@ -160,6 +160,9 @@ class DistProcess(multiprocessing.Process):
             signal.signal(signal.SIGTERM, self._sighandler)
             self.id = self._channel(self._dp_name, self.__class__)
             pattern.initialize(self.id)
+            if hasattr(self._cmdline, 'clock') and \
+               self._cmdline.clock == 'Lamport':
+                self._logical_clock = 0
             self._log = logging.getLogger(str(self))
             self._start_comm_thread()
             self._lock = threading.Lock()
@@ -224,7 +227,8 @@ class DistProcess(multiprocessing.Process):
     @builtin
     def incr_logical_clock(self):
         """Increment Lamport clock by 1."""
-        self._logical_clock += 1
+        if isinstance(self._logical_clock, int):
+            self._logical_clock += 1
 
     @builtin
     def spawn(self, pcls, args, **props):
@@ -339,7 +343,8 @@ class DistProcess(multiprocessing.Process):
             timeout = 0
         try:
             event = self._eventq.get(block, timeout)
-            self._logical_clock = max(self._logical_clock, event.timestamp) + 1
+            if isinstance(self._logical_clock, int):
+                self._logical_clock = max(self._logical_clock, event.timestamp) + 1
             self._trigger_event(event)
         except queue.Empty:
             return

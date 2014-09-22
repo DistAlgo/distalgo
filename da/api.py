@@ -95,7 +95,7 @@ def use_channel(channel_properties):
     global EndPointType
 
     ept = ep.UdpEndPoint
-    if not hasattr(channel_properties, '__iter__'):
+    if isinstance(channel_properties, str):
         channel_properties = [channel_properties]
     for prop in channel_properties:
         if prop == "fifo":
@@ -103,7 +103,7 @@ def use_channel(channel_properties):
         elif prop == "reliable":
             ept = ep.TcpEndPoint
         elif prop not in {"unfifo", "unreliable"}:
-            log.error("Unknown channel property %s", prop)
+            log.error("Unknown channel property %s", str(prop))
             return
 
     if RootProcess is not None:
@@ -115,10 +115,15 @@ def use_channel(channel_properties):
 
 @api
 def config(**properties):
-    # We only handle 'channel' for now...
     for prop in properties:
         if prop == 'channel':
             use_channel(properties['channel'])
+        elif prop == 'clock':
+            setattr(common.get_global_options(), 'clock', properties[prop])
+        elif prop == 'handling':
+            setattr(common.get_global_options(), 'handling', properties[prop])
+        else:
+            log.warn("Unknown configuration type '%s'." % str(prop))
 
 def entrypoint():
     GlobalOptions = common.get_global_options()
@@ -213,7 +218,7 @@ def entrypoint():
     log.info("Terminating...")
 
 @api
-def new(pcls, power, args=None, **props):
+def new(pcls, num, args=None, **props):
     if not issubclass(pcls, sim.DistProcess):
         log.error("Can not create non-DistProcess.")
         return set()
@@ -232,10 +237,10 @@ def new(pcls, power, args=None, **props):
     log.info("Creating instances of %s..", pcls.__name__)
     pipes = []
     iterator = []
-    if isinstance(power, int):
-        iterator = range(power)
-    elif isinstance(power, set):
-        iterator = power
+    if isinstance(num, int):
+        iterator = range(num)
+    elif isinstance(num, set):
+        iterator = num
     else:
         log.error("Unrecognised parameter %r", n)
         return set()
@@ -265,7 +270,7 @@ def new(pcls, power, args=None, **props):
     if (args != None):
         setup(result, args)
 
-    if isinstance(power, int):
+    if isinstance(num, int):
         return set(result.values())
     else:
         return result
@@ -273,17 +278,21 @@ def new(pcls, power, args=None, **props):
 @api
 def setup(pids, args):
     if isinstance(pids, dict):
-        pset = pids.values()
+        ps = pids.values()
+    elif not hasattr(pids, '__iter__'):
+        ps = [pids]
     else:
-        pset = pids
+        ps = pids
 
-    for p in pset:
+    for p in ps:
         p._initpipe.send(("setup", args))
 
 @api
 def start(procs):
     if isinstance(procs, dict):
         ps = procs.values()
+    elif not hasattr(procs, '__iter__'):
+        ps = [procs]
     else:
         ps = procs
 
