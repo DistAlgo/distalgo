@@ -47,7 +47,7 @@ class P(process):
 def main():
     nprocs = int(sys.argv[1]) if len(sys.argv) > 1 else 10
     nrounds = int(sys.argv[2]) if len(sys.argv) > 2 else 1
-
+    config(clock='Lamport')
     ps = new(P, nprocs)
     # setup the processes
     for p in ps: setup({p}, [ps-{p}, nrounds])
