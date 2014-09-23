@@ -2083,6 +2083,8 @@ class Process(CompoundStmt, ArgumentsContainer):
         self.configurations = []
         # List of member methods:
         self.methods = []
+        # 'setup' method:
+        self.setup = None
         # 'main' method:
         self.entry_point = None
         # List of event handlers:

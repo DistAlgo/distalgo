@@ -628,6 +628,7 @@ class Parser(NodeVisitor):
             # setup() has to be parsed first:
             self.proc_body([node.body[bodyidx]] +
                            node.body[:bodyidx] + node.body[(bodyidx+1):])
+            proc.setup = proc.body[0]
             self.pop_state()
 
         else:

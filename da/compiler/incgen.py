@@ -101,6 +101,15 @@ def ast_eq(left, right):
         return True
     return False
 
+def is_all_wildcards(targets):
+    """True if 'targets' contain only wildcards."""
+
+    for elt in targets:
+        if not (isinstance(elt, Name) and elt.id == '_'):
+            return False
+    return True
+
+
 PREAMBLE = """
 import da
 ReceivedEvent = da.pat.ReceivedEvent
@@ -148,7 +157,7 @@ def gen_init_event_stub(event, jbstyle=False):
 
     blueprint = """
 def {0}():
-    globals()['{1}'] = []
+    globals()['{1}'] = set()
     return globals()['{1}']
 """ if not jbstyle else """
 def {0}():
@@ -246,10 +255,14 @@ def gen_inc_module(daast, cmdline_args=dict(), filename=""):
             if isinstance(node, dast.Arguments):
                 # this is a function or process argument
                 node = node.parent
-                if not hasattr(node.body[0], "prebody"):
-                    node.body[0].prebody = []
-                assert len(node.body) > 0
-                node.body[0].prebody.insert(0, asscall)
+                if isinstance(node, dast.Process):
+                    body = node.setup.body
+                else:
+                    body = node.body
+                if not hasattr(body[0], "prebody"):
+                    body[0].prebody = []
+                assert len(body) > 0
+                body[0].prebody.insert(0, asscall)
             elif not (isinstance(node, dast.Function) and
                       isinstance(node.parent, dast.Process)):
                 # This is a normal assignment
@@ -321,7 +334,7 @@ def gen_inc_module(daast, cmdline_args=dict(), filename=""):
         setup_body[0].prebody.insert(
             0, pyCall(
                 func=pyAttr(INC_MODULE_VAR, "init"),
-                args=[pyAttr("self", "_id")]))
+                args=[pyName("self")]))
 
     # Generate the main python file:
     pyast = StubcallGenerator(all_events).visit(daast)
@@ -483,7 +496,10 @@ class IncInterfaceGenerator(PythonGenerator):
 
     def visit_BoundPattern(self, node):
         boundname = pyName("_Bound_" + str(self.counter))
-        targetname = pyName(node.value.name)
+        if isinstance(node.value, dast.NamedVar):
+            targetname = pyName(node.value.name)
+        else:
+            targetname = self.visit(node.value)
         conast = pyCompare(boundname, Eq, targetname)
         self.counter += 1
         return boundname, [conast]
@@ -501,6 +517,9 @@ class IncInterfaceGenerator(PythonGenerator):
             tgt, conds = self.visit(elt)
             targets.append(tgt)
             condition_list.extend(conds)
+        if is_all_wildcards(targets):
+            # Optimization: combine into one '_'
+            return pyName('_'), []
         self.counter += 1
         target = pyTuple(targets)
         if self.jbstyle:
