@@ -74,11 +74,12 @@ class DistProcess(multiprocessing.Process):
     def __init__(self, parent, initpipe, channel, props=None):
         multiprocessing.Process.__init__(self)
 
+        self.id = None
         self._running = False
         self._parent = parent
         self._initpipe = initpipe
         self._channel = channel
-        self._cmdline = common.get_global_options()
+        self._cmdline = common.global_options()
         if props is not None:
             self._properties = props
         else:
@@ -159,6 +160,7 @@ class DistProcess(multiprocessing.Process):
 
             signal.signal(signal.SIGTERM, self._sighandler)
             self.id = self._channel(self._dp_name, self.__class__)
+            common.set_current_process(self.id)
             pattern.initialize(self.id)
             if hasattr(self._cmdline, 'clock') and \
                self._cmdline.clock == 'Lamport':
@@ -211,6 +213,12 @@ class DistProcess(multiprocessing.Process):
 
     @builtin
     def output(self, message, level=logging.INFO):
+        """Prints message to the process log.
+
+        Optional argument 'level' specifies the severity level of the message
+        (refer to the Python 'logging' module for valid severity levels),
+        defaults to 'INFO'.
+        """
         self._log.log(level, message)
 
     @builtin

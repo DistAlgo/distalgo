@@ -8,6 +8,7 @@ from inspect import signature, Parameter
 from functools import wraps
 
 GlobalOptions = None
+CurrentProcess = None
 
 log = logging.getLogger(__name__)
 formatter = logging.Formatter(
@@ -17,12 +18,19 @@ log._formatter = formatter
 api_registry = dict()
 builtin_registry = dict()
 
+def set_current_process(procobj):
+    global CurrentProcess
+    CurrentProcess = procobj
+
 def set_global_options(params):
     global GlobalOptions
     GlobalOptions = params
 
-def get_global_options():
+def global_options():
     return GlobalOptions
+
+def current_process():
+    return CurrentProcess
 
 def sysinit():
     setup_root_logger()

@@ -129,9 +129,11 @@ class Leader(process):
         self.decided = set() # Optimization: Keep track of all slots which have been decided. No need to spawn commanders here.
 
     def main():
-        spawn(Scout, [self.id, acceptors, ballot_num])
+        s = new(Scout, args=[self.id, acceptors, ballot_num], daemon=True)
+        start(s)
         await(received(('Done',)))
         output("Terminating..")
+        exit(0)
 
     def recv(msg=('Propose', s, p)):
         if not (_s, _) in proposals:
@@ -139,12 +141,16 @@ class Leader(process):
             if active:
                 # Spwan commander only if not decided
                 if not (_s, _) in decided:
-                    spawn(Commander, [self.id, acceptors, replicas, (ballot_num, s, p)])
+                    c = new(Commander, args=[self.id, acceptors, replicas,
+                                             (ballot_num, s, p)], daemon=True)
+                    start(c)
 
     def recv(msg=('Adopted', _ballot_num, pvals)):
         proposals = circle_plus(proposals, pmax(pvals))
         for (s, p) in proposals:
-            spawn(Commander, [self.id, acceptors, replicas, (ballot_num, s, p)])
+            c = new(Commander, args=[self.id, acceptors, replicas,
+                                     (ballot_num, s, p)], daemon=True)
+            start(c)
         active = True
 
     def recv(msg=('Preempted', b)):
@@ -152,7 +158,8 @@ class Leader(process):
         if b > ballot_num:
             active = False
             ballot_num = (r1+1, self.id)
-            spawn(Scout, [self.id, acceptors, ballot_num])
+            s = new(Scout, args=[self.id, acceptors, ballot_num], daemon=True)
+            start(s)
 
     # Keep track of decisions
     def recv(msg=('Decision', s, p)):
@@ -208,10 +215,10 @@ def main():
 
     config(channel="fifo")
 
-    acceptors = new(Acceptor, nacceptors, [])
-    replicas = new(Replica, nreplicas)
-    leaders = new(Leader, nleaders, (acceptors, replicas))
-    clients = new(Client, nclients, (replicas, nops))
+    acceptors = new(Acceptor, num= nacceptors, args= [])
+    replicas = new(Replica, num= nreplicas)
+    leaders = new(Leader, num= nleaders, args= (acceptors, replicas))
+    clients = new(Client, num= nclients, args= (replicas, nops))
     setup(replicas, (leaders, dict()))
 
     start(acceptors)

@@ -28,11 +28,9 @@ log._formatter = formatter
 
 PerformanceCounters = {}
 CounterLock = threading.Lock()
-RootProcess = None
 RootLock = threading.Lock()
 EndPointType = ep.UdpEndPoint
 TotalUnits = None
-ProcessIds = []
 
 def find_file_on_paths(filename, paths):
     """Looks for a given 'filename' under a list of directories, in order.
@@ -58,7 +56,24 @@ def strip_suffix(filename):
     return filename[:dotidx] if dotidx != -1 else filename
 
 @api
-def daimport(module_name, force_recompile=False, compiler_args=[], indir=None):
+def daimport(module_name, force_recompile=False, compiler_args=[],
+             indir=None):
+    """Imports DistAlgo module 'module_name', returns the module object.
+
+    This function mimics the Python builtin __import__() function for DistAlgo
+    modules. 'module_name' is the name of the module to be imported, in
+    "dotted module name" format. The module must be implemented in one regular
+    DistAlgo source file with a '.da' filename suffix. If successful, the
+    function returns the imported module object; otherwise, ImportError is
+    raised.
+
+    If optional argument 'force_recompile' is True, recompile the DistAlgo
+    module file even if the corresponding Python file is up-to-date.
+    'compiler_args' is a list of command line parameters to pass to the
+    compiler. 'indir', when given, should be a valid module search path that
+    overrides 'sys.path'.
+
+    """
     paths = sys.path if indir is None else [indir]
     pathname = module_name.replace(".", os.sep)
     for suffix in DISTPY_SUFFIXES:
@@ -106,7 +121,7 @@ def use_channel(channel_properties):
             log.error("Unknown channel property %s", str(prop))
             return
 
-    if RootProcess is not None:
+    if common.current_process() is not None:
         if EndPointType != ept:
             log.warn(
                 "Can not change channel type after creating child processes.")
@@ -119,14 +134,14 @@ def config(**properties):
         if prop == 'channel':
             use_channel(properties['channel'])
         elif prop == 'clock':
-            setattr(common.get_global_options(), 'clock', properties[prop])
+            setattr(common.global_options(), 'clock', properties[prop])
         elif prop == 'handling':
-            setattr(common.get_global_options(), 'handling', properties[prop])
+            setattr(common.global_options(), 'handling', properties[prop])
         else:
             log.warn("Unknown configuration type '%s'." % str(prop))
 
 def entrypoint():
-    GlobalOptions = common.get_global_options()
+    GlobalOptions = common.global_options()
     if GlobalOptions.start_method != \
        multiprocessing.get_start_method(allow_none=True):
         multiprocessing.set_start_method(GlobalOptions.start_method)
@@ -175,11 +190,9 @@ def entrypoint():
             print("Waiting for remaining child processes to terminate..."
                   "(Press \"Ctrl-C\" to force kill)")
 
-            for p in ProcessIds:
-                p.join()
             walltime = time.perf_counter() - walltime_start
 
-            log_performance_statistics(walltime)
+            #log_performance_statistics(walltime)
             r = aggregate_statistics()
             for k, v in r.items():
                 stats[k] += v
@@ -208,33 +221,25 @@ def entrypoint():
         log.error("Caught unexpected global exception: %r", e)
         traceback.print_tb(err_info[2])
 
-    for p in ProcessIds:      # Make sure we kill all sub procs
-        try:
-            if p.is_live():
-                p.terminate()
-        except Exception:
-            pass
-
     log.info("Terminating...")
 
 @api
-def new(pcls, num, args=None, **props):
+def new(pcls, num=1, args=None, **props):
     if not issubclass(pcls, sim.DistProcess):
         log.error("Can not create non-DistProcess.")
         return set()
 
-    global RootProcess
-    if RootProcess is None:
+    if common.current_process() is None:
         if type(EndPointType) == type:
-            RootProcess = EndPointType()
-            RootProcess.shared = multiprocessing.Value("i", 0)
+            common.set_current_process(EndPointType())
+            common.current_process().shared = multiprocessing.Value("i", 0)
             RootLock.release()
         else:
             log.error("EndPoint not defined")
             return
-    log.debug("RootProcess is %s" % str(RootProcess))
+    log.debug("Current process is %s" % str(common.current_process()))
 
-    log.info("Creating instances of %s..", pcls.__name__)
+    log.debug("Creating %d instances of %s.." % (num, str(pcls)))
     pipes = []
     iterator = []
     if isinstance(num, int):
@@ -242,13 +247,15 @@ def new(pcls, num, args=None, **props):
     elif isinstance(num, set):
         iterator = num
     else:
-        log.error("Unrecognised parameter %r", n)
+        log.error("Unrecognised parameter: %s", str(num))
         return set()
 
     procs = set()
+    daemon = props['daemon'] if 'daemon' in props else False
     for i in iterator:
         (childp, ownp) = multiprocessing.Pipe()
-        p = pcls(RootProcess, childp, EndPointType, props)
+        p = pcls(common.current_process(), childp, EndPointType, props)
+        p.daemon = daemon
         if isinstance(i, str):
             p.set_name(i)
         # Buffer the pipe
@@ -257,7 +264,7 @@ def new(pcls, num, args=None, **props):
         p.start()
         procs.add(p)
 
-    log.info("%d instances of %s created.", len(procs), pcls.__name__)
+    log.debug("%d instances of %s created.", len(procs), pcls.__name__)
     result = dict()
     for i, childp, ownp, p in pipes:
         childp.close()
@@ -265,7 +272,6 @@ def new(pcls, num, args=None, **props):
         cid._initpipe = ownp    # Tuck the pipe here
         cid._proc = p           # Set the process object
         result[i] = cid
-        ProcessIds.append(cid)
 
     if (args != None):
         setup(result, args)
@@ -297,7 +303,7 @@ def start(procs):
         ps = procs
 
     init_performance_counters(ps)
-    log.info("Starting procs...")
+    log.debug("Starting %s..." % str(procs))
     for p in ps:
         p._initpipe.send("start")
         del p._initpipe
@@ -307,10 +313,10 @@ def send(data, to):
     result = True
     if (hasattr(to, '__iter__')):
         for t in to:
-            r = t.send(data, RootProcess, 0)
+            r = t.send(data, common.current_process(), 0)
             if not r: result = False
     else:
-        result = to.send(data, RootProcess, 0)
+        result = to.send(data, common.current_process(), 0)
     return result
 
 def collect_statistics():
@@ -320,7 +326,7 @@ def collect_statistics():
     completed = 0
     try:
         RootLock.acquire()
-        for mesg in RootProcess.recvmesgs():
+        for mesg in common.current_process().recvmesgs():
             src, tstamp, tup = mesg
             event_type, count = tup
 
