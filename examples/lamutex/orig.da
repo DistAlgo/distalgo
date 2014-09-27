@@ -49,7 +49,7 @@ class P(process):
             cs(announce)
         --end
         bcast(Done(), to=ps)
-        await(each(p in ps, has=received(('Done',), from_=_p)))
+        await(each(p in ps, has=received(('Done',), from_=p)))
         output("Terminating...")
 
 
@@ -59,7 +59,7 @@ def main():
     timeout = int(sys.argv[3]) if len(sys.argv) > 3 else 10
 
     config(channel="fifo", clock='Lamport')
-    ps = new(P, nprocs)
+    ps = new(P, num= nprocs)
     # setup the processes
     for p in ps: setup(p, [ps-{p}, nrounds, timeout])
     # start the processes
