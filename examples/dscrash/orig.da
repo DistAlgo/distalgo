@@ -28,7 +28,7 @@ class P(process):
 def main():
       n = int(sys.argv[1]) if len(sys.argv) > 1 else 10
       f = int(sys.argv[2]) if len(sys.argv) > 2 else 50
-      ps = new(P, n)
+      ps = new(P, num= n)
       for i, p in enumerate(list(ps)):
             setup({p}, (ps, i, f))
       start(ps)

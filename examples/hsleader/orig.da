@@ -60,7 +60,7 @@ class P(process):
 def main():
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 10
     config(channel="fifo")
-    topology = list(new(P, n))
+    topology = list(new(P, num= n))
     random.shuffle(topology)
     for i, p in enumerate(topology):
         if i == len(topology)-1:

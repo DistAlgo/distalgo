@@ -17,18 +17,18 @@ class Replica(process):
 
     def propose(p):
         #you ignore if p is already been issued
-        if not (_, _p) in decisions:
+        if not some((_, _p) in decisions):
             #find the largest available slot
             maxs = maxof(s, (s, _) in chain(proposals, decisions, {(0, 0)}))
             #within maximum, find smallest which is not yet been decided
             s1 = minof(s, s in range(1, maxs + 1 + 1),
-                       has=(not (_s, _) in chain(proposals, decisions)))
+                       has= not some((_s, _) in chain(proposals, decisions)))
             proposals.add((s1, p))
             send(('Propose', s1, p), to=leaders)
 
     def perform(p):
         k, cid, op = p
-        if some((s, _p) in decisions, has=(s < slot_num)):
+        if some((s, _p) in decisions, has= s < slot_num):
             slot_num += 1
         else:
             #next, result = operations[op](state) # Perform the operation on state here - get result and return
@@ -136,11 +136,11 @@ class Leader(process):
         exit(0)
 
     def recv(msg=('Propose', s, p)):
-        if not (_s, _) in proposals:
+        if not some((_s, _) in proposals):
             proposals.add((s,p))
             if active:
                 # Spwan commander only if not decided
-                if not (_s, _) in decided:
+                if not some((_s, _) in decided):
                     c = new(Commander, args=[self.id, acceptors, replicas,
                                              (ballot_num, s, p)], daemon=True)
                     start(c)
@@ -166,7 +166,7 @@ class Leader(process):
         decided.add((s,p))
 
     def circle_plus(x, y):
-        return y | {(s, p) for (s, p) in x if not (_s, _) in y}
+        return y | setof((s, p), (s, p) in x, has= not some((_s, _) in y))
 
     def pmax(pvals):
         return {(s, p) for (b, s, p) in pvals

@@ -3,7 +3,7 @@ class Pong(process):
     def setup(total_pings): pass
 
     def main():
-        await(lenof(p, received(('Ping',), from_=p)) == total_pings)
+        await(len(listof(p, received(('Ping',), from_=p))) == total_pings)
 
     def recv(msg=('Ping',), from_=p):
         output("Pinged")
@@ -25,8 +25,8 @@ def main():
     nrounds = int(sys.argv[1]) if len(sys.argv) > 1 else 3
     npings = int(sys.argv[2]) if len(sys.argv) > 2 else 3
     config(clock='Lamport')
-    pong = new(Pong, 1, [nrounds * npings])
-    ping = new(Ping, npings)
+    pong = new(Pong, args= [nrounds * npings], num= 1)
+    ping = new(Ping, num= npings)
     setup(ping, [pong, nrounds])
     start(pong)
     start(ping)

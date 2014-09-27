@@ -30,7 +30,7 @@ class P(process):
         for i in range(nrounds) :
             cs(anounce)
         send(('Done', self.id), to=ps)
-        await(each(p in ps, has=received(('Done', _p))))
+        await(each(p in ps, has= received(('Done', p))))
         output("Terminating..")
 
     # when receiving requests from others, enque and reply
@@ -48,7 +48,7 @@ def main():
     nprocs = int(sys.argv[1]) if len(sys.argv) > 1 else 10
     nrounds = int(sys.argv[2]) if len(sys.argv) > 2 else 1
     config(clock='Lamport')
-    ps = new(P, nprocs)
+    ps = new(P, num= nprocs)
     # setup the processes
     for p in ps: setup({p}, [ps-{p}, nrounds])
     # start the processes
