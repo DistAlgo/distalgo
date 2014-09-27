@@ -215,9 +215,18 @@ class DistProcess(multiprocessing.Process):
     def output(self, message, level=logging.INFO):
         """Prints message to the process log.
 
-        Optional argument 'level' specifies the severity level of the message
-        (refer to the Python 'logging' module for valid severity levels),
-        defaults to 'INFO'.
+        Optional argument 'level' is a positive integer that specifies the
+        logging level of the message, defaults to 'logging.INFO'(20). Refer to
+        [https://docs.python.org/3/library/logging.html#levels] for a list of
+        predefined logging levels.
+
+        When the level of the message is equal to or higher than the
+        configured level of a log handler, the message is logged to that
+        handler; otherwise, it is ignored. DistAlgo processes are
+        automatically configured with two log handlers:, one logs to the
+        console, the other to a log file; the handlers' logging levels are
+        controlled by command line parameters.
+
         """
         self._log.log(level, message)
 
