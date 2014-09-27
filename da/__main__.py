@@ -19,10 +19,10 @@ def parseArgs():
     LogLevelNames = [n.lower() for n in logging._nameToLevel]
 
     parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
-    parser.add_argument("-s", "--perffile")
-    parser.add_argument("-u", "--dumpfile")
+    # parser.add_argument("-s", "--perffile")
+    # parser.add_argument("-u", "--dumpfile")
     parser.add_argument('--iterations', type=int, default=1,
-                        help="number of times to run the program.")
+                        help="number of times to run the program, defaults to 1.")
     parser.add_argument("--nolog", action="store_true", default=False,
                         help="disables all logging output.")
     parser.add_argument("-f", "--logfile", action="store_true", default=False,
