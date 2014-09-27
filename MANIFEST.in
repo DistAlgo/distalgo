@@ -1,0 +1,6 @@
+include bin/*
+include doc/*
+include README.md
+include setup.py
+recursive-include examples *.da
+recursive-include da *.py
