@@ -12,7 +12,7 @@
 
    DistAlgo requires Python version 3.4 or higher, which can be obtained from
    http://www.python.org. This document assumes that you use the default name
-   'python' for the Python executable.
+   `python` for the Python executable.
 
    NOTE: If your system has both Python 2.x and Python 3.x installed, your
    Python executable is likely Python 2. In that case, you should replace
@@ -98,7 +98,7 @@ The following command installs DistAlgo for the current user:
   runtime will call the compiler if it detects that the generated Python code
   for your DistAlgo source file is missing or outdated.
 
-  For both the compiler and runtime, use command line parameter `-h` to see a
+  For both the compiler and runtime, use command line argument `-h` to see a
   full description of available options.
 
 ## Invoking the compiler
