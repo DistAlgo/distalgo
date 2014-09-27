@@ -113,7 +113,7 @@ KnownUpdateMethods = {
     "delete", "remove", "pop", "clear", "discard"
 }
 
-VALID_RESET_TYPES = {"Received", "Sent", ""}
+ValidResetTypes = {"Received", "Sent", ""}
 
 ApiMethods = common.api_registry.keys()
 
@@ -902,10 +902,10 @@ class Parser(NodeVisitor):
                     stmtobj.expr = self.visit(e.args[0])
                     if not isinstance(stmtobj.expr, dast.ConstantExpr):
                         self.error("Invalid argument in reset statement.", e)
-                    elif stmtobj.expr.value not in VALID_RESET_TYPES:
+                    elif stmtobj.expr.value not in ValidResetTypes:
                         self.error("Unknown argument in reset statement. "
                                    "Valid arguments are: " +
-                                   str(VALID_RESET_TYPES), node)
+                                   str(ValidResetTypes), node)
 
             elif (isinstance(self.current_parent, dast.Process) and
                   self.expr_check(KW_CONFIG, 0, 0, e, keywords=None)):
