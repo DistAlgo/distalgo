@@ -1,41 +1,44 @@
 import sys
 
 class P(process):
-    def setup(s, n):
-        pass
+    def setup(s, nrequests): pass
 
-    def cs(task):
-        --request
+    def mutex(task):
+        -- request
         c = logical_clock()
-        send(('Request', c, self.id), to=s)
-        await(each(received(('Request', c2, p2)),
-                   has=((c, self.id) < (c2, p2) or received(('Release', _c2, _p2)))) and
-              each(p3 in s, has=some(received(('Ack', c3, _p3)), has=(c3 > c))))
-        --cs
+        send(('request', c, self.id), to=s)
+        await(each(received(('request', c2, p)),
+                   has= some(received(('release', c3, _p)), has= c3 > c2)
+                        or (c, self.id) < (c2, p)) and
+              each(p in s, has= some(received(('ack', c2, _p)), has= c2 > c)))
+        -- critical_section
         task()
-        --release
-        output("Release CS!")
-        send(('Release', c, self.id), to=s)
+        -- release
+        send(('release', logical_clock(), self.id), to=s)
 
-    def recv(msg=('Request', _, p2)):
-        send(('Ack', logical_clock(), self.id), to=p2)
+    def recv(msg=('request', _, p)):
+        send(('ack', logical_clock(), self.id), to=p)
 
     def main():
-        def announce():
-            output("In cs!")
-        for i in range(n):
-            cs(announce)
-        send(('Done', self.id), to=s)
-        await(each(p in s, has=received(('Done', _p))))
-        output("Terminating..")
+        def task(): output('in cs')
+        for i in range(nrequests):
+            mutex(task)
+
+        send(('done', self.id), to=s)
+        await(each(p in s, has=received(('done', p))))
+        output('terminating')
 
 def main():
     nprocs = int(sys.argv[1]) if len(sys.argv) > 1 else 10
-    nrounds = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+    nrequests = int(sys.argv[2]) if len(sys.argv) > 2 else 1
 
-    config(channel="fifo", clock='Lamport')
-    ps = new(P, nprocs)
-    # setup the processes
-    for p in ps: setup({p}, [ps-{p}, nrounds])
-    # start the processes
+    config(channel= 'fifo', clock= 'Lamport')
+    ps = new(P, num= nprocs)
+    for p in ps: setup({p}, (ps-{p}, nrequests))
     start(ps)
+
+# this code includes setup and termination for serving a given number of
+# requests per process.
+
+# all labels are not needed;
+# leaving a total of 10 lines for the algorithm body and message handler.
