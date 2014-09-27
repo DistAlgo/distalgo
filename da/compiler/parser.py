@@ -156,11 +156,12 @@ class PatternParser(NodeVisitor):
     """Parses a pattern.
     """
 
-    def __init__(self, parser, scope=None):
+    def __init__(self, parser, scope=None, literal=False):
         self._parser = parser
         self._scope = scope
         self.parent_node = parser.current_parent
         self.use_object_style = parser.use_object_style
+        self.literal = literal
 
     @property
     def namescope(self):
@@ -202,6 +203,17 @@ class PatternParser(NodeVisitor):
             return dast.ConstantPattern(
                 self.parent_node, node,
                 value=dast.NoneExpr(self.parent_node, node))
+        elif self.literal:
+            name = node.id
+            n = self.namescope.find_name(name)
+            if n is None:
+                self._parser.warn(
+                    ("new variable '%s' introduced by bound context in "
+                     "pattern." % name), node)
+                n = self.namescope.add_name(name)
+            pat = dast.BoundPattern(self.parent_node, node, value=n)
+            n.add_read(pat)
+            return pat
 
         name = node.id
         if name == "_":
@@ -305,15 +317,23 @@ class Parser(NodeVisitor):
         self.warncnt = 0
         self.program = execution_context if execution_context is not None \
                        else dast.Program() # Just in case
-        if options is not None:
-            self.full_event_pattern = (options.full_event_pattern
-                                       if hasattr(options,
-                                                  'full_event_pattern')
-                                       else False)
-            self.use_object_style = (options.enable_object_pattern
-                                     if hasattr(options,
-                                                'enable_object_pattern')
-                                     else False)
+
+        self.full_event_pattern = (options.full_event_pattern
+                                   if hasattr(options,
+                                              'full_event_pattern')
+                                   else False)
+        self.use_object_style = (options.enable_object_pattern
+                                 if hasattr(options,
+                                            'enable_object_pattern')
+                                 else False)
+        self.enable_membertest_pattern = (options.enable_membertest_pattern
+                                 if hasattr(options,
+                                            'enable_membertest_pattern')
+                                 else False)
+        self.enable_iterator_pattern = (options.enable_iterator_pattern
+                                 if hasattr(options,
+                                            'enable_iterator_pattern')
+                                 else False)
 
 
     def push_state(self, node):
@@ -400,12 +420,13 @@ class Parser(NodeVisitor):
                 bases.append(self.visit(b))
         return isproc, bases
 
-    def parse_pattern_expr(self, node, use_dummy_scope=False):
+    def parse_pattern_expr(self, node, use_dummy_scope=False, literal=False):
         expr = self.create_expr(dast.PatternExpr, node)
         if use_dummy_scope:
-            pp = PatternParser(self, dast.NameScope(self.current_parent))
+            pp = PatternParser(self, dast.NameScope(self.current_parent),
+                               literal)
         else:
-            pp = PatternParser(self)
+            pp = PatternParser(self, literal=literal)
         pattern = pp.visit(node)
         if pattern is None:
             self.error("invalid pattern", node)
@@ -1175,10 +1196,11 @@ class Parser(NodeVisitor):
             return False
         return True
 
-    def parse_event_expr(self, node, use_dummy_scope=False):
+    def parse_event_expr(self, node, use_dummy_scope=False, literal=False):
         if (node.starargs is not None or node.kwargs is not None):
             self.warn("extraneous arguments in event expression.", node)
-        pattern = self.parse_pattern_expr(node.args[0], use_dummy_scope)
+        pattern = self.parse_pattern_expr(node.args[0], use_dummy_scope,
+                                          literal)
         if node.func.id == KW_RECV_QUERY:
             event = dast.Event(self.current_process,
                                event_type=dast.ReceivedEvent,
@@ -1191,7 +1213,7 @@ class Parser(NodeVisitor):
             self.error("unknown event specifier", node)
             return None
         for kw in node.keywords:
-            pat = self.parse_pattern_expr(kw.value, use_dummy_scope)
+            pat = self.parse_pattern_expr(kw.value, use_dummy_scope, literal)
             if kw.arg == KW_EVENT_SOURCE:
                 event.sources.append(pat)
             elif kw.arg == KW_EVENT_DESTINATION:
@@ -1308,7 +1330,7 @@ class Parser(NodeVisitor):
             # some(rcvd(EVENT_PATTERN) | PRED) is semantically equivalent to
             # some(EVENT_PATTERN in rcvd | PRED).
             expr = self.create_expr(dast.DomainSpec, node)
-            event = self.parse_event_expr(node)
+            event = self.parse_event_expr(node, literal=False)
             if event is not None:
                 event.record_history = True
                 expr.pattern = self.pattern_from_event(event)
@@ -1323,6 +1345,7 @@ class Parser(NodeVisitor):
         elif (isinstance(node, Compare) and len(node.ops) == 1 and
               type(node.ops[0]) is In):
             expr = self.create_expr(dast.DomainSpec, node)
+            self.current_context = Assignment()
             expr.pattern = self.parse_pattern_expr(node.left)
             self.current_context = IterRead(expr.pattern)
             expr.domain = self.visit(node.comparators[0])
@@ -1330,7 +1353,11 @@ class Parser(NodeVisitor):
             return expr
         elif isinstance(node, comprehension) or isinstance(node, For):
             expr = self.create_expr(dast.DomainSpec, node)
-            expr.pattern = self.parse_pattern_expr(node.target)
+            self.current_context = Assignment()
+            if self.enable_iterator_pattern:
+                expr.pattern = self.parse_pattern_expr(node.target)
+            else:
+                expr.pattern = self.visit(node.target)
             self.current_context = IterRead(expr.pattern)
             expr.domain = self.visit(node.iter)
             if isinstance(expr.domain, dast.HistoryExpr):
@@ -1483,7 +1510,8 @@ class Parser(NodeVisitor):
                 else:
                     expr = self.create_expr(dast.SentExpr, node)
                 expr.context = self.current_context.type
-                expr.event = self.parse_event_expr(node)
+                expr.event = self.parse_event_expr(
+                    node, literal=(not self.enable_iterator_pattern))
                 self.pop_state()
                 if expr.event is not None:
                     expr.event.record_history = True
@@ -1497,7 +1525,8 @@ class Parser(NodeVisitor):
                     expr = self.create_expr(dast.SentExpr, node)
                 if self.current_context is not None:
                     expr.context = self.current_context.type
-                event = self.parse_event_expr(node, True)
+                event = self.parse_event_expr(
+                    node, True, literal=(not self.enable_membertest_pattern))
                 self.pop_state()
                 expr.event = event
                 outer.right = expr
@@ -1691,16 +1720,17 @@ class Parser(NodeVisitor):
 
         expr = self.create_expr(dast.ComparisonExpr, node)
 
-        # DistAlgo: overload "in" to allow pattern matching
-        if isinstance(node.ops[0], In) or \
-               isinstance(node.ops[0], NotIn):
-            # Backward compatibility: only assume pattern if containing free
-            # var
-            pf = PatternFinder()
-            pf.visit(node.left)
-            if pf.found:
-                expr.left = self.parse_pattern_expr(node.left,
-                                                    use_dummy_scope=True)
+        if self.enable_membertest_pattern:
+            # DistAlgo: overload "in" to allow pattern matching
+            if isinstance(node.ops[0], In) or \
+                   isinstance(node.ops[0], NotIn):
+                # Backward compatibility: only assume pattern if containing free
+                # var
+                pf = PatternFinder()
+                pf.visit(node.left)
+                if pf.found:
+                    expr.left = self.parse_pattern_expr(node.left,
+                                                        use_dummy_scope=True)
         if expr.left is None:
             expr.left = self.visit(node.left)
         self.current_context = Read(expr.left)

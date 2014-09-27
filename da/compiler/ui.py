@@ -180,8 +180,8 @@ def main(argv=None):
     ap.add_argument('-o', help="Output file name.", dest="outfile")
     ap.add_argument('-L', help="Logging output level.",
                     dest="debug", default=None)
-    ap.add_argument('-p', help="Generate pseudo code instead of Python code.",
-                    action='store_true', dest="genpsd")
+    # ap.add_argument('-p', help="Generate pseudo code instead of Python code.",
+    #                 action='store_true', dest="genpsd")
     ap.add_argument('--full-event-pattern',
                     help="If set, use the 'full' format "
                     "(TYPE, (CLK, DST, SRC), MSG) for event patterns;"
@@ -191,6 +191,17 @@ def main(argv=None):
                     help="Enable the use of object-style tuple pattern syntax:"
                     " Object(ARGS...); which is equivalent to "
                     "('Object', ARGS...)",
+                    action='store_true')
+    ap.add_argument('--enable-membertest-pattern',
+                    help="Overloads the Python 'in' operator to support using "
+                    "tuple patterns, e.g.: '(_a, 1, _) in S', which is "
+                    "equivalent to 'some((_a, 1, _) in S)'",
+                    action='store_true')
+    ap.add_argument('--enable-iterator-pattern',
+                    help="Overloads the Python 'for ... in ...' keywords to "
+                    "support using tuple patterns in the target, "
+                    "e.g.: '[b for (_a, 1, b) in S]', which is equivalent to "
+                    "'[b for (var1, var2, b) in S if var1 == a if var2 == b]'",
                     action='store_true')
     ap.add_argument('-i',
                     help="Generate interface code for plugging"
@@ -220,8 +231,8 @@ def main(argv=None):
                     help="Disable all quantification transformations. "
                     "Only useful with '-i'.",
                     action='store_true', dest="noalltables")
-    ap.add_argument('--psdfile', help="Name of output pseudo code file.",
-                    dest="psdfile", default=None)
+    # ap.add_argument('--psdfile', help="Name of output pseudo code file.",
+    #                 dest="psdfile", default=None)
     ap.add_argument('infile', metavar='SOURCEFILE', type=str,
                     help="DistAlgo input source file.")
 
@@ -238,9 +249,9 @@ def main(argv=None):
         except ValueError:
             stderr.write("Invalid debugging level %s.\n" % str(args.debug))
 
-    if args.genpsd:
-        res =dafile_to_pseudofile(args.infile, args.psdfile)
-    elif args.geninc:
+    # if args.genpsd:
+    #     res =dafile_to_pseudofile(args.infile, args.psdfile)
+    if args.geninc:
         res = dafile_to_incfiles(args)
     else:
         res = dafile_to_pyfile(args)

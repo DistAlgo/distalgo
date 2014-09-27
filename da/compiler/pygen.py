@@ -507,6 +507,8 @@ class PythonGenerator(NodeVisitor):
     def visit_DomainSpec(self, node):
         pat = self.visit(node.pattern)
         domain = self.visit(node.domain)
+        if not isinstance(node.pattern, dast.PatternExpr):
+            return comprehension(pat, domain, [])
         context = [(v.unique_name, self.visit(v.value))
                    for v in node.pattern.ordered_boundpatterns]
         # FIXME: variable ordering?????:
