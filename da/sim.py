@@ -91,6 +91,7 @@ class DistProcess(multiprocessing.Process):
         self._timer = None
         self._timer_expired = False
         self._lock = None
+        self._setup_called = False
 
         # Performance counters:
         self._usrtime_st = 0
@@ -120,8 +121,13 @@ class DistProcess(multiprocessing.Process):
             else:
                 inst, args = act
                 if inst == "setup":
-                    self._log.debug("Running setup..")
-                    self.setup(*args)
+                    if self._setup_called:
+                        self._log.warn(
+                            "setup() already called for this process!")
+                    else:
+                        self._log.debug("Running setup..")
+                        self.setup(*args)
+                        self._setup_called = True
                 else:
                     m = getattr(self, "set_" + inst)
                     m(*args)
