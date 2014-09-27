@@ -1119,13 +1119,13 @@ class Parser(NodeVisitor):
     # constructed dast AST node
 
     def visit_Attribute(self, node):
-        expr = self.create_expr(dast.AttributeExpr, node)
-        if (type(self.current_context) is FunCall and
+        if (isinstance(self.current_context, FunCall) and
                 node.attr in KnownUpdateMethods):
             # Calling a method that is known to update an object's state is an
             # Update operation:
             self.current_context = Update()
-        elif type(self.current_context) is Assignment:
+        expr = self.create_expr(dast.AttributeExpr, node)
+        if type(self.current_context) is Assignment:
             # Assigning to an attribute of an object updates that object:
             self.current_context = Update()
         expr.value = self.visit(node.value)
@@ -1146,10 +1146,12 @@ class Parser(NodeVisitor):
                     self.error("Undefined process state variable: " +
                                str(expr.attr), node)
             else:
-                if isinstance(self.current_process, Assignment):
+                if isinstance(self.current_context, Assignment):
+                    self.debug("Assignment to variable '%s'" % str(n), node)
                     n.add_assignment(expr)
-                elif isinstance(self.current_process, Update) or \
-                     isinstance(self.current_process, Delete):
+                elif isinstance(self.current_context, Update) or \
+                     isinstance(self.current_context, Delete):
+                    self.debug("Update to process variable '%s'" % str(n), node)
                     n.add_update(expr)
                 else:
                     n.add_read(expr)

@@ -286,11 +286,9 @@ def gen_inc_module(daast, cmdline_args=dict(), filename=""):
                 uname = UPDATE_STUB_FORMAT % (vobj.name, idx)
                 idx += 1
                 iig.reset()
-                for n in node.nameobjs:
-                    iprintd("%s, %s" % (n, n.scope))
+                iprintd(str([(n, n.scope) for n in node.nameobjs]))
                 params = [nobj for nobj in node.nameobjs
                           if node.is_child_of(nobj.scope)]
-                assert vobj in params
                 astval = iig.visit(node)
                 updfun = FunctionDef(
                     name=uname,
