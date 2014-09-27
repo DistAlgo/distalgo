@@ -55,8 +55,8 @@ def main():
     ncohorts = int(sys.argv[1]) if len(sys.argv) > 1 else 10
     fail_rate = int(sys.argv[2]) if len(sys.argv) > 2 else 10
 
-    cohorts = new(Cohort, ncohorts, (fail_rate,))
-    coordinators = new(Coordinator, 1, ('001', cohorts))
+    cohorts = new(Cohort, num= ncohorts, args= (fail_rate,))
+    coordinators = new(Coordinator, num= 1, args= ('001', cohorts))
     start(cohorts | coordinators)
 
 # this code includes setup and termination for trying to commit a
