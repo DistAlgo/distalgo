@@ -56,41 +56,42 @@ def strip_suffix(filename):
     return filename[:dotidx] if dotidx != -1 else filename
 
 @api
-def daimport(module_name, force_recompile=False, compiler_args=[],
-             indir=None):
-    """Imports DistAlgo module 'module_name', returns the module object.
+def import_da(name, from_dir=None, compiler_args=[]):
+    """Imports DistAlgo module 'module', returns the module object.
 
     This function mimics the Python builtin __import__() function for DistAlgo
-    modules. 'module_name' is the name of the module to be imported, in
+    modules. 'name' is the name of the module to be imported, in
     "dotted module name" format. The module must be implemented in one regular
-    DistAlgo source file with a '.da' filename suffix. If successful, the
-    function returns the imported module object; otherwise, ImportError is
-    raised.
+    DistAlgo source file with a '.da' filename suffix; package modules are not
+    supported.
 
-    If optional argument 'force_recompile' is True, recompile the DistAlgo
-    module file even if the corresponding Python file is up-to-date.
-    'compiler_args' is a list of command line parameters to pass to the
-    compiler. 'indir', when given, should be a valid module search path that
-    overrides 'sys.path'.
+    This function returns the imported module object upon successful import;
+    otherwise, 'ImportError' is raised.
+
+    Optional argument 'compiler_args' is a list of command line arguments to
+    pass to the compiler, if a compiler invocation is needed. Optional
+    argument 'from_dir' should be a valid module search path that overrides
+    'sys.path'.
 
     """
-    paths = sys.path if indir is None else [indir]
-    pathname = module_name.replace(".", os.sep)
+    paths = sys.path if from_dir is None else [from_dir]
+    pathname = name.replace(".", os.sep)
     for suffix in DISTPY_SUFFIXES:
         fullpath, mode = find_file_on_paths(pathname + suffix, paths)
         if fullpath is not None:
             break
     if fullpath is None:
-        raise ImportError("Module %s not found." % module_name)
+        raise ImportError("Module %s not found." % name)
     pyname = strip_suffix(fullpath) + PYTHON_SUFFIX
     try:
         pymode = os.stat(pyname)
     except OSError:
         pymode = None
 
+    GlobalOptions = common.global_options()
     if (pymode is None or
             pymode[stat.ST_MTIME] < mode[stat.ST_MTIME] or
-            force_recompile):
+            GlobalOptions.recompile):
         oldargv = sys.argv
         try:
             argv = oldargv[0:0] + compiler_args + [fullpath]
@@ -104,7 +105,7 @@ def daimport(module_name, force_recompile=False, compiler_args=[],
             raise ImportError("Unable to compile %s, errno: %d" %
                               (fullpath, res))
 
-    return importlib.import_module(module_name)
+    return importlib.import_module(name)
 
 def use_channel(channel_properties):
     global EndPointType
@@ -153,10 +154,9 @@ def entrypoint():
 
     sys.path.insert(0, source_dir)
     try:
-        module = daimport(basename,
-                          force_recompile=GlobalOptions.recompile,
-                          compiler_args=GlobalOptions.compiler_flags.split(),
-                          indir=source_dir)
+        module = import_da(basename,
+                           from_dir=source_dir,
+                           compiler_args=GlobalOptions.compiler_flags.split())
     except ImportError as e:
         die("ImportError: " + str(e))
     if not (hasattr(module, 'main') and
@@ -201,15 +201,15 @@ def entrypoint():
             stats[k] /= niters
 
         perffd = None
-        if GlobalOptions.perffile is not None:
-            perffd = open(GlobalOptions.perffile, "w")
+        # if GlobalOptions.perffile is not None:
+        #     perffd = open(GlobalOptions.perffile, "w")
         if perffd is not None:
             print_simple_statistics(perffd)
             perffd.close()
 
         dumpfd = None
-        if GlobalOptions.dumpfile is not None:
-            dumpfd = open(GlobalOptions.dumpfile, "wb")
+        # if GlobalOptions.dumpfile is not None:
+        #     dumpfd = open(GlobalOptions.dumpfile, "wb")
         if dumpfd is not None:
             pickle.dump(stats, fd)
             dumpfd.close()
@@ -224,7 +224,7 @@ def entrypoint():
     log.info("Terminating...")
 
 @api
-def new(pcls, num=1, args=None, **props):
+def new(pcls, args=None, num=1, **props):
     if not issubclass(pcls, sim.DistProcess):
         log.error("Can not create non-DistProcess.")
         return set()
@@ -294,13 +294,16 @@ def setup(pids, args):
         p._initpipe.send(("setup", args))
 
 @api
-def start(procs):
+def start(procs, args=None):
     if isinstance(procs, dict):
         ps = procs.values()
     elif not hasattr(procs, '__iter__'):
         ps = [procs]
     else:
         ps = procs
+
+    if args is not None:
+        setup(ps, args)
 
     init_performance_counters(ps)
     log.debug("Starting %s..." % str(procs))
