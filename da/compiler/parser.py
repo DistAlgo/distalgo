@@ -180,19 +180,19 @@ class PatternParser(NodeVisitor):
     """Parses a pattern.
     """
 
-    def __init__(self, parser, scope=None, literal=False):
+    def __init__(self, parser, literal=False):
         self._parser = parser
-        self._scope = scope
+        if parser.current_query_scope is None:
+            self.namescope = dast.NameScope(parser.current_scope)
+        else:
+            self.namescope = parser.current_query_scope
         self.parent_node = parser.current_parent
         self.use_object_style = parser.use_object_style
         self.literal = literal
 
     @property
-    def namescope(self):
-        if self._scope is not None:
-            return self._scope
-        else:
-            return self._parser.current_scope
+    def outer_scope(self):
+        return self.namescope.parent_scope
 
     def visit(self, node):
         if isinstance(node, Name):
@@ -202,6 +202,7 @@ class PatternParser(NodeVisitor):
         elif isinstance(node, List):
             return self.visit_List(node)
 
+        # Parse general expressions:
         self._parser.current_context = Read()
         expr = self._parser.visit(node)
         if isinstance(expr, dast.ConstantExpr):
@@ -229,11 +230,8 @@ class PatternParser(NodeVisitor):
                 value=dast.NoneExpr(self.parent_node, node))
         elif self.literal:
             name = node.id
-            n = self.namescope.find_name(name)
+            n = self.outer_scope.find_name(name)
             if n is None:
-                self._parser.warn(
-                    ("new variable '%s' introduced by bound context in "
-                     "pattern." % name), node)
                 n = self.namescope.add_name(name)
             pat = dast.BoundPattern(self.parent_node, node, value=n)
             n.add_read(pat)
@@ -246,7 +244,7 @@ class PatternParser(NodeVisitor):
         elif name.startswith("_"):
             # Bound variable:
             name = node.id[1:]
-            n = self.namescope.find_name(name)
+            n = self.outer_scope.find_name(name)
             if n is None:
                 self._parser.warn(
                     ("new variable '%s' introduced by bound context in "
@@ -304,6 +302,36 @@ class PatternParser(NodeVisitor):
         return dast.TuplePattern(self.parent_node, node,
                                  value=elts)
 
+class Pattern2Constant(NodeVisitor):
+    def __init__(self, parent):
+        super().__init__()
+        self.stack = [parent]
+
+    @property
+    def current_parent(self):
+        return self.stack[-1]
+
+    def visit_ConstantPattern(self, node):
+        expr = node.value.clone()
+        expr._parent = self.current_parent
+        return expr
+
+    visit_BoundPattern = visit_ConstantPattern
+
+    def visit_TuplePattern(self, node):
+        expr = TupleExpr(self.current_parent)
+        self.stack.push(expr)
+        expr.subexprs = [self.visit(e) for e in node.value]
+        self.stack.pop()
+        return expr
+
+    def visit_ListPattern(self, node):
+        expr = ListExpr(self.current_parent)
+        self.stack.push(expr)
+        expr.subexprs = [self.visit(e) for e in node.value]
+        self.stack.pop()
+        return expr
+
 class PatternFinder(NodeVisitor):
     def __init__(self):
         self.found = False
@@ -337,6 +365,7 @@ class Parser(NodeVisitor):
         self.current_block = None
         self.current_context = None
         self.current_label = None
+        self.current_query_scope = None
         self.errcnt = 0
         self.warncnt = 0
         self.program = execution_context if execution_context is not None \
@@ -364,12 +393,14 @@ class Parser(NodeVisitor):
         self.node_stack.append(node)
         self.state_stack.append((self.current_context,
                                  self.current_label,
+                                 self.current_query_scope,
                                  self.current_block))
 
     def pop_state(self):
         self.node_stack.pop()
         (self.current_context,
          self.current_label,
+         self.current_query_scope,
          self.current_block) = self.state_stack.pop()
 
     def is_in_setup(self):
@@ -391,6 +422,8 @@ class Parser(NodeVisitor):
 
     @property
     def current_scope(self):
+        if self.current_query_scope is not None:
+            return self.current_query_scope
         for node in reversed(self.node_stack):
             if isinstance(node, dast.NameScope):
                 return node
@@ -444,13 +477,9 @@ class Parser(NodeVisitor):
                 bases.append(self.visit(b))
         return isproc, bases
 
-    def parse_pattern_expr(self, node, use_dummy_scope=False, literal=False):
+    def parse_pattern_expr(self, node, literal=False):
         expr = self.create_expr(dast.PatternExpr, node)
-        if use_dummy_scope:
-            pp = PatternParser(self, dast.NameScope(self.current_parent),
-                               literal)
-        else:
-            pp = PatternParser(self, literal=literal)
+        pp = PatternParser(self, literal)
         pattern = pp.visit(node)
         if pattern is None:
             self.error("invalid pattern", node)
@@ -476,26 +505,6 @@ class Parser(NodeVisitor):
             else:
                 decorators.append(self.visit(exp))
         return decorators, labels, notlabels
-
-    def parse_event_descriptors(self, node):
-        dl = node.decorator_list
-        if not (len(dl) > 0 and
-                isinstance(dl[0], Call) and isinstance(dl[0].func, Name) and
-                dl[0].func.id in {KW_RECV_EVENT, KW_SENT_EVENT}):
-            return None
-        if not self.ensure_one_arg(dl[0].func.id, dl[0]):
-            return None
-
-        pattern = self.parse_pattern_expr(dl[0].args[0])
-        if pattern is None:
-            self.error("malformed pattern in pattern spec.", node)
-            return None
-
-        if dl[0].func.id == KW_RECV_EVENT:
-            evt = self.current_process.add_event(dast.ReceivedEvent, pattern)
-        else:
-            evt = self.current_process.add_event(dast.SentEvent, pattern)
-        return evt
 
     def parse_label_spec(self, expr):
         negated = False
@@ -544,6 +553,7 @@ class Parser(NodeVisitor):
         events = []
         labels = set()
         notlabels = set()
+        self.current_query_scope = dast.NameScope(self.current_scope)
         for key, patexpr in zip(args.args, args.defaults):
             if key.arg == KW_EVENT_LABEL:
                 ls, neg = self.parse_label_spec(patexpr)
@@ -569,6 +579,8 @@ class Parser(NodeVisitor):
                 events[-1].timestamps.append(pat)
             else:
                 self.warn("unrecognized event parameter '%s'" % key.arg, node)
+        self.current_scope.parent_scope.merge_scope(self.current_query_scope)
+        self.current_query_scope = None
         return events, labels, notlabels
 
     def body(self, statements):
@@ -1220,11 +1232,10 @@ class Parser(NodeVisitor):
             return False
         return True
 
-    def parse_event_expr(self, node, use_dummy_scope=False, literal=False):
+    def parse_event_expr(self, node, literal=False):
         if (node.starargs is not None or node.kwargs is not None):
             self.warn("extraneous arguments in event expression.", node)
-        pattern = self.parse_pattern_expr(node.args[0], use_dummy_scope,
-                                          literal)
+        pattern = self.parse_pattern_expr(node.args[0], literal)
         if node.func.id == KW_RECV_QUERY:
             event = dast.Event(self.current_process,
                                event_type=dast.ReceivedEvent,
@@ -1237,7 +1248,7 @@ class Parser(NodeVisitor):
             self.error("unknown event specifier", node)
             return None
         for kw in node.keywords:
-            pat = self.parse_pattern_expr(kw.value, use_dummy_scope, literal)
+            pat = self.parse_pattern_expr(kw.value, literal)
             if kw.arg == KW_EVENT_SOURCE:
                 event.sources.append(pat)
             elif kw.arg == KW_EVENT_DESTINATION:
@@ -1284,10 +1295,12 @@ class Parser(NodeVisitor):
                     dast.PatternExpr(node.parent, pattern=pattern.value[1]))
         return self.current_process.add_event(event)
 
-    def pattern_from_event(self, node):
+    def pattern_from_event(self, node, literal=False):
         if not isinstance(node, dast.Event):
             return None
-        expr = self.create_expr(dast.PatternExpr, node.ast)
+        expr = self.create_expr(dast.PatternExpr if not literal else
+                                dast.LiteralPatternExpr,
+                                node.ast)
         pattern = dast.TuplePattern(node.parent)
 
         # Pattern structure:
@@ -1400,12 +1413,20 @@ class Parser(NodeVisitor):
             raise MalformedStatementError("Unknown quantifier.")
 
         expr = self.create_expr(dast.QuantifiedExpr, node, {'op': context})
+        is_top_level_query = False
+        if self.current_query_scope is None:
+            self.current_query_scope = dast.NameScope(self.current_scope)
+            is_top_level_query = True
+
         try:
             expr.domains, predicates = self.parse_domains_and_predicate(node)
             if len(predicates) > 1:
                 self.warn("Multiple predicates in quantified expression, "
                           "first one is used, the rest are ignored.", node)
             expr.predicate = predicates[0]
+            if is_top_level_query:
+                self.current_scope.parent_scope.merge_scope(self.current_query_scope)
+                self.audit_query(expr, node)
         finally:
             self.pop_state()
         return expr
@@ -1421,6 +1442,10 @@ class Parser(NodeVisitor):
             expr_type = dast.TupleCompExpr
 
         expr = self.create_expr(expr_type, node)
+        is_top_level_query = False
+        if self.current_query_scope is None:
+            self.current_query_scope = dast.NameScope(self.current_scope)
+            is_top_level_query = True
         first_arg = node.args[0]
         node.args = node.args[1:]
         try:
@@ -1437,9 +1462,19 @@ class Parser(NodeVisitor):
                     expr.elem = kv
             else:
                 expr.elem = self.visit(first_arg)
+            if is_top_level_query:
+                self.audit_query(expr, node)
         finally:
             self.pop_state()
         return expr
+
+    def audit_query(self, expr, node):
+        intersect = expr.freevars & expr.boundvars
+        if intersect:
+            msg = ("query variables " +
+                   " ".join(["'" + n.name + "'" for n in intersect]) +
+                   " are both free and bound.")
+            self.error(msg, node)
 
     def parse_aggregates(self, node):
         if node.func.id == KW_AGGREGATE_SUM:
@@ -1518,14 +1553,6 @@ class Parser(NodeVisitor):
                            node)
                 return dast.SimpleExpr(self.current_parent, node)
 
-        if self.call_check(AggregateKeywords, 2, None, node):
-            try:
-                return self.parse_aggregates(node)
-            except MalformedStatementError as e:
-                self.error("Malformed aggregate expression: " + str(e),
-                           node)
-                return dast.SimpleExpr(self.current_parent, node)
-
         if (self.current_process is not None and
                 self.call_check({KW_RECV_QUERY, KW_SENT_QUERY}, 1, 1, node)):
             if isinstance(self.current_context, IterRead):
@@ -1550,12 +1577,13 @@ class Parser(NodeVisitor):
                 if self.current_context is not None:
                     expr.context = self.current_context.type
                 event = self.parse_event_expr(
-                    node, True, literal=(not self.enable_membertest_pattern))
+                    node, literal=(not self.enable_membertest_pattern))
                 self.pop_state()
                 expr.event = event
                 outer.right = expr
                 if event is not None:
-                    outer.left = self.pattern_from_event(event)
+                    outer.left = self.pattern_from_event(
+                        event, literal=(not self.enable_membertest_pattern))
                     event.record_history = True
                 self.pop_state()
                 return outer
@@ -1753,8 +1781,7 @@ class Parser(NodeVisitor):
                 pf = PatternFinder()
                 pf.visit(node.left)
                 if pf.found:
-                    expr.left = self.parse_pattern_expr(node.left,
-                                                        use_dummy_scope=True)
+                    expr.left = self.parse_pattern_expr(node.left)
         if expr.left is None:
             expr.left = self.visit(node.left)
         self.current_context = Read(expr.left)

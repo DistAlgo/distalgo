@@ -207,6 +207,14 @@ def concat_bodies(subexprs, body):
             postbody.extend(e.postbody)
     return prebody + body + postbody
 
+def is_all_wildcards(targets):
+    """True if 'targets' contain only wildcards."""
+
+    for elt in targets:
+        if not (isinstance(elt, Name) and elt.id == '_'):
+            return False
+    return True
+
 # List of arguments needed to initialize a process:
 PROC_INITARGS = ["parent", "initq", "channel", "props"]
 
@@ -230,6 +238,10 @@ class PythonGenerator(NodeVisitor):
         self.processed_patterns = set()
         self.preambles = list(PREAMBLE)
         self.postambles = list()
+        # One instance of PatternComprehensionGenerator for each query.
+        # This is needed so free vars with the same name in a query can be
+        # properly unified:
+        self.query_generator = None
 
     def reset(self):
         """Resets internal states.
@@ -241,6 +253,7 @@ class PythonGenerator(NodeVisitor):
         self.processed_patterns = set()
         self.preambles = list(PREAMBLE)
         self.postambles = list()
+        self.query_generator = None
 
     def visit(self, node):
         """Generic visit method.
@@ -529,32 +542,31 @@ class PythonGenerator(NodeVisitor):
             return propagate_attributes(ast.values, ast)
 
     def visit_DomainSpec(self, node):
-        pat = self.visit(node.pattern)
-        domain = self.visit(node.domain)
         if not isinstance(node.pattern, dast.PatternExpr):
-            return comprehension(pat, domain, [])
-        context = [(v.unique_name, self.visit(v.value))
-                   for v in node.pattern.ordered_boundpatterns]
-        # FIXME: variable ordering?????:
-        order = pyTuple([Str(v.name) for v in node.pattern.freevars])
-        varelts = [self.visit(v) for v in node.pattern.freevars]
-        iterater = pyCall(pyAttr(pat, "filter"), [domain, order],
-                          keywords=context)
-        if len(varelts) > 0:
-            target = pyTuple(varelts)
+            return comprehension(self.visit(node.pattern),
+                                 self.visit(node.domain), [])
         else:
-            target = pyName("_dummyvar")
-        return comprehension(target, iterater, [])
+            assert self.query_generator is not None # has to be inside query
+            target, condlist = self.query_generator.visit(node.pattern)
+            domain = self.visit(node.domain)
+            return comprehension(target, domain, condlist)
 
     def visit_QuantifiedExpr(self, node):
-        nameset = node.freevars
-        body = funcbody = []
+        is_top_level_query = False
+        if self.query_generator is None:
+            self.query_generator = PatternComprehensionGenerator()
+            is_top_level_query = True
 
+        body = funcbody = []
         for domspec in node.domains:
             comp = self.visit(domspec)
             ast = For(comp.target, comp.iter, [], [])
             body.append(propagate_attributes([ast.iter], ast))
             body = body[0].body
+            for cond in comp.ifs:
+                ast = If(cond, [], [])
+                body.append(propagate_attributes([ast.test], ast))
+                body = body[0].body
         postbody = []
         ifcond = self.visit(node.predicate)
         if hasattr(ifcond, "prebody"):
@@ -574,39 +586,43 @@ class PythonGenerator(NodeVisitor):
         else:
             funcbody.append(Return(pyFalse()))
 
-        if len(nameset) > 0:
-            # Back patch nonlocal statement
-            if not type(node.statement.parent) is dast.Program:
-                decl = Nonlocal([nv.name for nv in nameset
-                                 if type(nv.scope) is not dast.Process])
-            else:
-                decl = Global([nv.name for nv in nameset
-                               if type(nv.scope) is not dast.Process])
-            funcbody.insert(0, decl)
-
-        # Bound values that are defined in a containing comprehension need to
-        # be explicitly passed in
-        params = set(nobj for nobj in chain(node.boundvars,
+        # free varas that should be unified with a containing comprehension
+        # need to be explicitly passed in
+        params = set(nobj for nobj in chain(node.freevars,
+                                            node.boundvars,
                                             node.predicate.nameobjs)
                      if isinstance(nobj.scope, dast.ComprehensionExpr)
-                     if node.is_child_of(nobj.scope)
-                     if nobj not in nameset)
-
+                     if node.is_child_of(nobj.scope))
         ast = pyCall(func=pyName(node.name),
                      keywords=[(v.name, self.visit(v)) for v in params])
         funast = pyFunctionDef(name=node.name,
                                args=[v.name for v in params],
                                body=funcbody)
-        # Assignment needed to ensure all vars are bound at this point
-        if len(nameset) > 0:
-            ast.prebody = [Assign(targets=[pyName(nv.name) for nv in nameset],
-                                  value=pyNone()),
-                           funast]
-        else:
-            ast.prebody = [funast]
+        ast.prebody = [funast]
+
+        if is_top_level_query:
+            nameset = node.freevars
+            if len(nameset) > 0:
+                # Back patch nonlocal statement
+                if not isinstance(node.statement.parent, dast.Program):
+                    decl = Nonlocal([nv.name for nv in nameset])
+                else:
+                    decl = Global([nv.name for nv in nameset])
+                funast.body.insert(0, decl)
+
+                # Assignment needed to ensure all vars are bound at this point
+                ast.prebody.insert(
+                    0, Assign(targets=[pyName(nv.name) for nv in nameset],
+                              value=pyNone()))
+            self.query_generator = None
         return ast
 
     def visit_ComprehensionExpr(self, node):
+        is_top_level_query = False
+        if self.query_generator is None:
+            self.query_generator = PatternComprehensionGenerator()
+            is_top_level_query = True
+
         generators = []
         for dom in node.domains:
             comp = self.visit(dom)
@@ -619,29 +635,33 @@ class PythonGenerator(NodeVisitor):
             generators[-1].ifs = [self.visit(cond) for cond in node.conditions]
         propagate_attributes(generators[-1].ifs, generators[-1])
 
-        if type(node) is dast.DictCompExpr:
-            key = self.visit(node.elem.key)
-            value = self.visit(node.elem.value)
-            ast = propagate_attributes((key, value),
-                                       DictComp(key, value, generators))
-            return propagate_attributes(generators, ast)
-        else:
-            elem = self.visit(node.elem)
-            if type(node) is dast.SetCompExpr:
-                ast = SetComp(elem, generators)
-            elif type(node) is dast.ListCompExpr:
-                ast = ListComp(elem, generators)
-            elif type(node) is dast.TupleCompExpr:
-                ast = pyCall("tuple", args=[GeneratorExp(elem, generators)])
-            elif type(node) is dast.GeneratorExpr:
-                ast = GeneratorExp(elem, generators)
-            elif isinstance(node, dast.AggregateExpr):
-                ast = pyCall(AggregateMap[type(node)],
-                             [ListComp(elem, generators)])
+        try:
+            if type(node) is dast.DictCompExpr:
+                key = self.visit(node.elem.key)
+                value = self.visit(node.elem.value)
+                ast = propagate_attributes((key, value),
+                                           DictComp(key, value, generators))
+                return propagate_attributes(generators, ast)
             else:
-                self.error("Unknown expression", node)
-                return None
-            return propagate_attributes(generators + [elem], ast)
+                elem = self.visit(node.elem)
+                if type(node) is dast.SetCompExpr:
+                    ast = SetComp(elem, generators)
+                elif type(node) is dast.ListCompExpr:
+                    ast = ListComp(elem, generators)
+                elif type(node) is dast.TupleCompExpr:
+                    ast = pyCall("tuple", args=[GeneratorExp(elem, generators)])
+                elif type(node) is dast.GeneratorExpr:
+                    ast = GeneratorExp(elem, generators)
+                elif isinstance(node, dast.AggregateExpr):
+                    ast = pyCall(AggregateMap[type(node)],
+                                 [ListComp(elem, generators)])
+                else:
+                    self.error("Unknown expression", node)
+                    return None
+                return propagate_attributes(generators + [elem], ast)
+        finally:
+            if is_top_level_query:
+                self.query_generator = None
 
     visit_GeneratorExpr = visit_ComprehensionExpr
     visit_SetCompExpr = visit_ComprehensionExpr
@@ -709,6 +729,8 @@ class PythonGenerator(NodeVisitor):
             self.preambles.append(ast)
             self.processed_patterns.add(node.name)
         return pyName(node.name)
+
+    visit_LiteralPatternExpr = visit_PatternExpr
 
     def visit_HistoryExpr(self, node):
         assert node.event is not None
@@ -983,3 +1005,53 @@ for attr in dir(self):
                              pyCall(pyName("frozenset"),
                                     [Set([Str(l) for l in node.notlabels])]))))
         return stmts
+
+class PatternComprehensionGenerator(PythonGenerator):
+    def __init__(self):
+        super().__init__()
+        self.freevars = set()
+
+    def visit_FreePattern(self, node):
+        conds = []
+        if node.value is None:
+            target = pyName("_")
+        elif node.value in self.freevars:
+            target = pyName(node.unique_name)
+            conds = [pyCompare(target, Eq, pyName(node.value.name))]
+        else:
+            target = pyName(node.value.name)
+            self.freevars.add(node.value)
+        return target, conds
+
+    def visit_BoundPattern(self, node):
+        boundname = pyName(node.unique_name)
+        targetname = self.visit(node.value)
+        conast = pyCompare(boundname, Eq, targetname)
+        return boundname, [conast]
+
+    def visit_ConstantPattern(self, node):
+        target = pyName(node.unique_name)
+        compval = self.visit(node.value)
+        return target, [pyCompare(target, Eq, compval)]
+
+    def visit_TuplePattern(self, node):
+        condition_list = []
+        targets = []
+        for elt in node.value:
+            tgt, conds = self.visit(elt)
+            targets.append(tgt)
+            condition_list.extend(conds)
+        if is_all_wildcards(targets):
+            # Optimization: combine into one '_'
+            return pyName('_'), []
+        target = pyTuple(targets)
+        return target, condition_list
+
+    def visit_ListPattern(self, node):
+        raise NotImplementedError(
+            "Can not compile list pattern to comprehension.")
+
+    def visit_PatternExpr(self, node):
+        return self.visit(node.pattern)
+
+    visit_LiteralPatternExpr = visit_PatternExpr

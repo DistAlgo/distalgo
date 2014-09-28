@@ -12,7 +12,7 @@ class Coordinator(process):
             send(('Commit', tid), to=cohorts)
             await(each(c in cohorts, has=received(('Done', tid, c))))
             output('log complete record for' + str(tid))
-        elif each(c in cohorts, has=some(received(('Vote', _, _tid, _c)))):
+        elif each(c in cohorts, has=some(received(('Vote', _, _tid, c)))):
             s = setof(c, received(("Vote", "ready", tid, c)))
             send(('Abort', tid), to=s)
         --end

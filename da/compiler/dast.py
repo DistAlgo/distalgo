@@ -227,6 +227,14 @@ class NameScope(DistNode):
         self._names[namedvar.name] = namedvar
         return oldname
 
+    def merge_scope(self, target):
+        """Merges names defined in 'target' scope into this scope.
+        """
+
+        for name in target._names:
+            if name not in self._names:
+                self._names[name] = target._names[name]
+
     @property
     def skip(self):
         """True if this scope should be skipped in the parent-child scope hierachy.
@@ -495,6 +503,14 @@ class NamedVar(DistNode):
             return None
 
     @property
+    def ordered_boundvars(self):
+        return []
+
+    @property
+    def ordered_freevars(self):
+        return []
+
+    @property
     def is_arg(self):
         """True if this variable is an argument of an ArgumentsContainer.
 
@@ -588,6 +604,32 @@ class Expression(DistNode):
         return set(self.ordered_nameobjs)
 
     @property
+    def ordered_boundvars(self):
+        """Returns a list of bound variables, in left-to-right order.
+
+        """
+        return list(chain(*[e.ordered_boundvars for e in self.subexprs
+                            if e is not None]))
+
+    @property
+    def boundvars(self):
+        """A set containing all bound variables in the pattern."""
+        return set(self.ordered_boundvars)
+
+    @property
+    def ordered_freevars(self):
+        """Returns a list of free variables, in left-to-right order.
+
+        """
+        return list(chain(*[e.ordered_freevars for e in self.subexprs
+                            if e is not None]))
+
+    @property
+    def freevars(self):
+        """A set containing all free variables in the pattern."""
+        return set(self.ordered_freevars)
+
+    @property
     def statement(self):
         """The first statement parent of this expression, if any.
 
@@ -641,6 +683,14 @@ class SimpleExpr(Expression):
             return self.value.ordered_nameobjs
         else:
             return []
+
+    @property
+    def ordered_boundvars(self):
+        return []
+
+    @property
+    def ordered_freevars(self):
+        return []
 
 class AttributeExpr(SimpleExpr):
 
@@ -820,14 +870,49 @@ class CallExpr(Expression):
         assert kwargs is None or isinstance(kwargs, Expression)
         self.subexprs[4] = kwargs
 
-
     @property
     def ordered_nameobjs(self):
         res = []
         if self.func is not None:
             res.extend(self.func.ordered_nameobjs)
-        for a in self.args:
-            res.extend(a.ordered_nameobjs)
+        res.extend(chain(*[a.ordered_nameobjs for a in self.args
+                           if a is not None]))
+        res.extend(chain(*[v.ordered_nameobjs for _, v in self.keywords
+                           if v is not None]))
+        if self.starargs is not None:
+            res.extend(self.starargs.ordered_nameobjs)
+        if self.kwargs is not None:
+            res.extend(self.kwargs.ordered_nameobjs)
+        return res
+
+    @property
+    def ordered_boundvars(self):
+        res = []
+        if self.func is not None:
+            res.extend(self.func.ordered_boundvars)
+        res.extend(chain(*[a.ordered_boundvars for a in self.args
+                           if a is not None]))
+        res.extend(chain(*[v.ordered_boundvars for _, v in self.keywords
+                           if v is not None]))
+        if self.starargs is not None:
+            res.extend(self.starargs.ordered_boundvars)
+        if self.kwargs is not None:
+            res.extend(self.kwargs.ordered_boundvars)
+        return res
+
+    @property
+    def ordered_freevars(self):
+        res = []
+        if self.func is not None:
+            res.extend(self.func.ordered_freevars)
+        res.extend(chain(*[a.ordered_freevars for a in self.args
+                           if a is not None]))
+        res.extend(chain(*[v.ordered_freevars for _, v in self.keywords
+                           if v is not None]))
+        if self.starargs is not None:
+            res.extend(self.starargs.ordered_freevars)
+        if self.kwargs is not None:
+            res.extend(self.kwargs.ordered_freevars)
         return res
 
 class ApiCallExpr(CallExpr):
@@ -958,18 +1043,18 @@ class DomainSpec(Expression):
         return node
 
     @property
-    def boundvars(self):
+    def ordered_boundvars(self):
         if self.subexprs[0] is not None:
-            return self.subexprs[0].boundvars
+            return self.subexprs[0].ordered_boundvars
         else:
-            return set()
+            return []
 
     @property
-    def freevars(self):
+    def ordered_freevars(self):
         if self.subexprs[0] is not None:
-            return self.subexprs[0].freevars
+            return self.subexprs[0].ordered_freevars
         else:
-            return set()
+            return []
 
     @property
     def ordered_nameobjs(self):
@@ -1033,12 +1118,16 @@ class QuantifiedExpr(BooleanExpr):
                             if e is not None]))
 
     @property
-    def boundvars(self):
-        return set(chain(*[d.boundvars for d in self.domains]))
+    def ordered_boundvars(self):
+        return list(chain(*[d.ordered_boundvars
+                            for d in chain(self.domains, self.subexprs)
+                            if d is not None]))
 
     @property
-    def freevars(self):
-        return set(chain(*[d.freevars for d in self.domains]))
+    def ordered_freevars(self):
+        return list(chain(*[d.ordered_freevars
+                            for d in chain(self.domains, self.subexprs)
+                            if d is not None]))
 
     @property
     def name(self):
@@ -1475,32 +1564,20 @@ class PatternExpr(Expression):
     def ordered_boundpatterns(self):
         return self.pattern.ordered_boundpatterns
 
-    @property
-    def ordered_boundvars(self):
-        if self.pattern is None:
-            return []
-        else:
-            return self.pattern.ordered_boundvars
-
-    @property
-    def boundvars(self):
-        return set(self.ordered_boundvars)
-
-    @property
-    def ordered_freevars(self):
-        if self.pattern is None:
-            return []
-        else:
-            return self.pattern.ordered_freevars
-
-    @property
-    def freevars(self):
-        return set(self.ordered_freevars)
-
     def match(self, target):
         if not isinstance(target, PatternExpr):
             return False
         return self.pattern.match(target.pattern)
+
+# XXX HACK!!!: work around query auditing
+class LiteralPatternExpr(PatternExpr):
+    @property
+    def ordered_boundvars(self):
+        return []
+
+    @property
+    def ordered_freevars(self):
+        return []
 
 class HistoryExpr(Expression):
 
@@ -1535,25 +1612,11 @@ class HistoryExpr(Expression):
 
     @property
     def ordered_boundvars(self):
-        if self.event is not None:
-            return self.event.ordered_boundvars
-        else:
-            return []
-
-    @property
-    def boundvars(self):
-        return set(self.ordered_boundvars)
+        return []
 
     @property
     def ordered_freevars(self):
-        if self.event is not None:
-            return self.event.ordered_freevars
-        else:
-            return []
-
-    @property
-    def freevars(self):
-        return set(self.ordered_freevars)
+        return []
 
 class ReceivedExpr(HistoryExpr): pass
 class SentExpr(HistoryExpr): pass

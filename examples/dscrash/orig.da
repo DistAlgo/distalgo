@@ -17,7 +17,7 @@ class P(process):
               await(receiveflag)
               receiveflag = False
           --end
-          x = maxof(v, v in V, has=V[v])
+          x = max(listof(v, v in V, has=V[v]))
           output("x = %r" % (x))
 
     def recv(msg=('Value', v)):

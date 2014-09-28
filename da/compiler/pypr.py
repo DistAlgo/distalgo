@@ -6,6 +6,7 @@
     Extension to ast that allow ast -> python code generation.
 
     :copyright: Copyright 2008 by Armin Ronacher.
+    :modified:  Modified 2012-2014 by Bo Lin for newer Python versions.
     :license: BSD.
 """
 import sys

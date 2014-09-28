@@ -14,7 +14,7 @@ class P(process):
 
         --sync
         if await(each((c2, p2) in q, has=((reqc, self.id) <= (c2, p2))) and
-                 each(p3 in ps, has=some(received(('Reply', c3), from_=_p3),
+                 each(p3 in ps, has=some(received(('Reply', c3), from_=p3),
                                          has=(c3 > reqc)))):
             # critical section
             task()

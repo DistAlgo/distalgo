@@ -19,10 +19,12 @@ class Replica(process):
         #you ignore if p is already been issued
         if not some((_, _p) in decisions):
             #find the largest available slot
-            maxs = maxof(s, (s, _) in chain(proposals, decisions, {(0, 0)}))
+            maxs = max(setof(s, (s, _) in
+                             chain(proposals, decisions, {(0, 0)})))
             #within maximum, find smallest which is not yet been decided
-            s1 = minof(s, s in range(1, maxs + 1 + 1),
-                       has= not some((_s, _) in chain(proposals, decisions)))
+            s1 = min(setof(s, s in range(1, maxs + 1 + 1),
+                           has= not some((s, _) in
+                                         chain(proposals, decisions))))
             proposals.add((s1, p))
             send(('Propose', s1, p), to=leaders)
 
@@ -166,7 +168,7 @@ class Leader(process):
         decided.add((s,p))
 
     def circle_plus(x, y):
-        return y | setof((s, p), (s, p) in x, has= not some((_s, _) in y))
+        return y | setof((s, p), (s, p) in x, has= not some((s, _) in y))
 
     def pmax(pvals):
         return {(s, p) for (b, s, p) in pvals

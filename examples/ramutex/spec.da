@@ -8,7 +8,7 @@ class P(process):
         ownc = logical_clock()
         send(('request', ownc, self.id), to=s)    # send request to all processes
         await(each(p in s,
-                   has=some(received(('ack', c, _p)), has=(c > ownc))))
+                   has=some(received(('ack', c, p)), has=(c > ownc))))
         --cs
         task()                  # critical section
         --release
