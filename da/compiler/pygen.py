@@ -602,20 +602,23 @@ class PythonGenerator(NodeVisitor):
                                body=funcbody)
         ast.prebody = [funast]
 
-        if is_top_level_query:
-            nameset = node.freevars - params
-            if len(nameset) > 0:
-                # Back patch nonlocal statement
+        nameset = node.freevars - params
+        if len(nameset) > 0:
+            # Back patch nonlocal statement
+            if not isinstance(node.scope, dast.ComprehensionExpr):
                 if not isinstance(node.statement.parent, dast.Program):
                     decl = Nonlocal([nv.name for nv in nameset])
                 else:
                     decl = Global([nv.name for nv in nameset])
                 funast.body.insert(0, decl)
 
-                # Assignment needed to ensure all vars are bound at this point
+            # Assignment needed to ensure all vars are bound at this point
+            if is_top_level_query:
                 ast.prebody.insert(
                     0, Assign(targets=[pyName(nv.name) for nv in nameset],
                               value=pyNone()))
+
+        if is_top_level_query:
             self.query_generator = None
         return ast
 
