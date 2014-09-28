@@ -278,7 +278,8 @@ def new(pcls, args=None, num=1, **props):
     daemon = props['daemon'] if 'daemon' in props else False
     for i in iterator:
         (childp, ownp) = multiprocessing.Pipe()
-        p = pcls(common.current_process(), childp, EndPointType, props)
+        p = pcls(common.current_process(), childp,
+                 type(common.current_process()), props)
         p.daemon = daemon
         if isinstance(i, str):
             p.set_name(i)
