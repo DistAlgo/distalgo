@@ -1463,6 +1463,7 @@ class Parser(NodeVisitor):
             else:
                 expr.elem = self.visit(first_arg)
             if is_top_level_query:
+                self.current_scope.parent_scope.merge_scope(self.current_query_scope)
                 self.audit_query(expr, node)
         finally:
             self.pop_state()

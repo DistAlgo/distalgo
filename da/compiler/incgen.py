@@ -86,6 +86,7 @@ def apply_demorgan_rule(node):
                                          op=dast.NotOp,
                                          subexprs=[e])
                         for e in node.left.subexprs]
+        iprintd("demorgan applied to " + str(node))
         return exp
     else:
         return node
@@ -99,6 +100,7 @@ def domain_for_condition(domainspec, condition):
     domainspec.pattern = dast.TuplePattern(domainspec)
     domainspec.pattern.value = [dast.FreePattern(domainspec.pattern, value=fv)
                                 for fv in expr.elem.subexprs]
+    iprintd("domain_for_condition: " + str(expr))
     return expr
 
 def ast_eq(left, right):
@@ -287,8 +289,9 @@ def gen_inc_module(daast, cmdline_args=dict(), filename=""):
                     body[0].prebody = []
                 assert len(body) > 0
                 body[0].prebody.insert(0, asscall)
-            elif not (isinstance(node, dast.Function) and
-                      isinstance(node.parent, dast.Process)):
+            elif not (isinstance(node.parent, dast.Program) or
+                      (isinstance(node, dast.Function) and
+                       isinstance(node.parent, dast.Process))):
                 # This is a normal assignment
                 if not hasattr(node, "postbody"):
                     node.postbody = []
@@ -562,6 +565,7 @@ class IncInterfaceGenerator(PythonGenerator):
     def visit_PatternExpr(self, node):
         target, conds = self.visit(node.pattern)
         return target, conds
+    visit_LiteralPatternExpr = visit_PatternExpr
 
     def visit_ComparisonExpr(self, node):
         if isinstance(node.left, dast.PatternExpr):
@@ -645,9 +649,13 @@ class IncInterfaceGenerator(PythonGenerator):
         return pyTuple([typ, env, msg]), evtconds
 
     def visit_DomainSpec(self, node):
-        self.reset_pattern_state()
-        target, ifs = self.visit(node.pattern)
-        domain = self.visit(node.domain)
+        if isinstance(node.pattern, dast.PatternExpr):
+            target, ifs = self.visit(node.pattern)
+            domain = self.visit(node.domain)
+        else:
+            target = self.visit(node.pattern)
+            ifs = []
+            domain = self.visit(node.domain)
         return comprehension(target, domain, ifs)
 
     def visit_HistoryExpr(self, node):

@@ -586,13 +586,15 @@ class PythonGenerator(NodeVisitor):
         else:
             funcbody.append(Return(pyFalse()))
 
-        # free varas that should be unified with a containing comprehension
+        # names that should be unified with a containing comprehension
         # need to be explicitly passed in
         params = set(nobj for nobj in chain(node.freevars,
                                             node.boundvars,
                                             node.predicate.nameobjs)
                      if isinstance(nobj.scope, dast.ComprehensionExpr)
-                     if node.is_child_of(nobj.scope))
+                     if node.is_child_of(nobj.scope)
+                     if (len(nobj.assignments) > 0 and
+                         (not nobj.assignments[0][0].is_child_of(node))))
         ast = pyCall(func=pyName(node.name),
                      keywords=[(v.name, self.visit(v)) for v in params])
         funast = pyFunctionDef(name=node.name,
@@ -601,7 +603,7 @@ class PythonGenerator(NodeVisitor):
         ast.prebody = [funast]
 
         if is_top_level_query:
-            nameset = node.freevars
+            nameset = node.freevars - params
             if len(nameset) > 0:
                 # Back patch nonlocal statement
                 if not isinstance(node.statement.parent, dast.Program):

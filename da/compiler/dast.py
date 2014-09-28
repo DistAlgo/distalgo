@@ -234,6 +234,8 @@ class NameScope(DistNode):
         for name in target._names:
             if name not in self._names:
                 self._names[name] = target._names[name]
+            else:
+                self._names[name].merge(target._names[name])
 
     @property
     def skip(self):
