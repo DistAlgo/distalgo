@@ -60,8 +60,8 @@ def main():
 
     config(channel=("unfifo", "unreliable"))
 
-    accpts = new(Cohort, num= nacceptors, args= [fail_rate])
-    propsrs = new(Coordinator, num= 1, args= [nproposers, accpts])
+    accpts = new(Cohort, [fail_rate], num= nacceptors)
+    propsrs = new(Coordinator, [nproposers, accpts], num= 1)
 
     start(accpts | propsrs)
 

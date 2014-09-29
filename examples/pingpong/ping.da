@@ -25,7 +25,7 @@ def main():
     nrounds = int(sys.argv[1]) if len(sys.argv) > 1 else 3
     npings = int(sys.argv[2]) if len(sys.argv) > 2 else 3
     config(clock='Lamport')
-    pong = new(Pong, args= [nrounds * npings], num= 1)
+    pong = new(Pong, [nrounds * npings], num= 1)
     ping = new(Ping, num= npings)
     setup(ping, [pong, nrounds])
     start(pong)
