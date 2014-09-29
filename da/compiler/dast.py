@@ -1181,6 +1181,18 @@ class ComprehensionExpr(Expression, LockableNameScope):
                                            self.conditions)
                             if e is not None]))
 
+    @property
+    def ordered_freevars(self):
+        return list(chain(*[e.ordered_freevars
+                            for e in chain(self.domains, self.conditions)
+                            if e is not None]))
+
+    @property
+    def ordered_boundvars(self):
+        return list(chain(*[e.ordered_boundvars
+                            for e in chain(self.domains, self.conditions)
+                            if e is not None]))
+
     def __str__(self):
         s = [type(self).__name__, "(", str(self.elem), ": "]
         for d in self.domains:
@@ -1393,6 +1405,9 @@ class PatternElement(DistNode):
 
     def __str__(self):
         return type(self).__name__ + ("{%s}" % str(self.value))
+
+    def __repr__(self):
+        return str(self)
 
     def match(self, target):
         """Compare two Elements to see if they describe the same pattern.
