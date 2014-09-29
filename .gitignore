@@ -1,4 +1,8 @@
 *.pyc
 __pycache__/
 *.log
+*.bak
 examples/**/*.py
+dist/
+build/
+MANIFEST
