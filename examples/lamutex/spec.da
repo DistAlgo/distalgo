@@ -6,7 +6,7 @@ class P(process):
     def mutex(task):
         -- request
         c = logical_clock()
-        send(('request', c, self.id), to=s)
+        send(('request', c, self.id), to= s)
         await(each(received(('request', c2, p)),
                    has= some(received(('release', c3, p)), has= c3 > c2)
                         or (c, self.id) < (c2, p)) and
@@ -14,18 +14,18 @@ class P(process):
         -- critical_section
         task()
         -- release
-        send(('release', logical_clock(), self.id), to=s)
+        send(('release', logical_clock(), self.id), to= s)
 
     def recv(msg=('request', _, p)):
-        send(('ack', logical_clock(), self.id), to=p)
+        send(('ack', logical_clock(), self.id), to= p)
 
     def main():
         def task(): output('in cs')
         for i in range(nrequests):
             mutex(task)
 
-        send(('done', self.id), to=s)
-        await(each(p in s, has=received(('done', p))))
+        send(('done', self.id), to= s)
+        await(each(p in s, has= received(('done', p))))
         output('terminating')
 
 def main():
@@ -33,8 +33,10 @@ def main():
     nrequests = int(sys.argv[2]) if len(sys.argv) > 2 else 1
 
     config(channel= 'fifo', clock= 'Lamport')
+
     ps = new(P, num= nprocs)
-    for p in ps: setup({p}, (ps-{p}, nrequests))
+
+    for p in ps: setup(p, (ps-{p}, nrequests))
     start(ps)
 
 # this code includes setup and termination for serving a given number of
