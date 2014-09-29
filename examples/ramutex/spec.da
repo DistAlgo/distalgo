@@ -14,7 +14,7 @@ class P(process):
         --release
         send(('ack', logical_clock(), self.id),
              to=setof(p, p in s,
-                      has=some(received(('request', c, _p)),
+                      has=some(received(('request', c, p)),
                                has=((c, p) >= (ownc, self.id)))))
 
     def recv(msg=('request', c, p)):
