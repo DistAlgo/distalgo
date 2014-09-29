@@ -187,6 +187,7 @@ class PatternParser(NodeVisitor):
         else:
             self.namescope = parser.current_query_scope
         self.parent_node = parser.current_parent
+        self.current_query = parser.current_query
         self.use_object_style = parser.use_object_style
         self.literal = literal
 
@@ -209,6 +210,14 @@ class PatternParser(NodeVisitor):
             return dast.ConstantPattern(self.parent_node, node, value=expr)
         else:
             return dast.BoundPattern(self.parent_node, node, value=expr)
+
+    def is_bound(self, name):
+        n = self.namescope.find_name(name)
+        if n is not None:
+            for r, _ in n.reads:
+                if r.is_child_of(self.current_query):
+                    return True
+        return False
 
     def visit_Name(self, node):
         if self._parser.current_process is not None and \
@@ -247,18 +256,25 @@ class PatternParser(NodeVisitor):
             n = self.outer_scope.find_name(name)
             if n is None:
                 self._parser.warn(
-                    ("new variable '%s' introduced by bound context in "
-                     "pattern." % name), node)
+                    ("new variable '%s' introduced by bound pattern." % name),
+                    node)
                 n = self.namescope.add_name(name)
             pat = dast.BoundPattern(self.parent_node, node, value=n)
             n.add_read(pat)
             return pat
         else:
-            # Free variable:
+            # Could be free or bound:
             name = node.id
-            n = self.namescope.add_name(name)
-            pat = dast.FreePattern(self.parent_node, node, value=n)
-            if n is not None:
+            if self.is_bound(name):
+                self._parser.debug("[PatternParser] reusing bound name " +
+                                   name, node)
+                n = self.namescope.find_name(name)
+                pat = dast.BoundPattern(self.parent_node, node, value=n)
+                n.add_read(pat)
+            else:
+                self._parser.debug("[PatternParser] free name " + name, node)
+                n = self.namescope.add_name(name)
+                pat = dast.FreePattern(self.parent_node, node, value=n)
                 n.add_assignment(pat)
             return pat
 
@@ -359,13 +375,13 @@ class Parser(NodeVisitor):
         # used in error messages:
         self.filename = filename
         # used to construct statement tree, also used for symbol table:
-        self.node_stack = []
         self.state_stack = []
         # new statements are appended to this list:
         self.current_block = None
         self.current_context = None
         self.current_label = None
         self.current_query_scope = None
+        self.current_query = None
         self.errcnt = 0
         self.warncnt = 0
         self.program = execution_context if execution_context is not None \
@@ -390,15 +406,15 @@ class Parser(NodeVisitor):
 
 
     def push_state(self, node):
-        self.node_stack.append(node)
-        self.state_stack.append((self.current_context,
+        self.state_stack.append((node,
+                                 self.current_context,
                                  self.current_label,
                                  self.current_query_scope,
                                  self.current_block))
 
     def pop_state(self):
-        self.node_stack.pop()
-        (self.current_context,
+        (_,
+         self.current_context,
          self.current_label,
          self.current_query_scope,
          self.current_block) = self.state_stack.pop()
@@ -409,13 +425,25 @@ class Parser(NodeVisitor):
         elif isinstance(self.current_scope, dast.Function):
             return self.current_scope.name == "setup"
 
+    def enter_query(self):
+        if self.current_query_scope is None:
+            self.current_query_scope = dast.NameScope(self.current_scope)
+            self.current_query = self.current_parent
+
+    def leave_query(self, node=None):
+        if self.current_parent is self.current_query:
+            self.current_query = None
+            self.current_scope.parent_scope.merge_scope(self.current_query_scope)
+            if node is not None:
+                self.audit_query(self.current_parent, node)
+
     @property
     def current_parent(self):
-        return self.node_stack[-1]
+        return self.state_stack[-1][0]
 
     @property
     def current_process(self):
-        for node in reversed(self.node_stack):
+        for node, _, _, _, _ in reversed(self.state_stack):
             if isinstance(node, dast.Process):
                 return node
         return None
@@ -424,14 +452,14 @@ class Parser(NodeVisitor):
     def current_scope(self):
         if self.current_query_scope is not None:
             return self.current_query_scope
-        for node in reversed(self.node_stack):
+        for node, _, _, _, _ in reversed(self.state_stack):
             if isinstance(node, dast.NameScope):
                 return node
         return None
 
     @property
     def current_loop(self):
-        for node in reversed(self.node_stack):
+        for node, _, _, _, _ in reversed(self.state_stack):
             if isinstance(node, dast.ArgumentsContainer) or \
                isinstance(node, dast.ClassStmt):
                 break
@@ -553,7 +581,7 @@ class Parser(NodeVisitor):
         events = []
         labels = set()
         notlabels = set()
-        self.current_query_scope = dast.NameScope(self.current_scope)
+        self.enter_query()
         for key, patexpr in zip(args.args, args.defaults):
             if key.arg == KW_EVENT_LABEL:
                 ls, neg = self.parse_label_spec(patexpr)
@@ -579,8 +607,7 @@ class Parser(NodeVisitor):
                 events[-1].timestamps.append(pat)
             else:
                 self.warn("unrecognized event parameter '%s'" % key.arg, node)
-        self.current_scope.parent_scope.merge_scope(self.current_query_scope)
-        self.current_query_scope = None
+        self.leave_query()
         return events, labels, notlabels
 
     def body(self, statements):
@@ -1413,21 +1440,15 @@ class Parser(NodeVisitor):
             raise MalformedStatementError("Unknown quantifier.")
 
         expr = self.create_expr(dast.QuantifiedExpr, node, {'op': context})
-        is_top_level_query = False
-        if self.current_query_scope is None:
-            self.current_query_scope = dast.NameScope(self.current_scope)
-            is_top_level_query = True
-
+        self.enter_query()
         try:
             expr.domains, predicates = self.parse_domains_and_predicate(node)
             if len(predicates) > 1:
                 self.warn("Multiple predicates in quantified expression, "
                           "first one is used, the rest are ignored.", node)
             expr.predicate = predicates[0]
-            if is_top_level_query:
-                self.current_scope.parent_scope.merge_scope(self.current_query_scope)
-                self.audit_query(expr, node)
         finally:
+            self.leave_query(node)
             self.pop_state()
         return expr
 
@@ -1442,10 +1463,8 @@ class Parser(NodeVisitor):
             expr_type = dast.TupleCompExpr
 
         expr = self.create_expr(expr_type, node)
-        is_top_level_query = False
-        if self.current_query_scope is None:
-            self.current_query_scope = dast.NameScope(self.current_scope)
-            is_top_level_query = True
+        self.enter_query()
+
         first_arg = node.args[0]
         node.args = node.args[1:]
         try:
@@ -1462,18 +1481,20 @@ class Parser(NodeVisitor):
                     expr.elem = kv
             else:
                 expr.elem = self.visit(first_arg)
-            if is_top_level_query:
-                self.current_scope.parent_scope.merge_scope(self.current_query_scope)
-                self.audit_query(expr, node)
         finally:
+            self.leave_query(node)
             self.pop_state()
         return expr
 
     def audit_query(self, expr, node):
-        intersect = expr.freevars & expr.boundvars
+        self.debug("auditing " + str(expr), node)
+        self.debug("...freevars: " + str(expr.freevars), node)
+        self.debug("...boundvars: " + str(expr.boundvars), node)
+        intersect = {v.name for v in expr.ordered_freevars} & \
+                    {v.name for v in expr.ordered_boundvars}
         if intersect:
             msg = ("query variables " +
-                   " ".join(["'" + n.name + "'" for n in intersect]) +
+                   " ".join(["'" + n + "'" for n in intersect]) +
                    " are both free and bound.")
             self.error(msg, node)
 
