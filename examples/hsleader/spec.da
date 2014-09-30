@@ -20,18 +20,18 @@ class P(process):
                 distance *= 2
                 reset("Received")
 
-    def recv(msg=('Out', v, d), from_=source):
+    def receive(msg=('Out', v, d), from_=source):
         if v > self.id:
             if d > 1:
                 send(('Out', v, d-1), to=(right if source == left else left))
             elif d == 1:
                 send(('In', v), to=source)
 
-    def recv(msg=('In', v), from_=source):
+    def receive(msg=('In', v), from_=source):
         if v > self.id:
             send(('In', v), to=(right if source == left else left))
 
-    def recv(msg=("Leader", leader), from_=source):
+    def receive(msg=("Leader", leader), from_=source):
         send(('Leader', leader), to=(right if source == left else left))
 
 def main():

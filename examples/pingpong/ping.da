@@ -5,7 +5,7 @@ class Pong(process):
     def main():
         await(len(listof(p, received(('Ping',), from_=p))) == total_pings)
 
-    def recv(msg=('Ping',), from_=p):
+    def receive(msg=('Ping',), from_=p):
         output("Pinged")
         send(('Pong',), to=p)
 
@@ -18,7 +18,7 @@ class Ping(process):
             send(('Ping',), to=p)
             await(some(received(('Pong',), clk=rclk), has=(rclk > clk)))
 
-    def recv(msg=('Pong',)):
+    def receive(msg=('Pong',)):
         output("Ponged.")
 
 def main():

@@ -42,10 +42,10 @@ class Replica(process):
             slot_num += 1
             send(('Response', cid, state[op]), to=k)
 
-    def recv(msg=('Request', p)):
+    def receive(msg=('Request', p)):
         propose(p)
 
-    def recv(msg=('Decision', s, p)):
+    def receive(msg=('Decision', s, p)):
         decisions.add((s,p))
         while some((_slot_num, p1) in decisions):
             while some((_slot_num, p2) in decisions, has=(p2 != p1)):
@@ -61,12 +61,12 @@ class Acceptor(process):
         await(received(('Done',)))
         output("Terminating..")
 
-    def recv(msg=('P1a', lam, b)):
+    def receive(msg=('P1a', lam, b)):
         if b > ballot_num:
             ballot_num = b
         send(('P1b', self.id, ballot_num, accepted), to=lam) # we are sending the entire accepted set here - something is not right
 
-    def recv(msg=('P2a', lam, load)):
+    def receive(msg=('P2a', lam, load)):
         b, s, p = load
         if b >= ballot_num:
             ballot_num = b
@@ -86,7 +86,7 @@ class Commander(process):
         send(('P2a', self.id, (b, s, p)), to=acceptors)
         await(done)
 
-    def recv(msg=('P2b', a, b1)):
+    def receive(msg=('P2b', a, b1)):
         if (b1 == b):
             if a in waitfor:
                 waitfor.remove(a)
@@ -111,7 +111,7 @@ class Scout(process):
         send(('P1a', self.id, b), to=acceptors)
         await(done)
 
-    def recv(msg=('P1b', a, b1, r)):
+    def receive(msg=('P1b', a, b1, r)):
         if b1 == b:
             pvalues |= r
             if a in waitfor:
@@ -137,7 +137,7 @@ class Leader(process):
         output("Terminating..")
         exit(0)
 
-    def recv(msg=('Propose', s, p)):
+    def receive(msg=('Propose', s, p)):
         if not some((_s, _) in proposals):
             proposals.add((s,p))
             if active:
@@ -147,7 +147,7 @@ class Leader(process):
                                         (ballot_num, s, p)], daemon=True)
                     start(c)
 
-    def recv(msg=('Adopted', _ballot_num, pvals)):
+    def receive(msg=('Adopted', _ballot_num, pvals)):
         proposals = circle_plus(proposals, pmax(pvals))
         for (s, p) in proposals:
             c = new(Commander, [self.id, acceptors, replicas,
@@ -155,7 +155,7 @@ class Leader(process):
             start(c)
         active = True
 
-    def recv(msg=('Preempted', b)):
+    def receive(msg=('Preempted', b)):
         r1, lam1 = b
         if b > ballot_num:
             active = False
@@ -164,7 +164,7 @@ class Leader(process):
             start(s)
 
     # Keep track of decisions
-    def recv(msg=('Decision', s, p)):
+    def receive(msg=('Decision', s, p)):
         decided.add((s,p))
 
     def circle_plus(x, y):
@@ -197,7 +197,7 @@ class Client(process):
             output("Received result %d:%d" % (cid, results[cid]))
             cid += 1
 
-    def recv(msg=('Response', cid, result)):
+    def receive(msg=('Response', cid, result)):
         if results.get(cid) == None:
             results[cid] = result
             count[cid] = 1

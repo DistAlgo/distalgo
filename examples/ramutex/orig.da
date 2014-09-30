@@ -34,13 +34,13 @@ class P(process):
         output("Terminating..")
 
     # when receiving requests from others, enque and reply
-    def recv(msg=('Request', timestamp), from_=source):
+    def receive(msg=('Request', timestamp), from_=source):
         if (reqc == None or (timestamp, source) < (reqc, self.id)):
             send(Reply(logical_clock()), to=source)
         else:
             waiting.add(source)
 
-    def recv(msg=('Reply', c1), from_=source):
+    def receive(msg=('Reply', c1), from_=source):
         if reqc is not None and c1 > reqc:
             replied.add(source)
 

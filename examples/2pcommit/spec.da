@@ -28,7 +28,7 @@ class Coordinator(process):
 class Cohort(process):
     def setup(failure_rate): pass
 
-    def recv(msg=('prepare', tid), from_= coord):
+    def receive(msg=('prepare', tid), from_= coord):
         if prepared(tid):
             send(('vote', 'ready', tid), to= coord)
             ready(tid)
@@ -36,10 +36,10 @@ class Cohort(process):
             send(('vote', 'abort', tid), to= coord)
             abort(tid)
 
-    def recv(msg=('abort', tid)):
+    def receive(msg=('abort', tid)):
         abort(tid)
 
-    def recv(msg=('commit', tid), from_= coord):
+    def receive(msg=('commit', tid), from_= coord):
         send(('done', tid), to= coord)
         commit(tid)
 

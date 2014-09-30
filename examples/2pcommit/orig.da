@@ -29,7 +29,7 @@ class Cohort(process):
     def main():
         await(received(('Done',)))
 
-    def recv(msg=('Prepare', tid), from_=coord):
+    def receive(msg=('Prepare', tid), from_=coord):
         if prepared(tid):
             output("ready:" + str(tid))
             send(('Vote', 'ready', tid, self.id), to=coord)
@@ -37,11 +37,11 @@ class Cohort(process):
             output("failed:"  + str(tid))
             send(('Vote', 'abort', tid, self.id), to=coord)
 
-    def recv(msg=('Commit', tid), from_=fro):
+    def receive(msg=('Commit', tid), from_=fro):
         send(('Done', tid, self.id), to=fro)
         commit(tid)
 
-    def recv(msg=('Abort', tid)):
+    def receive(msg=('Abort', tid)):
         abort(tid)
 
     def prepared(tid):

@@ -31,12 +31,12 @@ class P(process):
             send(('Release', reqc), to=ps)
             output("timed out!")
 
-    def recv(msg=('Request', reqts), from_=source):
+    def receive(msg=('Request', reqts), from_=source):
         """When receiving requests from others, enque and reply"""
         q.add((reqts, source))
         send(('Reply', logical_clock()), to=source)
 
-    def recv(msg=('Release', time), from_=source):
+    def receive(msg=('Release', time), from_=source):
         """When receiving release from others, deque"""
         if ((time, source) in q):
             q.remove((time, source))

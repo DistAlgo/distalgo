@@ -22,11 +22,11 @@ class P(process):
             p = Q.pop()
             send(('token', Q, LN), to=p)
 
-    def recv(msg=('token', Q1, LN1)):
+    def receive(msg=('token', Q1, LN1)):
         Q = Q1
         LN = LN1
 
-    def recv(msg=('request', p, n)):
+    def receive(msg=('request', p, n)):
         RN[p] = max((RN[p], n))
         if (haveToken() and RN[p] == LN[p] + 1):
             send(('token', Q, LN), to=p)

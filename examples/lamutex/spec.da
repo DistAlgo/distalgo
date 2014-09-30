@@ -16,7 +16,7 @@ class P(process):
         -- release
         send(('release', logical_clock(), self.id), to= s)
 
-    def recv(msg=('request', _, p)):
+    def receive(msg=('request', _, p)):
         send(('ack', logical_clock(), self.id), to= p)
 
     def main():

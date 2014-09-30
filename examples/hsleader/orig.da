@@ -22,7 +22,7 @@ class P(process):
                 output("Leader is " + str(leader))
                 break
 
-    def recv(msg=('Token', v, direction, h), from_=source):
+    def receive(msg=('Token', v, direction, h), from_=source):
         if source == left and direction == 'out':
             if v > self.id and h > 1:
                 send(('Token', v, 'out', h-1), to=right)
@@ -51,7 +51,7 @@ class P(process):
             elif v == self.id:
                 phase_right = True
 
-    def recv(msg=('Leader', leader), from_=source):
+    def receive(msg=('Leader', leader), from_=source):
         if source == left:
             send(('Leader', leader), to=right)
         else:

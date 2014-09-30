@@ -44,13 +44,13 @@ class Acceptor(process):
             elif each(p in proposers, has=received(('Done',), from_=p)):
                 break
 
-    def recv(msg=('Prepare', n, p)):
+    def receive(msg=('Prepare', n, p)):
         if n > maxpromised():
             vn, vv = max(setof((vpn, vv), sent(('TwoAv', vpn, vv, self.id))) |
                          {((-1, self.id), None)})
             send(('Promise', n, vn, vv, self.id), to=peers)
 
-    def recv(msg=('OneC', n, v, p)):
+    def receive(msg=('OneC', n, v, p)):
         if (n >= maxpromised() and islegal(n, v) and
                 (not some(sent(('TwoAv', _n, _, self.id))))):
             send(('TwoAv', n, v, self.id), to=peers)

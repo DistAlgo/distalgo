@@ -17,7 +17,7 @@ class P(process):
                       has=some(received(('request', c, p)),
                                has=((c, p) >= (ownc, self.id)))))
 
-    def recv(msg=('request', c, p)):
+    def receive(msg=('request', c, p)):
         if each(received(('request', _c, self.id)), has=((c, p) < (ownc, self.id))):
             send(('ack', logical_clock(), self.id), to=p)
 

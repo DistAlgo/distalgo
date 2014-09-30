@@ -20,7 +20,7 @@ class P(process):
           x = max(listof(v, v in V, has=V[v]))
           output("x = %r" % (x))
 
-    def recv(msg=('Value', v)):
+    def receive(msg=('Value', v)):
        receiveflag = True
        if v not in V:
              V[v] = False

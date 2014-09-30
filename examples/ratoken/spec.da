@@ -21,10 +21,10 @@ class P (process):
                 send(('access', token), to=p)
                 break
 
-    def recv(msg=('access', newtok)):
+    def receive(msg=('access', newtok)):
         token = newtok
 
-    def recv(msg=('request', c, p)):
+    def receive(msg=('request', c, p)):
         if request_pending(p) and token_present():
             send(('access', token), to=p)
 
