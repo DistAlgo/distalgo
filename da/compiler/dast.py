@@ -2089,39 +2089,36 @@ class Event(DistNode):
 
     @property
     def ordered_boundvars(self):
-        if self.pattern is not None:
-            result = self.pattern.ordered_boundvars
-        else:
-            result = []
-        for vs in chain(self.sources, self.destinations, self.timestamps):
-            result += vs.ordered_boundvars
-        return result
+        return list(chain(*[p.ordered_boundvars for p in
+                            chain([self.pattern], self.sources,
+                                  self.destinations, self.timestamps)
+                            if p is not None]))
 
     @property
     def boundvars(self):
         return set(self.ordered_boundvars)
 
     @property
-    def ordered_nameobjs(self):
-        return self.ordered_boundvars
-
-    @property
-    def nameobjs(self):
-        return chain(self.ordered_boundvars, self.ordered_freevars)
-
-    @property
     def ordered_freevars(self):
-        if self.pattern is not None:
-            result = self.pattern.ordered_freevars
-        else:
-            result = []
-        for vs in chain(self.sources, self.destinations, self.timestamps):
-            result += vs.ordered_freevars
-        return result
+        return list(chain(*[p.ordered_freevars for p in
+                            chain([self.pattern], self.sources,
+                                  self.destinations, self.timestamps)
+                            if p is not None]))
 
     @property
     def freevars(self):
         return set(self.ordered_freevars)
+
+    @property
+    def ordered_nameobjs(self):
+        return list(chain(*[p.ordered_nameobjs for p in
+                            chain([self.pattern], self.sources,
+                                  self.destinations, self.timestamps)
+                            if p is not None]))
+
+    @property
+    def nameobjs(self):
+        return set(ordered_nameobjs)
 
     def match(self, target):
         if target is None:
