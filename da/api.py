@@ -113,9 +113,10 @@ def import_da(name, from_dir=None, compiler_args=[]):
         pymode = None
 
     GlobalOptions = common.global_options()
+    force_recompile = GlobalOptions.recompile \
+                      if GlobalOptions is not None else False
     if (pymode is None or
-            pymode[stat.ST_MTIME] < mode[stat.ST_MTIME] or
-            GlobalOptions.recompile):
+            pymode[stat.ST_MTIME] < mode[stat.ST_MTIME] or force_recompile):
         oldargv = sys.argv
         try:
             argv = oldargv[0:0] + compiler_args + [fullpath]
