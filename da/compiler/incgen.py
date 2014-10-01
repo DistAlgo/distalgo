@@ -163,8 +163,7 @@ def {1}({0}):
     return {0}
     """ if not jbstyle else """
 def {1}({0}):
-    global {0}
-    {0} = {0}
+    globals()['{0}'] = {0}
     return {0}
 """
     src = blueprint.format(varname, funname)
@@ -187,14 +186,12 @@ def gen_init_event_stub(event, jbstyle=False):
 
     blueprint = """
 def {0}():
-    global {1}
-    {1} = set()
-    return {1}
+    globals()['{1}'] = set()
+    return globals()['{1}']
 """ if not jbstyle else """
 def {0}():
-    global {1}
-    {1} = runtimelib.Set()
-    return {1}
+    globals()['{1}'] = runtimelib.Set()
+    return globals()['{1}']
 """
 
     src = blueprint.format(INIT_STUB_FORMAT % event.name, event.name)
