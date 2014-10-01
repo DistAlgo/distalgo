@@ -163,7 +163,8 @@ def {1}({0}):
     return {0}
     """ if not jbstyle else """
 def {1}({0}):
-    globals()['{0}'] = {0}
+    global {0}
+    {0} = {0}
     return {0}
 """
     src = blueprint.format(varname, funname)
@@ -186,12 +187,14 @@ def gen_init_event_stub(event, jbstyle=False):
 
     blueprint = """
 def {0}():
-    globals()['{1}'] = set()
-    return globals()['{1}']
+    global {1}
+    {1} = set()
+    return {1}
 """ if not jbstyle else """
 def {0}():
-    globals()['{1}'] = runtimelib.Set()
-    return globals()['{1}']
+    global {1}
+    {1} = runtimelib.Set()
+    return {1}
 """
 
     src = blueprint.format(INIT_STUB_FORMAT % event.name, event.name)
@@ -511,7 +514,7 @@ class IncInterfaceGenerator(PythonGenerator):
             if node.attr == 'id':
                 return pyName(SELF_ID_NAME)
             else:
-                return parse(GLOBAL_READ.format(node.attr)).body[0].value
+                return pyName(node.attr)
         else:
             return super().visit_AttributeExpr(node)
 
