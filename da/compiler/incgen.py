@@ -141,10 +141,13 @@ import da
 ReceivedEvent = da.pat.ReceivedEvent
 SentEvent = da.pat.SentEvent
 {0} = None
-def init(procid):
+def init(procobj):
     global {0}
-    {0} = procid
+    {0} = procobj.id
 """.format(SELF_ID_NAME)
+
+GLOBAL_READ = "globals()['{0}']"
+GLOBAL_WRITE = "globals()['{0}'] = {1}"
 
 def gen_assign_stub(funname, varname, jbstyle=False):
     """Generate assignment stub for 'varname'."""
@@ -503,8 +506,14 @@ class IncInterfaceGenerator(PythonGenerator):
     def visit_NamedVar(self, node):
         return pyName(node.name)
 
-    def visit_SelfExpr(self, node):
-        return pyName(SELF_ID_NAME)
+    def visit_AttributeExpr(self, node):
+        if isinstance(node.value, dast.SelfExpr):
+            if node.attr == 'id':
+                return pyName(SELF_ID_NAME)
+            else:
+                return parse(GLOBAL_READ.format(node.attr)).body[0].value
+        else:
+            return super().visit_AttributeExpr(node)
 
     def visit_FreePattern(self, node):
         conds = []
