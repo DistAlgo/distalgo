@@ -902,7 +902,7 @@ class PythonGenerator(NodeVisitor):
 
     def visit_DeleteStmt(self, node):
         targets = [self.visit(tgt) for tgt in node.targets]
-        ast = Delete(tgt)
+        ast = Delete(targets)
         return concat_bodies(targets, [ast])
 
     def visit_YieldStmt(self, node):
