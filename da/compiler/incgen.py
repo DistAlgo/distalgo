@@ -22,11 +22,13 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+import io
 import sys
+from tools.unparse import Unparser
+
 from ast import *
 from . import dast
 from .pygen import *
-from .pypr import to_source
 from .utils import printd, printw
 
 INC_MODULE_VAR = "IncModule"
@@ -56,6 +58,11 @@ ModuleFilename = ""
 
 ##########
 # Auxiliary methods:
+
+def to_source(tree):
+    textbuf = io.StringIO(newline='')
+    Unparser(tree, textbuf)
+    return textbuf.getvalue()
 
 def iprintd(message):
     printd(message, filename=ModuleFilename)
@@ -173,7 +180,7 @@ def gen_reset_stub(process, events, jbstyle=False):
     """Generate the event reset stub."""
 
     args = [evt.name for evt in process.events if evt in events]
-    body = [pyCall(func=pyAttr(evt.name, "clear"))
+    body = [Expr(pyCall(func=pyAttr(evt.name, "clear")))
             for evt in process.events if evt in events]
     if len(body) > 0:
         return [pyFunctionDef(name=RESET_STUB_FORMAT % process.name,
@@ -258,7 +265,7 @@ def gen_inc_module(daast, cmdline_args=dict(), filename=""):
                            kw_defaults=[]),
             decorator_list=[],
             returns=None,
-            body=[Expr(Str(to_source(query.ast, single_line=True))),
+            body=[Expr(Str(to_source(query.ast))),
                   Return(incqu)])
         qrycall = pyCall(
             func=pyAttr(INC_MODULE_VAR, qname),
@@ -332,7 +339,7 @@ def gen_inc_module(daast, cmdline_args=dict(), filename=""):
                     decorator_list=[],
                     returns=None,
                     # Don't add the 'return' for jbstyle:
-                    body=[astval if jbstyle else Return(astval)])
+                    body=[Expr(astval) if jbstyle else Return(astval)])
                 updcall = pyCall(
                     func=pyAttr(INC_MODULE_VAR, uname),
                     args=[],
@@ -346,9 +353,9 @@ def gen_inc_module(daast, cmdline_args=dict(), filename=""):
         aname = ASSIGN_STUB_FORMAT % event.name
         updfun = pyFunctionDef(name=uname,
                                args=[event.name, "element"],
-                               body=[pyCall(
+                               body=[Expr(pyCall(
                                    func=pyAttr(event.name, "add"),
-                                   args=[pyName("element")])])
+                                   args=[pyName("element")]))])
         module.body.append(gen_assign_stub(aname, event.name, jbstyle))
         module.body.append(gen_init_event_stub(event, jbstyle))
         module.body.append(updfun)
@@ -360,9 +367,9 @@ def gen_inc_module(daast, cmdline_args=dict(), filename=""):
         if not hasattr(setup_body[0], "prebody"):
             setup_body[0].prebody = []
         setup_body[0].prebody.insert(
-            0, pyCall(
+            0, Expr(pyCall(
                 func=pyAttr(INC_MODULE_VAR, "init"),
-                args=[pyName("self")]))
+                args=[pyName("self")])))
 
     # Generate the main python file:
     pyast = StubcallGenerator(all_events).visit(daast)
@@ -399,14 +406,15 @@ class StubcallGenerator(PythonGenerator):
     def visit_ResetStmt(self, node):
         proc = node.first_parent_of_type(dast.Process)
         # Call the inc reset stub for all events used in queries:
-        stmts = [pyCall(func=pyAttr(INC_MODULE_VAR,
-                                    RESET_STUB_FORMAT % proc.name),
-                        args=[pyAttr("self", evt.name)
-                              for evt in proc.events
-                              if evt.record_history
-                              if evt in self.events])]
+        stmts = [Expr(pyCall(func=pyAttr(INC_MODULE_VAR,
+                                         RESET_STUB_FORMAT % proc.name),
+                             args=[pyAttr("self", evt.name)
+                                   for evt in proc.events
+                                   if evt.record_history
+                                   if evt in self.events]))]
         # Clear all remaining events:
-        stmts.extend([pyCall(func=pyAttr(pyAttr("self", evt.name), "clear"))
+        stmts.extend([Expr(pyCall(func=pyAttr(pyAttr("self", evt.name),
+                                              "clear")))
                       for evt in proc.events
                       if evt.record_history if evt not in self.events])
         return stmts

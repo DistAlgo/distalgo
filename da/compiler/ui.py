@@ -26,9 +26,10 @@ import ast
 import sys
 import argparse
 
+from tools.unparse import Unparser
+
 from .parser import Parser
 from .pygen import PythonGenerator
-from .pypr import to_source
 from .pseudo import to_pseudo
 from .incgen import gen_inc_module
 from .utils import is_valid_debug_level, set_debug_level
@@ -129,11 +130,10 @@ def dafile_to_pyfile(args):
 
     pyast = dafile_to_pyast(filename, args)
     if pyast is not None:
-        pystr = to_source(pyast)
         if outname is None:
             outname = purename + ".py"
         with open(outname, "w") as outfd:
-            outfd.write(pystr)
+            Unparser(pyast, outfd)
             stderr.write("Written compiled file %s.\n"% outname)
         return 0
     else:
@@ -180,15 +180,13 @@ def dafile_to_incfiles(args):
     if daast is not None:
         inc, ast = gen_inc_module(daast, args.__dict__,
                                   filename=module_filename)
-        incstr = to_source(inc)
-        aststr = to_source(ast)
         if outname is None:
             outname = purename + ".py"
         with open(outname, "w") as outfd:
-            outfd.write(aststr)
+            Unparser(ast, outfd)
             stderr.write("Written compiled file %s.\n"% outname)
         with open(module_filename, "w") as outfd:
-            outfd.write(incstr)
+            Unparser(inc, outfd)
             stderr.write("Written interface file %s.\n" % module_filename)
         return 0
     else:

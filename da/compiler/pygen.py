@@ -151,9 +151,9 @@ def pyLabel(name, block=False, timeout=None):
     kws = [("block", pyTrue() if block else pyFalse())]
     if timeout is not None:
         kws.append(("timeout", timeout))
-    return pyCall(func=pyAttr(pyCall("super"), "_label"),
-                  args=[Str(name)],
-                  keywords=kws)
+    return Expr(pyCall(func=pyAttr(pyCall("super"), "_label"),
+                       args=[Str(name)],
+                       keywords=kws))
 
 def pyClassDef(name, bases=[], keywords=[], starargs=None,
                kwargs=None, body=[], decorator_list=[]):
@@ -333,9 +333,9 @@ class PythonGenerator(NodeVisitor):
                                              "__init__"),
                                  args=[pyName(n) for n in PROC_INITARGS]))]
         histories = self.history_initializers(node)
-        events = [pyCall(func=pyAttr(pyAttr("self", "_events"), "extend"),
-                         args=[pyList([self.generate_event_def(evt)
-                                       for evt in node.events])])]
+        events = [Expr(pyCall(func=pyAttr(pyAttr("self", "_events"), "extend"),
+                              args=[pyList([self.generate_event_def(evt)
+                              for evt in node.events])]))]
         return pyFunctionDef(name="__init__",
                              args=(["self"] + PROC_INITARGS),
                              body=(supercall + histories + events))
@@ -845,7 +845,7 @@ class PythonGenerator(NodeVisitor):
                           body, [])
         main = [Assign([pyName(node.unique_label)], Num(0))]
         if node.timeout is not None:
-            main.append(pyCall(pyAttr("self", "_timer_start")))
+            main.append(Expr(pyCall(pyAttr("self", "_timer_start"))))
         main.append(whilenode)
         if node.is_in_loop:
             whilenode.orelse = [If(pyCompare(pyName(node.unique_label),
@@ -966,16 +966,16 @@ class PythonGenerator(NodeVisitor):
     def visit_SendStmt(self, node):
         mesg = self.visit(node.message)
         tgt = self.visit(node.target)
-        ast = pyCall(func=pyAttr("self", "_send"),
-                     args=[mesg, tgt])
-        return concat_bodies(ast.args, [ast])
+        ast = Expr(pyCall(func=pyAttr("self", "_send"),
+                          args=[mesg, tgt]))
+        return concat_bodies([mesg, tgt], [ast])
 
     def visit_OutputStmt(self, node):
         args = [self.visit(node.message)]
         if node.level is not None:
             args.append(self.visit(node.level))
-        ast = pyCall(func=pyAttr("self", "output"), args=args)
-        return concat_bodies(ast.args, [ast])
+        ast = Expr(pyCall(func=pyAttr("self", "output"), args=args))
+        return concat_bodies(args, [ast])
 
     def visit_ResetStmt(self, node):
         blueprint = """
