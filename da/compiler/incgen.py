@@ -54,7 +54,10 @@ NegatedOperatorMap = {
     dast.NotInOp : In
 }
 
+Options = None                  # Command line options
 ModuleFilename = ""
+
+Counter = 0                     # For unique names
 
 ##########
 # Auxiliary methods:
@@ -142,6 +145,18 @@ def is_all_wildcards(targets):
             return False
     return True
 
+def mangle_name(nameobj):
+    namelist = []
+    scope = nameobj.scope
+    proc = scope.immediate_container_of_type(dast.Process)
+    if proc is not None:
+        namelist.append(proc.name)
+        namelist.append('_')
+    if scope is not proc and hasattr(scope, 'name'):
+        namelist.append(scope.name)
+        namelist.append('_')
+    namelist.append(nameobj.name)
+    return ''.join(namelist)
 
 PREAMBLE = """
 import da
@@ -156,10 +171,41 @@ def init(procobj):
 GLOBAL_READ = "globals()['{0}']"
 GLOBAL_WRITE = "globals()['{0}'] = {1}"
 
-def gen_assign_stub(funname, varname, jbstyle=False):
-    """Generate assignment stub for 'varname'."""
+def gen_update_stub(nameobj, updnode):
+    """Generate update stub and call node for 'nameobj'."""
 
-    blueprint = """
+    global Counter
+    vname = mangle_name(nameobj)
+    uname = UPDATE_STUB_FORMAT % (vname, Counter)
+    Counter += 1
+
+    params = [nobj for nobj in updnode.nameobjs
+              if updnode.is_child_of(nobj.scope)]
+    astval = IncInterfaceGenerator(params).visit(updnode)
+    updfun = FunctionDef(name=uname,
+                         args=arguments(
+                             args=([arg(mangle_name(nobj), None)
+                                    for nobj in params]),
+                             vararg=None,
+                             kwonlyargs=[],
+                             kw_defaults=[],
+                             kwarg=None,
+                             defaults=[]),
+                         decorator_list=[],
+                         returns=None,
+                         # Don't add the 'return' for jbstyle:
+                         body=[Expr(astval) if Options.jbstyle
+                               else Return(astval)])
+    updcall = pyCall(
+        func=pyAttr(INC_MODULE_VAR, uname),
+        args=[],
+        keywords=[(mangle_name(arg), PythonGenerator().visit(arg)) for arg in params])
+    return updfun, updcall
+
+def gen_assign_stub(nameobj, stub_only=False):
+    """Generate assignment stub and call node for 'nameobj'."""
+
+    stub = """
 def {1}({0}):
     if type({0}) is set:
         res = set()
@@ -168,15 +214,24 @@ def {1}({0}):
         {0} = res
     {0} = {0}
     return {0}
-    """ if not jbstyle else """
+    """ if not Options.jbstyle else """
 def {1}({0}):
     globals()['{0}'] = {0}
     return {0}
 """
-    src = blueprint.format(varname, funname)
-    return parse(src).body[0]
+    vname = mangle_name(nameobj)
+    fname = ASSIGN_STUB_FORMAT % mangle_name(nameobj)
+    stubast = parse(stub.format(vname, fname)).body[0]
+    if stub_only:
+        return stubast
+    else:
+        vnode = PythonGenerator().visit(nameobj)
+        stubcallast = Assign(targets=[vnode],
+                             value=pyCall(func=pyAttr(INC_MODULE_VAR, fname),
+                                          keywords=[(vname, vnode)]))
+        return stubast, stubcallast
 
-def gen_reset_stub(process, events, jbstyle=False):
+def gen_reset_stub(process, events):
     """Generate the event reset stub."""
 
     args = [evt.name for evt in process.events if evt in events]
@@ -188,14 +243,14 @@ def gen_reset_stub(process, events, jbstyle=False):
     else:
         return []
 
-def gen_init_event_stub(event, jbstyle=False):
+def gen_init_event_stub(event):
     """Generate the event init stub."""
 
     blueprint = """
 def {0}():
     globals()['{1}'] = set()
     return globals()['{1}']
-""" if not jbstyle else """
+""" if not Options.jbstyle else """
 def {0}():
     globals()['{1}'] = runtimelib.Set()
     return globals()['{1}']
@@ -204,15 +259,19 @@ def {0}():
     src = blueprint.format(INIT_STUB_FORMAT % event.name, event.name)
     return parse(src).body[0]
 
-def gen_inc_module(daast, cmdline_args=dict(), filename=""):
+def gen_inc_module(daast, cmdline_args, filename=""):
     """Generates the interface file from a DistPy AST."""
 
-    global ModuleFilename
-    ModuleFilename = filename
     assert isinstance(daast, dast.Program)
-    jbstyle = cmdline_args['jbstyle'] if 'jbstyle' in cmdline_args else False
+
+    global Options
+    global ModuleFilename
+    global Counter
+    Options = cmdline_args
+    ModuleFilename = filename
+
     module = parse(PREAMBLE)
-    if jbstyle:
+    if Options.jbstyle:
         # Additional import for jbstyle
         module.body.insert(0, parse("import runtimelib").body[0])
     quex = QueryExtractor()
@@ -222,11 +281,10 @@ def gen_inc_module(daast, cmdline_args=dict(), filename=""):
     all_params = []
     all_events = []        # Events have to be handled separately
     # Use the IncInterfaceGenerator for the inc module:
-    iig = IncInterfaceGenerator(**cmdline_args)
-    pg = PythonGenerator()
+    iig = IncInterfaceGenerator()
 
     # Generate query stubs:
-    for idx, query in enumerate(quex.queries):
+    for query in quex.queries:
         assert isinstance(query, dast.Expression)
         iprintd("Processing %r" % query)
         evtex = EventExtractor()
@@ -234,7 +292,8 @@ def gen_inc_module(daast, cmdline_args=dict(), filename=""):
         events = evtex.events
         all_events.extend(events)
 
-        qname = QUERY_STUB_FORMAT % idx
+        qname = QUERY_STUB_FORMAT % Counter
+        Counter += 1
         params = []
         for nobj in query.ordered_nameobjs:
             if query.is_child_of(nobj.scope):
@@ -270,7 +329,7 @@ def gen_inc_module(daast, cmdline_args=dict(), filename=""):
         qrycall = pyCall(
             func=pyAttr(INC_MODULE_VAR, qname),
             args=[],
-            keywords=([(arg.name, pg.visit(arg)) for arg in params] +
+            keywords=([(arg.name, PythonGenerator().visit(arg)) for arg in params] +
                       [(evt.name, pyAttr("self", evt.name)) for evt in events]))
         module.body.append(qrydef)
         query.ast_override = qrycall
@@ -278,13 +337,8 @@ def gen_inc_module(daast, cmdline_args=dict(), filename=""):
     # Generate assignments and updates:
     for vobj in all_params:
         # We only need one assignment stub per variable:
-        aname = ASSIGN_STUB_FORMAT % vobj.name
-        module.body.append(gen_assign_stub(aname, vobj.name, jbstyle))
-        pg.reset()
-        asscall = Assign(targets=[pg.visit(vobj)],
-                         value=pyCall(
-                             func=pyAttr(INC_MODULE_VAR, aname),
-                             keywords=[(vobj.name, pg.visit(vobj))]))
+        stub, stubcall = gen_assign_stub(vobj)
+        module.body.append(stub)
 
         # Inject call to stub at all assignment points:
         for node, ctx in vobj.assignments:
@@ -298,16 +352,15 @@ def gen_inc_module(daast, cmdline_args=dict(), filename=""):
                 if not hasattr(body[0], "prebody"):
                     body[0].prebody = []
                 assert len(body) > 0
-                body[0].prebody.insert(0, asscall)
+                body[0].prebody.insert(0, stubcall)
             elif not (isinstance(node.parent, dast.Program) or
                       (isinstance(node, dast.Function) and
                        isinstance(node.parent, dast.Process))):
                 # This is a normal assignment
                 if not hasattr(node, "postbody"):
                     node.postbody = []
-                node.postbody.append(asscall)
+                node.postbody.append(stubcall)
 
-        idx = 0
         for node, attr, attrtype in vobj.updates:
             node = node.last_parent_of_type(dast.Expression)
             for query in quex.queries:
@@ -320,30 +373,7 @@ def gen_inc_module(daast, cmdline_args=dict(), filename=""):
                            (query, node))
                     break
             else:
-                uname = UPDATE_STUB_FORMAT % (vobj.name, idx)
-                idx += 1
-                iig.reset()
-                iprintd(str([(n, n.scope) for n in node.nameobjs]))
-                params = [nobj for nobj in node.nameobjs
-                          if node.is_child_of(nobj.scope)]
-                astval = iig.visit(node)
-                updfun = FunctionDef(
-                    name=uname,
-                    args=arguments(
-                        args=([arg(nobj.name, None) for nobj in params]),
-                        vararg=None,
-                        kwonlyargs=[],
-                        kw_defaults=[],
-                        kwarg=None,
-                        defaults=[]),
-                    decorator_list=[],
-                    returns=None,
-                    # Don't add the 'return' for jbstyle:
-                    body=[Expr(astval) if jbstyle else Return(astval)])
-                updcall = pyCall(
-                    func=pyAttr(INC_MODULE_VAR, uname),
-                    args=[],
-                    keywords=[(arg.name, pg.visit(arg)) for arg in params])
+                updfun, updcall = gen_update_stub(vobj, node)
                 module.body.append(updfun)
                 node.ast_override = updcall
 
@@ -356,8 +386,8 @@ def gen_inc_module(daast, cmdline_args=dict(), filename=""):
                                body=[Expr(pyCall(
                                    func=pyAttr(event.name, "add"),
                                    args=[pyName("element")]))])
-        module.body.append(gen_assign_stub(aname, event.name, jbstyle))
-        module.body.append(gen_init_event_stub(event, jbstyle))
+        module.body.append(gen_assign_stub(event, stub_only=True))
+        module.body.append(gen_init_event_stub(event))
         module.body.append(updfun)
 
     # Inject calls to stub init for each process:
@@ -476,21 +506,13 @@ class IncInterfaceGenerator(PythonGenerator):
 
     """
 
-    def __init__(self, **args):
+    def __init__(self, mangle_names=None, last_freevars=None):
         super().__init__()
-        self.notable4 = args['notable4'] if 'notable4' in args else False
-        self.notable3 = args['notable3'] if 'notable3' in args else False
-        self.notable2 = args['notable2'] if 'notable2' in args else False
-        self.notable1 = args['notable1'] if 'notable1' in args else False
-        self.noalltables = args['noalltables'] \
-                           if 'noalltables' in args else False
-        self.jbstyle = args['jbstyle'] if 'jbstyle' in args else False
-        # For unique names:
-        self.counter = 0
+        self.mangle_names = mangle_names if mangle_names is not None else set()
         # Set of free vars seens so far in this pattern.
         # This is needed so free vars with the same name in the pattern can be
         # properly unified:
-        self.freevars = set()
+        self.freevars = set() if last_freevars is None else last_freevars
 
     def reset_pattern_state(self):
         """Resets pattern related parser states.
@@ -506,13 +528,16 @@ class IncInterfaceGenerator(PythonGenerator):
 
     def jb_tuple_optimize(self, elt):
         """Eliminate single element tuples for jbstyle."""
-        if self.jbstyle:
+        if Options.jbstyle:
             if type(elt) is Tuple and len(elt.elts) == 1:
                 elt = elt.elts[0]
         return elt
 
     def visit_NamedVar(self, node):
-        return pyName(node.name)
+        if node in self.mangle_names:
+            return pyName(mangle_name(node))
+        else:
+            return pyName(node.name)
 
     def visit_AttributeExpr(self, node):
         if isinstance(node.value, dast.SelfExpr):
@@ -528,28 +553,25 @@ class IncInterfaceGenerator(PythonGenerator):
         if node.value is None:
             target = pyName("_")
         elif node.value in self.freevars:
-            target = pyName("_Free_" + str(self.counter))
+            target = pyName(node.unique_name)
             conds = [pyCompare(target, Eq, pyName(node.value.name))]
         else:
             target = pyName(node.value.name)
             self.freevars.add(node.value)
-        self.counter += 1
         return target, conds
 
     def visit_BoundPattern(self, node):
-        boundname = pyName("_Bound_" + str(self.counter))
+        boundname = pyName(node.unique_name)
         if isinstance(node.value, dast.NamedVar):
             targetname = pyName(node.value.name)
         else:
             targetname = self.visit(node.value)
         conast = pyCompare(boundname, Eq, targetname)
-        self.counter += 1
         return boundname, [conast]
 
     def visit_ConstantPattern(self, node):
-        target = pyName("_Constant_" + str(self.counter))
+        target = pyName(node.unique_name)
         compval = self.visit(node.value)
-        self.counter += 1
         return target, [pyCompare(target, Eq, compval)]
 
     def visit_TuplePattern(self, node):
@@ -562,9 +584,8 @@ class IncInterfaceGenerator(PythonGenerator):
         if is_all_wildcards(targets):
             # Optimization: combine into one '_'
             return pyName('_'), []
-        self.counter += 1
         target = pyTuple(targets)
-        if self.jbstyle:
+        if Options.jbstyle:
             # XXX: Hack!
             if len(targets) == 1:
                 target = targets[0]
@@ -591,7 +612,7 @@ class IncInterfaceGenerator(PythonGenerator):
             right = self.visit(node.right)
             gen = comprehension(target, right, conds)
             elem = self.jb_tuple_optimize(pyTuple(node.left.ordered_freevars))
-            ast = pySize(ListComp(elem, [gen])) if not self.jbstyle \
+            ast = pySize(ListComp(elem, [gen])) if not Options.jbstyle \
                   else pySize(SetComp(elem, [gen]))
             return ast
         else:
@@ -684,22 +705,22 @@ class IncInterfaceGenerator(PythonGenerator):
     def visit_QuantifiedExpr(self, node):
         assert node.predicate is not None
 
-        if not (self.notable4 or self.noalltables):
+        if not (Options.notable4 or Options.noalltables):
             iprintd("Trying table4...")
             res = self.do_table4_transformation(node)
             if res is not None:
                 return res
-        if not (self.notable3 or self.noalltables):
+        if not (Options.notable3 or Options.noalltables):
             iprintd("Trying table3...")
             res = self.do_table3_transformation(node)
             if res is not None:
                 return res
-        if not (self.notable2 or self.noalltables):
+        if not (Options.notable2 or Options.noalltables):
             iprintd("Trying table2...")
             res = self.do_table2_transformation(node)
             if res is not None:
                 return res
-        if not (self.notable1 or self.noalltables):
+        if not (Options.notable1 or Options.noalltables):
             iprintd("Trying table1...")
             res = self.do_table1_transformation(node)
             if res is not None:
@@ -905,7 +926,7 @@ class IncInterfaceGenerator(PythonGenerator):
         else:
             pyx = self.jb_tuple_optimize(pyx)
             s = SetComp(pyx, generators)
-            if self.jbstyle:
+            if Options.jbstyle:
                 # jbstyle can not handle generator expressions:
                 sp = s
             else:

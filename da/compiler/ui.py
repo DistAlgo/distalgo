@@ -178,8 +178,7 @@ def dafile_to_incfiles(args):
     module_name = purename + "_inc"
     module_filename = module_name + ".py"
     if daast is not None:
-        inc, ast = gen_inc_module(daast, args.__dict__,
-                                  filename=module_filename)
+        inc, ast = gen_inc_module(daast, args, filename=module_filename)
         if outname is None:
             outname = purename + ".py"
         with open(outname, "w") as outfd:
@@ -232,27 +231,27 @@ def main(argv=None):
     ap.add_argument('--no-table1',
                     help="Disable table 1 quantification transformations. "
                     "Only used when '-i' is enabled.",
-                    action='store_true', dest="notable1")
+                    action='store_true', dest="notable1", default=False)
     ap.add_argument('--no-table2',
                     help="Disable table 2 quantification transformations. "
                     "Only used when '-i' is enabled.",
-                    action='store_true', dest="notable2")
+                    action='store_true', dest="notable2", default=False)
     ap.add_argument('--no-table3',
                     help="Disable table 3 quantification transformations. "
                     "Only used when '-i' is enabled.",
-                    action='store_true', dest="notable3")
+                    action='store_true', dest="notable3", default=False)
     ap.add_argument('--no-table4',
                     help="Disable table 4 quantification transformations. "
                     "Only used when '-i' is enabled.",
-                    action='store_true', dest="notable4")
+                    action='store_true', dest="notable4", default=False)
     ap.add_argument('--jb-style',
                     help="Generate Jon-friendly quantification transformations. "
                     "Only useful with '-i'.",
-                    action='store_true', dest="jbstyle")
+                    action='store_true', dest="jbstyle", default=False)
     ap.add_argument('--no-all-tables',
                     help="Disable all quantification transformations. "
                     "Only useful with '-i'.",
-                    action='store_true', dest="noalltables")
+                    action='store_true', dest="noalltables", default=False)
     # ap.add_argument('--psdfile', help="Name of output pseudo code file.",
     #                 dest="psdfile", default=None)
     ap.add_argument('infile', metavar='SOURCEFILE', type=str,
