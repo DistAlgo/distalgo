@@ -25,7 +25,7 @@ class P(process):
             send(('Release', reqc), to=ps)
             output("release cs")
 
-        elif timeout(None):
+        elif timeout(timemax):
             --release
             q.remove((reqc, self.id))
             send(('Release', reqc), to=ps)
