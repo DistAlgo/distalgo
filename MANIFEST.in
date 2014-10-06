@@ -1,6 +1,5 @@
 include bin/*
 include doc/*
-include tools/*
 include README.md
 include setup.py
 include LICENSE
