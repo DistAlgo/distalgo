@@ -59,6 +59,8 @@ KW_SEND = "send"
 KW_SEND_TO = "to"
 KW_BROADCAST = "bcast"
 KW_PRINT = "output"
+KW_LEVEL = "level"
+KW_SEP= "sep"
 KW_SELF = "self"
 KW_TRUE = "True"
 KW_FALSE = "False"
@@ -876,7 +878,8 @@ class Parser(NodeVisitor):
                 node.func.id == name):
             return False
         errmsg = None
-        if len(node.args) >= minargs and len(node.args) <= maxargs:
+        if (minargs is None or len(node.args) >= minargs) and \
+           (maxargs is None or len(node.args) <= maxargs):
             if keywords is None:
                 return True
             for kw in node.keywords:
@@ -952,11 +955,15 @@ class Parser(NodeVisitor):
                 stmtobj.message = self.parse_message(e.args[0])
                 stmtobj.target = self.visit(e.keywords[0].value)
 
-            elif self.expr_check(KW_PRINT, 1, 2, e):
+            elif self.expr_check(KW_PRINT, 1, None, e,
+                                 optional_keywords={KW_LEVEL, KW_SEP}):
                 stmtobj = self.create_stmt(dast.OutputStmt, node)
-                stmtobj.message = self.visit(e.args[0])
-                if len(e.args) == 2:
-                    stmtobj.level = self.visit(e.args[1])
+                stmtobj.message = [self.visit(arg) for arg in e.args]
+                for kw in e.keywords:
+                    if kw.arg == KW_LEVEL:
+                        stmtobj.level = self.visit(kw.value)
+                    elif kw.arg == KW_SEP:
+                        stmtobj.separator = self.visit(kw.value)
 
             elif self.current_process is not None and \
                  self.expr_check(KW_RESET, 0, 1, e):

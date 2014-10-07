@@ -2044,6 +2044,7 @@ class OutputStmt(SimpleStmt):
         super().__init__(parent, ast)
         self.message = None
         self.level = None
+        self.separator = None
 
 class ResetStmt(SimpleStmt):
 

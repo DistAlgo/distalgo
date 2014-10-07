@@ -971,10 +971,14 @@ class PythonGenerator(NodeVisitor):
         return concat_bodies([mesg, tgt], [ast])
 
     def visit_OutputStmt(self, node):
-        args = [self.visit(node.message)]
+        args = [self.visit(msg) for msg in node.message]
+        keywords = []
         if node.level is not None:
-            args.append(self.visit(node.level))
-        ast = Expr(pyCall(func=pyAttr("self", "output"), args=args))
+            keywords.append(("level", self.visit(node.level)))
+        if node.separator is not None:
+            keywords.append(("sep", self.visit(node.separator)))
+        ast = Expr(pyCall(func=pyAttr("self", "output"),
+                          args=args, keywords=keywords))
         return concat_bodies(args, [ast])
 
     def visit_ResetStmt(self, node):

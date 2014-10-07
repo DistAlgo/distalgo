@@ -242,8 +242,8 @@ class DistProcess(multiprocessing.Process):
         raise SystemExit(10)
 
     @builtin
-    def output(self, message, level=logging.INFO):
-        """Prints message to the process log.
+    def output(self, *value, sep=' ', level=logging.INFO):
+        """Prints arguments to the process log.
 
         Optional argument 'level' is a positive integer that specifies the
         logging level of the message, defaults to 'logging.INFO'(20). Refer to
@@ -258,7 +258,8 @@ class DistProcess(multiprocessing.Process):
         controlled by command line parameters.
 
         """
-        self._log.log(level, message)
+        msg = sep.join([str(v) for v in value])
+        self._log.log(level, msg)
 
     @builtin
     def work(self):
