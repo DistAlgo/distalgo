@@ -27,6 +27,6 @@ def main():
     config(clock='Lamport')
     pong = new(Pong, [nrounds * npings], num= 1)
     ping = new(Ping, num= npings)
-    setup(ping, [pong, nrounds])
+    setup(ping, (pong, nrounds))
     start(pong)
     start(ping)

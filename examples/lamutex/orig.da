@@ -61,6 +61,6 @@ def main():
     config(channel="fifo", clock='Lamport')
     ps = new(P, num= nprocs)
     # setup the processes
-    for p in ps: setup(p, [ps-{p}, nrounds, timeout])
+    for p in ps: setup(p, (ps-{p}, nrounds, timeout))
     # start the processes
     start(ps)

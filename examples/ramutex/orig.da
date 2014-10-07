@@ -50,6 +50,6 @@ def main():
     config(clock='Lamport')
     ps = new(P, num= nprocs)
     # setup the processes
-    for p in ps: setup({p}, [ps-{p}, nrounds])
+    for p in ps: setup({p}, (ps-{p}, nrounds))
     # start the processes
     start(ps)
