@@ -48,7 +48,7 @@ class P(process):
         for i in range(n):
             cs(announce)
         --end
-        bcast(Done(), to=ps)
+        send(('Done',), to=ps)
         await(each(p in ps, has=received(('Done',), from_=p)))
         output("Terminating...")
 
