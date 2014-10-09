@@ -910,18 +910,18 @@ class Parser(NodeVisitor):
         return True
 
     def parse_message(self, node):
-        expr = dast.TupleExpr(self.current_parent, node)
         if type(node) is Call:
             assert type(node.func) is Name
+            expr = dast.TupleExpr(self.current_parent, node)
             elem = dast.ConstantExpr(self.current_parent, node.func)
             elem.value = node.func.id
             expr.subexprs.append(elem)
             elts = node.args
+            for elt in elts:
+                expr.subexprs.append(self.visit(elt))
+            return expr
         else:
-            elts = node.elts
-        for elt in elts:
-            expr.subexprs.append(self.visit(elt))
-        return expr
+            return self.visit(node)
 
     def visit_Expr(self, node):
         l = extract_label(node.value)
