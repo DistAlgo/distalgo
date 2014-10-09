@@ -146,6 +146,10 @@ def is_all_wildcards(targets):
     return True
 
 def mangle_name(nameobj):
+    if isinstance(nameobj, dast.Event):
+        # Event.name is already unique
+        return nameobj.name
+
     namelist = []
     scope = nameobj.scope
     proc = scope.immediate_container_of_type(dast.Process)
@@ -171,6 +175,44 @@ def init(procobj):
 GLOBAL_READ = "globals()['{0}']"
 GLOBAL_WRITE = "globals()['{0}'] = {1}"
 
+def gen_query_stub(query):
+    global Counter
+    assert isinstance(query, dast.Expression)
+    iprintd("Processing %r" % query)
+
+    qname = QUERY_STUB_FORMAT % Counter
+    Counter += 1
+    params = list(set(nobj for nobj in query.ordered_nameobjs
+                      if query.is_child_of(nobj.scope)
+                      if not nobj.is_assigned_in(query)))
+    evtex = EventExtractor()
+    evtex.visit(query)
+    events = list(evtex.events)
+    incqu = IncInterfaceGenerator(params).visit(query)
+    qrydef = FunctionDef(
+        name=qname,
+        args=arguments(args=([arg(mangle_name(nobj), None) for nobj in params] +
+                             [arg(evt.name, None) for evt in events]),
+                       vararg=None,
+                       varargannotation=None,
+                       kwonlyargs=[],
+                       kwarg=None,
+                       kwargannotation=None,
+                       defaults=[],
+                       kw_defaults=[]),
+        decorator_list=[],
+        returns=None,
+        body=[Expr(Str(to_source(query.ast))),
+              Return(incqu)])
+    qrycall = pyCall(
+        func=pyAttr(INC_MODULE_VAR, qname),
+        args=[],
+        keywords=([(mangle_name(arg), PythonGenerator().visit(arg))
+                   for arg in params] +
+                  [(evt.name, pyAttr("self", evt.name)) for evt in events]))
+
+    return qrydef, qrycall, params, events
+
 def gen_update_stub(nameobj, updnode):
     """Generate update stub and call node for 'nameobj'."""
 
@@ -181,7 +223,9 @@ def gen_update_stub(nameobj, updnode):
 
     params = [nobj for nobj in updnode.nameobjs
               if updnode.is_child_of(nobj.scope)]
-    astval = IncInterfaceGenerator(params).visit(updnode)
+    iprintd("".join(["*** params:"] +
+                    [mangle_name(p) for p in chain(params, [nameobj])]))
+    astval = IncInterfaceGenerator(params + [nameobj]).visit(updnode)
     updfun = FunctionDef(name=uname,
                          args=arguments(
                              args=([arg(mangle_name(nobj), None)
@@ -199,7 +243,8 @@ def gen_update_stub(nameobj, updnode):
     updcall = pyCall(
         func=pyAttr(INC_MODULE_VAR, uname),
         args=[],
-        keywords=[(mangle_name(arg), PythonGenerator().visit(arg)) for arg in params])
+        keywords=[(mangle_name(arg), PythonGenerator().visit(arg))
+                  for arg in params])
     return updfun, updcall
 
 def gen_assign_stub(nameobj, stub_only=False):
@@ -278,59 +323,14 @@ def gen_inc_module(daast, cmdline_args, filename=""):
     quex.visit(daast)
 
     # Generate the query functions and accumulate set of parameters:
-    all_params = []
-    all_events = []        # Events have to be handled separately
-    # Use the IncInterfaceGenerator for the inc module:
-    iig = IncInterfaceGenerator()
+    all_params = set()
+    all_events = set()        # Events have to be handled separately
 
     # Generate query stubs:
     for query in quex.queries:
-        assert isinstance(query, dast.Expression)
-        iprintd("Processing %r" % query)
-        evtex = EventExtractor()
-        evtex.visit(query)
-        events = evtex.events
-        all_events.extend(events)
-
-        qname = QUERY_STUB_FORMAT % Counter
-        Counter += 1
-        params = []
-        for nobj in query.ordered_nameobjs:
-            if query.is_child_of(nobj.scope):
-                # Ignore if this variable is assigned to inside the query
-                # (i.e. free var):
-                for place, ctx in nobj.assignments:
-                    if place.is_child_of(query):
-                        break
-                else:
-                    if nobj not in params:
-                        params.append(nobj)
-        for p in params:
-            if p not in all_params:
-                all_params.append(p)
-        iig.reset()
-        incqu = iig.visit(query)
-        assert isinstance(incqu, AST)
-        qrydef = FunctionDef(
-            name=qname,
-            args=arguments(args=([arg(nobj.name, None) for nobj in params] +
-                                 [arg(evt.name, None) for evt in events]),
-                           vararg=None,
-                           varargannotation=None,
-                           kwonlyargs=[],
-                           kwarg=None,
-                           kwargannotation=None,
-                           defaults=[],
-                           kw_defaults=[]),
-            decorator_list=[],
-            returns=None,
-            body=[Expr(Str(to_source(query.ast))),
-                  Return(incqu)])
-        qrycall = pyCall(
-            func=pyAttr(INC_MODULE_VAR, qname),
-            args=[],
-            keywords=([(arg.name, PythonGenerator().visit(arg)) for arg in params] +
-                      [(evt.name, pyAttr("self", evt.name)) for evt in events]))
+        qrydef, qrycall, params, events = gen_query_stub(query)
+        all_params.update(params)
+        all_events.update(events)
         module.body.append(qrydef)
         query.ast_override = qrycall
 
@@ -393,7 +393,7 @@ def gen_inc_module(daast, cmdline_args, filename=""):
     # Inject calls to stub init for each process:
     for proc in daast.processes:
         module.body.extend(gen_reset_stub(proc, all_events))
-        setup_body = proc.body[0].body
+        setup_body = proc.setup.body
         if not hasattr(setup_body[0], "prebody"):
             setup_body[0].prebody = []
         setup_body[0].prebody.insert(
@@ -457,10 +457,10 @@ class EventExtractor(NodeVisitor):
     """
 
     def __init__(self):
-        self.events = []
+        self.events = set()
 
     def visit_Event(self, node):
-        self.events.append(node)
+        self.events.add(node)
 
 class QueryExtractor(NodeVisitor):
     """Extracts expensive queries.
@@ -544,7 +544,9 @@ class IncInterfaceGenerator(PythonGenerator):
             if node.attr == 'id':
                 return pyName(SELF_ID_NAME)
             else:
-                return pyName(node.attr)
+                nameobj = node.first_parent_of_type(dast.Process).\
+                          find_name(node.attr)
+                return self.visit_NamedVar(nameobj)
         else:
             return super().visit_AttributeExpr(node)
 

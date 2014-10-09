@@ -714,7 +714,6 @@ class Parser(NodeVisitor):
             # setup() has to be parsed first:
             self.proc_body([node.body[bodyidx]] +
                            node.body[:bodyidx] + node.body[(bodyidx+1):])
-            proc.setup = proc.body[0]
             self.pop_state()
 
         else:
@@ -742,9 +741,11 @@ class Parser(NodeVisitor):
                                  params={"name" : node.name})
             n.add_assignment(s)
             s.process = self.current_process
-            if type(s.parent) is dast.Process:
+            if isinstance(s.parent, dast.Process):
                 if s.name == "main":
                     self.current_process.entry_point = s
+                elif s.name == "setup":
+                    self.current_process.setup = s
                 else:
                     self.current_process.methods.append(s)
             elif (type(s.parent) is dast.Program and
@@ -753,7 +754,8 @@ class Parser(NodeVisitor):
             # Ignore the label decorators:
             s.decorators, _, _ = self.parse_decorators(node)
             self.current_block = s.body
-            self.signature(node.args)
+            if not self.is_in_setup():
+                self.signature(node.args)
             self.body(node.body)
             self.pop_state()
 

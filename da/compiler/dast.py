@@ -485,6 +485,14 @@ class NamedVar(DistNode):
         self.reads = remain
         return removed
 
+    def is_assigned_in(self, node):
+        """True if this variable is being assigned to inside node."""
+
+        for place, _ in self.assignments:
+            if place is node or place.is_child_of(node):
+                return True
+        return False
+
     @property
     def scope(self):
         """Returns the scope that this name is defined in, or None if this name was

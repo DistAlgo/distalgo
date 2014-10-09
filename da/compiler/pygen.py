@@ -393,6 +393,8 @@ class PythonGenerator(NodeVisitor):
         cd.kwargs = node.ast.kwargs
         # ########################################
         cd.body = [self.generate_init(node)]
+        if node.setup is not None:
+            cd.body.extend(self.visit(node.setup))
         if node.entry_point is not None:
             cd.body.extend(self.visit(node.entry_point))
         cd.decorator_list = [self.visit(d) for d in node.decorators]
@@ -406,11 +408,12 @@ class PythonGenerator(NodeVisitor):
         fd.args = self.visit(node.args)
         fd.body = self.body(node.body)
         if isinstance(node.parent, dast.Process):
-            fd.args.args.insert(0, arg("self", None))
             if node.name == "setup":
+                fd.args = self.visit(node.parent.args)
                 fd.body = ([Assign(targets=[pyAttr("self", name, Store())],
                                    value=pyName(name))
                             for name in node.parent.names] + fd.body)
+            fd.args.args.insert(0, arg("self", None))
         fd.decorator_list = [self.visit(d) for d in node.decorators]
         fd.returns = None
         return [fd]
