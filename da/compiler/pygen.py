@@ -935,7 +935,7 @@ class PythonGenerator(NodeVisitor):
             items.append(withitem(context_expr, optional_vars))
         body = self.body(node.body)
         ast = With(items, body)
-        return concat_bodies([e[0] for e in items], [ast])
+        return concat_bodies([e.context_expr for e in items], [ast])
 
     def visit_SimpleStmt(self, node):
         value = self.visit(node.expr)
