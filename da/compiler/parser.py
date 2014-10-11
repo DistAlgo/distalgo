@@ -1298,10 +1298,11 @@ class Parser(NodeVisitor):
     def event_from_pattern(self, node, event_type):
         assert isinstance(node, dast.PatternExpr)
         pattern = node.pattern
-        assert isinstance(pattern, dast.TuplePattern)
         event = dast.Event(self.current_process,
                            event_type=event_type)
-        if self.full_event_pattern:
+        if not isinstance(pattern, dast.TuplePattern):
+            self.error("malformed event pattern.", node)
+        elif self.full_event_pattern:
             if len(pattern.value) != 3:
                 self.error("malformed event pattern.", node)
             else:
