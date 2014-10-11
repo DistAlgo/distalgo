@@ -1423,6 +1423,8 @@ class Parser(NodeVisitor):
             expr.pattern = self.parse_pattern_expr(node.left)
             self.current_context = IterRead(expr.pattern)
             expr.domain = self.visit(node.comparators[0])
+            if isinstance(expr.domain, dast.HistoryExpr):
+                expr.pattern = self.pattern_from_event(expr.domain.event)
             self.pop_state()
             return expr
         elif isinstance(node, comprehension) or isinstance(node, For):
