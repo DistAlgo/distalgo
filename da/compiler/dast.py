@@ -1081,7 +1081,6 @@ class DomainSpec(Expression):
 
     @pattern.setter
     def pattern(self, expr):
-        assert isinstance(expr, DistNode)
         self.subexprs[0] = expr
 
     @property
