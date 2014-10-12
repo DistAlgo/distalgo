@@ -1033,9 +1033,9 @@ class PatternComprehensionGenerator(PythonGenerator):
             target = pyName("_")
         elif node.value in self.freevars:
             target = pyName(node.unique_name)
-            conds = [pyCompare(target, Eq, pyName(node.value.name))]
+            conds = [pyCompare(target, Eq, self.visit(node.value))]
         else:
-            target = pyName(node.value.name)
+            target = self.visit(node.value)
             self.freevars.add(node.value)
         return target, conds
 

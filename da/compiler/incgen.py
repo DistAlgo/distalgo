@@ -501,7 +501,7 @@ class QueryExtractor(NodeVisitor):
     visit_SentExpr = visit_ComplexExpr
 
 
-class IncInterfaceGenerator(PythonGenerator):
+class IncInterfaceGenerator(PatternComprehensionGenerator):
     """Transforms DistPy patterns to Python comprehension.
 
     """
@@ -550,32 +550,6 @@ class IncInterfaceGenerator(PythonGenerator):
         else:
             return super().visit_AttributeExpr(node)
 
-    def visit_FreePattern(self, node):
-        conds = []
-        if node.value is None:
-            target = pyName("_")
-        elif node.value in self.freevars:
-            target = pyName(node.unique_name)
-            conds = [pyCompare(target, Eq, pyName(node.value.name))]
-        else:
-            target = pyName(node.value.name)
-            self.freevars.add(node.value)
-        return target, conds
-
-    def visit_BoundPattern(self, node):
-        boundname = pyName(node.unique_name)
-        if isinstance(node.value, dast.NamedVar):
-            targetname = pyName(node.value.name)
-        else:
-            targetname = self.visit(node.value)
-        conast = pyCompare(boundname, Eq, targetname)
-        return boundname, [conast]
-
-    def visit_ConstantPattern(self, node):
-        target = pyName(node.unique_name)
-        compval = self.visit(node.value)
-        return target, [pyCompare(target, Eq, compval)]
-
     def visit_TuplePattern(self, node):
         condition_list = []
         targets = []
@@ -597,10 +571,6 @@ class IncInterfaceGenerator(PythonGenerator):
                     condition_list[0].comparators[0] = pyTuple(
                         [condition_list[0].comparators[0]])
         return target, condition_list
-
-    def visit_ListPattern(self, node):
-        raise NotImplementedError(
-            "Can not compile list pattern to comprehension.")
 
     def visit_PatternExpr(self, node):
         target, conds = self.visit(node.pattern)
