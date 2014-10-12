@@ -9,7 +9,7 @@ class P(process):
       # to enter cs, enque and send request to all, then await replies from all
         --start
         reqc = logical_clock()
-        send(Request(reqc), to=ps)
+        send(('Request', reqc), to=ps)
 
         await(len(replied) == len(ps))
 
@@ -19,7 +19,7 @@ class P(process):
       # to exit cs, deque and send releases to all
         --release
         reqc = None
-        send(Reply(logical_clock()), to=waiting)
+        send(('Reply', logical_clock()), to=waiting)
         --end
         waiting = set()
         replied = set()
@@ -36,7 +36,7 @@ class P(process):
     # when receiving requests from others, enque and reply
     def receive(msg=('Request', timestamp), from_=source):
         if (reqc == None or (timestamp, source) < (reqc, self.id)):
-            send(Reply(logical_clock()), to=source)
+            send(('Reply', logical_clock()), to=source)
         else:
             waiting.add(source)
 
