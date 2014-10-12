@@ -549,8 +549,12 @@ class PythonGenerator(NodeVisitor):
             return comprehension(self.visit(node.pattern),
                                  self.visit(node.domain), [])
         else:
-            assert self.query_generator is not None # has to be inside query
-            target, condlist = self.query_generator.visit(node.pattern)
+            if self.query_generator is None:
+                # Legacy pattern
+                target, condlist = PatternComprehensionGenerator().visit(
+                    node.pattern)
+            else:
+                target, condlist = self.query_generator.visit(node.pattern)
             domain = self.visit(node.domain)
             return comprehension(target, domain, condlist)
 
@@ -640,7 +644,7 @@ class PythonGenerator(NodeVisitor):
         # We can omit the 'ifs' if the only condition is 'True':
         if not (len(node.conditions) == 1 and
                 isinstance(node.conditions[0], dast.TrueExpr)):
-            generators[-1].ifs = [self.visit(cond) for cond in node.conditions]
+            generators[-1].ifs.extend([self.visit(cond) for cond in node.conditions])
         propagate_attributes(generators[-1].ifs, generators[-1])
 
         try:

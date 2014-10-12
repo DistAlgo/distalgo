@@ -1905,6 +1905,7 @@ class Parser(NodeVisitor):
         else:
             expr = self.create_expr(dast.GeneratorExpr, node)
 
+        self.enter_query()
         for g in node.generators:
             expr.unlock()
             self.current_context = Assignment()
@@ -1920,6 +1921,7 @@ class Parser(NodeVisitor):
             expr.elem = kv
         else:
             expr.elem = self.visit(node.elt)
+        self.leave_query()
         self.pop_state()
         return expr
 
