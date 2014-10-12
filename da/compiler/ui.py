@@ -197,8 +197,10 @@ def main(argv=None):
     if not check_python_version():
         return 2
 
-    ap = argparse.ArgumentParser(description="DistAlgo compiler.")
-    ap.add_argument('-o', help="Output file name.", dest="outfile")
+    ap = argparse.ArgumentParser(description="DistAlgo compiler.",
+                                 argument_default=argparse.SUPPRESS)
+    ap.add_argument('-o', help="Output file name.",
+                    dest="outfile", default=None)
     ap.add_argument('-L', help="Logging output level.",
                     dest="debug", default=None)
     # ap.add_argument('-p', help="Generate pseudo code instead of Python code.",
@@ -227,31 +229,31 @@ def main(argv=None):
     ap.add_argument('-i',
                     help="Generate interface code for plugging"
                     " into incrementalizer.",
-                    action='store_true', dest="geninc")
+                    action='store_true', dest="geninc", default=False)
     ap.add_argument('--no-table1',
                     help="Disable table 1 quantification transformations. "
                     "Only used when '-i' is enabled.",
-                    action='store_true', dest="notable1", default=False)
+                    action='store_true')
     ap.add_argument('--no-table2',
                     help="Disable table 2 quantification transformations. "
                     "Only used when '-i' is enabled.",
-                    action='store_true', dest="notable2", default=False)
+                    action='store_true')
     ap.add_argument('--no-table3',
                     help="Disable table 3 quantification transformations. "
                     "Only used when '-i' is enabled.",
-                    action='store_true', dest="notable3", default=False)
+                    action='store_true')
     ap.add_argument('--no-table4',
                     help="Disable table 4 quantification transformations. "
                     "Only used when '-i' is enabled.",
-                    action='store_true', dest="notable4", default=False)
+                    action='store_true')
     ap.add_argument('--jb-style',
                     help="Generate Jon-friendly quantification transformations. "
                     "Only useful with '-i'.",
-                    action='store_true', dest="jbstyle", default=False)
+                    action='store_true')
     ap.add_argument('--no-all-tables',
                     help="Disable all quantification transformations. "
                     "Only useful with '-i'.",
-                    action='store_true', dest="noalltables", default=False)
+                    action='store_true')
     # ap.add_argument('--psdfile', help="Name of output pseudo code file.",
     #                 dest="psdfile", default=None)
     ap.add_argument('infile', metavar='SOURCEFILE', type=str,

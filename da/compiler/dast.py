@@ -1747,6 +1747,7 @@ class Program(CompoundStmt, NameScope):
 
     def __init__(self, parent=None, ast=None):
         super().__init__(parent, ast)
+        self._compiler_options = None
         self.configurations = []
         self.processes = []
         self.entry_point = None

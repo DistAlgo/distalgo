@@ -28,7 +28,7 @@ from ast import *
 
 from .. import common
 from . import dast
-from .utils import printe, printw, printd
+from .utils import printe, printw, printd, Namespace
 
 # DistAlgo keywords
 KW_PROCESS_DEF = "process"
@@ -190,7 +190,8 @@ class PatternParser(NodeVisitor):
             self.namescope = parser.current_query_scope
         self.parent_node = parser.current_parent
         self.current_query = parser.current_query
-        self.use_object_style = parser.use_object_style
+        self.use_object_style = parser.get_option('enable_object_pattern',
+                                                  default=False)
         self.literal = literal
 
     @property
@@ -388,24 +389,18 @@ class Parser(NodeVisitor):
         self.warncnt = 0
         self.program = execution_context if execution_context is not None \
                        else dast.Program() # Just in case
+        self.cmdline_args = options
+        self.module_args = Namespace()
 
-        self.full_event_pattern = (options.full_event_pattern
-                                   if hasattr(options,
-                                              'full_event_pattern')
-                                   else False)
-        self.use_object_style = (options.enable_object_pattern
-                                 if hasattr(options,
-                                            'enable_object_pattern')
-                                 else False)
-        self.enable_membertest_pattern = (options.enable_membertest_pattern
-                                 if hasattr(options,
-                                            'enable_membertest_pattern')
-                                 else False)
-        self.enable_iterator_pattern = (options.enable_iterator_pattern
-                                 if hasattr(options,
-                                            'enable_iterator_pattern')
-                                 else False)
-
+    def get_option(self, option, default=None):
+        if hasattr(self.cmdline_args, option):
+            self.debug("cmd says " + option)
+            return getattr(self.cmdline_args, option)
+        elif hasattr(self.module_args, option):
+            self.debug("module says " + option)
+            return getattr(self.module_args, option)
+        else:
+            return default
 
     def push_state(self, node):
         self.state_stack.append((node,
@@ -470,7 +465,9 @@ class Parser(NodeVisitor):
         return None
 
     def visit_Module(self, node):
+        self.parse_module_header(node)
         self.program = dast.Program(None, node)
+        self.program._compiler_options = self.module_args
         # Populate global scope with Python builtins:
         for name in PythonBuiltins:
             self.program.add_name(name)
@@ -491,6 +488,25 @@ class Parser(NodeVisitor):
 
 
     # Helpers:
+
+    def parse_module_header(self, node):
+        assert isinstance(node, Module)
+
+        if not (len(node.body) > 0 and
+                isinstance(node.body[0], Expr) and
+                isinstance(node.body[0].value, Str)):
+            return
+
+        self.debug("parsing module header...")
+        opts = node.body[0].value.s.split()
+        for o in opts:
+            if o.startswith('--'):
+                attr = o[2:].replace('-', '_')
+                self.debug("setting module arg: " + attr, node.body[0])
+                setattr(self.module_args, attr, True)
+            else:
+                self.debug("option not recognized: " + o, node.body[0])
+        del node.body[0]
 
     def parse_bases(self, node):
         """Scans a ClassDef's bases list and checks whether the class defined by
@@ -1302,7 +1318,7 @@ class Parser(NodeVisitor):
                            event_type=event_type)
         if not isinstance(pattern, dast.TuplePattern):
             self.error("malformed event pattern.", node)
-        elif self.full_event_pattern:
+        elif self.get_option('full_event_pattern', default=False):
             if len(pattern.value) != 3:
                 self.error("malformed event pattern.", node)
             else:
@@ -1430,7 +1446,7 @@ class Parser(NodeVisitor):
         elif isinstance(node, comprehension) or isinstance(node, For):
             expr = self.create_expr(dast.DomainSpec, node)
             self.current_context = Assignment()
-            if self.enable_iterator_pattern:
+            if self.get_option('enable_iterator_pattern', default=False):
                 expr.pattern = self.parse_pattern_expr(node.target)
             else:
                 expr.pattern = self.visit(node.target)
@@ -1596,7 +1612,8 @@ class Parser(NodeVisitor):
                     expr = self.create_expr(dast.SentExpr, node)
                 expr.context = self.current_context.type
                 expr.event = self.parse_event_expr(
-                    node, literal=(not self.enable_iterator_pattern))
+                    node, literal=(not self.get_option(
+                        'enable_iterator_pattern', default=False)))
                 self.pop_state()
                 if expr.event is not None:
                     expr.event.record_history = True
@@ -1611,13 +1628,15 @@ class Parser(NodeVisitor):
                 if self.current_context is not None:
                     expr.context = self.current_context.type
                 event = self.parse_event_expr(
-                    node, literal=(not self.enable_membertest_pattern))
+                    node, literal=(not self.get_option(
+                        'enable_membertest_pattern', default=False)))
                 self.pop_state()
                 expr.event = event
                 outer.right = expr
                 if event is not None:
                     outer.left = self.pattern_from_event(
-                        event, literal=(not self.enable_membertest_pattern))
+                        event, literal=(not self.get_option(
+                            'enable_membertest_pattern', default=False)))
                     event.record_history = True
                 self.pop_state()
                 return outer
@@ -1806,7 +1825,7 @@ class Parser(NodeVisitor):
 
         expr = self.create_expr(dast.ComparisonExpr, node)
 
-        if self.enable_membertest_pattern:
+        if self.get_option('enable_membertest_pattern', default=False):
             # DistAlgo: overload "in" to allow pattern matching
             if isinstance(node.ops[0], In) or \
                    isinstance(node.ops[0], NotIn):

@@ -29,7 +29,7 @@ from da.tools.unparse import Unparser
 from ast import *
 from . import dast
 from .pygen import *
-from .utils import printd, printw
+from .utils import printd, printw, OptionsManager
 
 INC_MODULE_VAR = "IncModule"
 
@@ -237,8 +237,8 @@ def gen_update_stub(nameobj, updnode):
                              defaults=[]),
                          decorator_list=[],
                          returns=None,
-                         # Don't add the 'return' for jbstyle:
-                         body=[Expr(astval) if Options.jbstyle
+                         # Don't add the 'return' for jb_style:
+                         body=[Expr(astval) if Options.jb_style
                                else Return(astval)])
     updcall = pyCall(
         func=pyAttr(INC_MODULE_VAR, uname),
@@ -259,7 +259,7 @@ def {1}({0}):
         {0} = res
     {0} = {0}
     return {0}
-    """ if not Options.jbstyle else """
+    """ if not Options.jb_style else """
 def {1}({0}):
     globals()['{0}'] = {0}
     return {0}
@@ -295,7 +295,7 @@ def gen_init_event_stub(event):
 def {0}():
     globals()['{1}'] = set()
     return globals()['{1}']
-""" if not Options.jbstyle else """
+""" if not Options.jb_style else """
 def {0}():
     globals()['{1}'] = runtimelib.Set()
     return globals()['{1}']
@@ -312,12 +312,12 @@ def gen_inc_module(daast, cmdline_args, filename=""):
     global Options
     global ModuleFilename
     global Counter
-    Options = cmdline_args
+    Options = OptionsManager(cmdline_args, daast._compiler_options)
     ModuleFilename = filename
 
     module = parse(PREAMBLE)
-    if Options.jbstyle:
-        # Additional import for jbstyle
+    if Options.jb_style:
+        # Additional import for jb_style
         module.body.insert(0, parse("import runtimelib").body[0])
     quex = QueryExtractor()
     quex.visit(daast)
@@ -527,8 +527,8 @@ class IncInterfaceGenerator(PythonGenerator):
         self.reset_pattern_state()
 
     def jb_tuple_optimize(self, elt):
-        """Eliminate single element tuples for jbstyle."""
-        if Options.jbstyle:
+        """Eliminate single element tuples for jb_style."""
+        if Options.jb_style:
             if type(elt) is Tuple and len(elt.elts) == 1:
                 elt = elt.elts[0]
         return elt
@@ -587,7 +587,7 @@ class IncInterfaceGenerator(PythonGenerator):
             # Optimization: combine into one '_'
             return pyName('_'), []
         target = pyTuple(targets)
-        if Options.jbstyle:
+        if Options.jb_style:
             # XXX: Hack!
             if len(targets) == 1:
                 target = targets[0]
@@ -614,7 +614,7 @@ class IncInterfaceGenerator(PythonGenerator):
             right = self.visit(node.right)
             gen = comprehension(target, right, conds)
             elem = self.jb_tuple_optimize(pyTuple(node.left.ordered_freevars))
-            ast = pySize(ListComp(elem, [gen])) if not Options.jbstyle \
+            ast = pySize(ListComp(elem, [gen])) if not Options.jb_style \
                   else pySize(SetComp(elem, [gen]))
             return ast
         else:
@@ -707,22 +707,22 @@ class IncInterfaceGenerator(PythonGenerator):
     def visit_QuantifiedExpr(self, node):
         assert node.predicate is not None
 
-        if not (Options.notable4 or Options.noalltables):
+        if not (Options.no_table4 or Options.no_all_tables):
             iprintd("Trying table4...")
             res = self.do_table4_transformation(node)
             if res is not None:
                 return res
-        if not (Options.notable3 or Options.noalltables):
+        if not (Options.no_table3 or Options.no_all_tables):
             iprintd("Trying table3...")
             res = self.do_table3_transformation(node)
             if res is not None:
                 return res
-        if not (Options.notable2 or Options.noalltables):
+        if not (Options.no_table2 or Options.no_all_tables):
             iprintd("Trying table2...")
             res = self.do_table2_transformation(node)
             if res is not None:
                 return res
-        if not (Options.notable1 or Options.noalltables):
+        if not (Options.no_table1 or Options.no_all_tables):
             iprintd("Trying table1...")
             res = self.do_table1_transformation(node)
             if res is not None:
@@ -928,8 +928,8 @@ class IncInterfaceGenerator(PythonGenerator):
         else:
             pyx = self.jb_tuple_optimize(pyx)
             s = SetComp(pyx, generators)
-            if Options.jbstyle:
-                # jbstyle can not handle generator expressions:
+            if Options.jb_style:
+                # jb_style can not handle generator expressions:
                 sp = s
             else:
                 sp = GeneratorExp(pyx, generators)

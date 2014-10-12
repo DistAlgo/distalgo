@@ -59,3 +59,24 @@ def printi(mesg, lineno=0, col_offset=0, filename="", outfd=sys.stdout):
     if Debug >= DB_INFO:
         fs = "%s:%d:%d: %s"
         print(fs % (filename, lineno, col_offset, mesg), file=outfd)
+
+class Namespace:
+    """A simple container for storing arbitrary attributes."""
+    pass
+
+class OptionsManager:
+    def __init__(self, cmdline_args, module_args, default=False):
+        self.cmdline_args = cmdline_args
+        self.module_args = module_args
+        self.default = default
+
+    def __getattribute__(self, option):
+        if option in {'cmdline_args', 'module_args', 'default'}:
+            return super().__getattribute__(option)
+
+        if hasattr(self.cmdline_args, option):
+            return getattr(self.cmdline_args, option)
+        elif hasattr(self.module_args, option):
+            return getattr(self.module_args, option)
+        else:
+            return self.default
