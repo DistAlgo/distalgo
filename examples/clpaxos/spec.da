@@ -37,8 +37,8 @@ class Acceptor(process):
 
     def main():
         while True:
-            if await(some(received(('TwoAV', n, v, _)),
-                          has=(len(setof(a, received(('TwoAV', n, v, a)))) > quorumsize and
+            if await(some(received(('TwoAv', n, v, _)),
+                          has=(len(setof(a, received(('TwoAv', n, v, a)))) > quorumsize and
                                not sent(('TwoB', n, v))))):
                 send(('TwoB', n, v), to=peers)
             elif each(p in proposers, has=received(('Done',), from_=p)):
