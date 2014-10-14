@@ -104,12 +104,16 @@ def apply_demorgan_rule(node):
 def domain_for_condition(domainspec, condition):
     expr = dast.SetCompExpr(domainspec.parent)
     expr.elem = dast.TupleExpr(expr)
-    expr.elem.subexprs = domainspec.pattern.ordered_freevars
-    expr.domains.append(domainspec.clone())
+    expr.elem.subexprs = [dast.SimpleExpr(expr, value=v)
+                          for v in domainspec.pattern.ordered_freevars]
+    ds = domainspec.clone()
+    expr.domains.append(ds)
     expr.conditions.append(condition)
-    domainspec.pattern = dast.TuplePattern(domainspec)
-    domainspec.pattern.value = [dast.FreePattern(domainspec.pattern, value=fv)
-                                for fv in expr.elem.subexprs]
+    ds.pattern = dast.PatternExpr(domainspec)
+    ds.pattern.pattern=dast.TuplePattern(
+        ds.pattern,
+        value=[dast.FreePattern(ds.pattern, value=fv)
+               for fv in domainspec.pattern.ordered_freevars])
     iprintd("domain_for_condition: " + str(expr))
     return expr
 
@@ -845,14 +849,17 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
             elif (pred.operator is dast.OrOp and
                     node.operator is dast.UniversalOp):
                 iprintd("do_table4_transformation: using rule 5")
-                for i, e in enumerate(pred.subexprs):
-                    e = dast.LogicalExpr(e.parent,
-                                         op=dast.NotOp,
-                                         subexprs=[e])
+                for idx, e in enumerate(pred.subexprs):
+                    e = e.clone()
+                    outer = dast.LogicalExpr(e.parent,
+                                             op=dast.NotOp,
+                                             subexprs=[e])
+                    e._parent = outer
                     newnode = node.clone()
                     newnode.domains[-1].domain = domain_for_condition(
                         newnode.domains[-1], e)
-                    newnode.subexprs = pred.subexprs[0:i] + pred.subexprs[(i+1):]
+                    newnode.subexprs = [s for i, s in enumerate(pred.subexprs)
+                                        if i != idx]
                     res = self.do_table3_transformation(newnode)
                     if res is not None:
                         return res
