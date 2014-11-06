@@ -238,8 +238,8 @@ class DistProcess(multiprocessing.Process):
         self._parent.send(('mem', memusage), self.id)
 
     @builtin
-    def exit(self, code):
-        raise SystemExit(10)
+    def exit(self, code=0):
+        raise SystemExit(code)
 
     @builtin
     def output(self, *value, sep=' ', level=logging.INFO):
