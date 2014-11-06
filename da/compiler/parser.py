@@ -338,15 +338,15 @@ class Pattern2Constant(NodeVisitor):
     visit_BoundPattern = visit_ConstantPattern
 
     def visit_TuplePattern(self, node):
-        expr = TupleExpr(self.current_parent)
-        self.stack.push(expr)
+        expr = dast.TupleExpr(self.current_parent)
+        self.stack.append(expr)
         expr.subexprs = [self.visit(e) for e in node.value]
         self.stack.pop()
         return expr
 
     def visit_ListPattern(self, node):
-        expr = ListExpr(self.current_parent)
-        self.stack.push(expr)
+        expr = dast.ListExpr(self.current_parent)
+        self.stack.append(expr)
         expr.subexprs = [self.visit(e) for e in node.value]
         self.stack.pop()
         return expr
