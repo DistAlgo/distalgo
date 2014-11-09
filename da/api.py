@@ -54,7 +54,6 @@ PerformanceCounters = {}
 CounterLock = threading.Lock()
 RootLock = threading.Lock()
 EndPointType = ep.UdpEndPoint
-TotalUnits = None
 
 def find_file_on_paths(filename, paths):
     """Looks for a given 'filename' under a list of directories, in order.
@@ -414,18 +413,10 @@ def log_performance_statistics(walltime):
 
     if total.get('totalusrtime') is not None:
         statstr += ("** Total usertime: %f\n" % total['totalusrtime'])
-        if TotalUnits is not None:
-            statstr += ("*** Average usertime: %f\n" %
-                        (total['totalusrtime']/TotalUnits))
-
     if total.get('totalsystime') is not None:
         statstr += ("** Total systemtime: %f\n" % total['totalsystime'])
-
     if total.get('mem') is not None:
         statstr += ("** Total memory: %d\n" % total['mem'])
-        if TotalUnits is not None:
-            statstr += ("*** Average memory: %f\n" % (total['mem'] / TotalUnits))
-
     log.info(statstr)
 
 def print_simple_statistics(outfd):
@@ -453,10 +444,6 @@ def aggregate_statistics():
         if val.get('mem') is not None:
             result['mem'] += val['mem']
     CounterLock.release()
-
-    if TotalUnits is not None:
-        for key, val in result.items():
-            result[key] /= TotalUnits
 
     return result
 
