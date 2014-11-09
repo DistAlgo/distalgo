@@ -216,10 +216,8 @@ class PatternParser(NodeVisitor):
 
     def is_bound(self, name):
         n = self.namescope.find_name(name)
-        if n is not None:
-            for r, _ in n.reads:
-                if r.is_child_of(self.current_query):
-                    return True
+        if n is not None and self.current_query is not None:
+            return n in self.current_query.boundvars
         return False
 
     def visit_Name(self, node):
