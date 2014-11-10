@@ -326,7 +326,8 @@ class Pattern2Constant(NodeVisitor):
         expr._parent = self.current_parent
         return expr
 
-    visit_BoundPattern = visit_ConstantPattern
+    def visit_BoundPattern(self, node):
+        return das.SimpleExpr(node.parent, value=node.value)
 
     def visit_FreePattern(self, node):
         # This really shouldn't happen
