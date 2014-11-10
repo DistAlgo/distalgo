@@ -8,7 +8,7 @@ class Coordinator(process):
         send(('prepare', tid), to= cohorts)
         await(each(c in cohorts, has= some(received(('vote', _, _tid), from_= c))))
         if some(c in cohorts, has= received(('vote', 'abort', tid), from_= c)):
-            s = setof(c, c in cohorts, received(('vote','ready', tid), from_=c))
+            s = setof(c, c in cohorts, received(('vote','ready', _tid), from_=c))
             send(('abort', tid), to= s)
             abort(tid)
         if each(c in cohorts, has= received(('vote', 'ready', tid), from_= c)):

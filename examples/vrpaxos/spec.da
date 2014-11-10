@@ -4,7 +4,7 @@ import random
 from itertools import chain
 
 NOPS = 10 # Number of operations of the state machine
-operations = {i: (lambda state: (state+i,state+i)) for i in range(NOPS)}
+operations = {i: (lambda state: (state+i, state+i)) for i in range(NOPS)}
 
 class Replica(process):
     def setup(leaders, initial_state):
@@ -23,8 +23,8 @@ class Replica(process):
                              chain(proposals, decisions, {(0, 0)})))
             #within maximum, find smallest which is not yet been decided
             s1 = min(setof(s, s in range(1, maxs + 1 + 1),
-                           has= not some((s, _) in
-                                         chain(proposals, decisions))))
+                          not some((s, _) in
+                                   chain(proposals, decisions))))
             proposals.add((s1, p))
             send(('Propose', s1, p), to=leaders)
 
@@ -168,11 +168,11 @@ class Leader(process):
         decided.add((s,p))
 
     def circle_plus(x, y):
-        return y | setof((s, p), (s, p) in x, has= not some((s, _) in y))
+        return y | setof((s, p), (s, p) in x, not some((s, _) in y))
 
     def pmax(pvals):
-        return {(s, p) for (b, s, p) in pvals
-                if each((b1, _s, _) in pvals, has=(b1 <= b))}
+        return setof((s, p), (b, s, p) in pvals,
+                     each((b1, s, _) in pvals, has= b1 <= b))
 
 
 class Client(process):

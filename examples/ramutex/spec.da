@@ -14,8 +14,8 @@ class P(process):
         --release
         send(('ack', logical_clock(), self.id),
              to=setof(p, p in s,
-                      has=some(received(('request', c, p)),
-                               has=((c, p) >= (ownc, self.id)))))
+                      some(received(('request', c, p)),
+                           has=((c, p) >= (ownc, self.id)))))
 
     def receive(msg=('request', c, p)):
         if each(received(('request', _c, self.id)), has=((c, p) < (ownc, self.id))):

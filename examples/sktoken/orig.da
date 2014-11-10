@@ -17,7 +17,7 @@ class P(process):
         task()                   #critical section
 
         LN[self.id] = RN[self.id]
-        Q.extend(listof(p, p in ps, has=(p not in Q and RN[p] == LN[p] + 1)))
+        Q.extend(listof(p, p in ps, p not in Q, RN[p] == LN[p] + 1))
         if len(Q) > 0:
             p = Q.pop()
             send(('token', Q, LN), to=p)
@@ -32,10 +32,10 @@ class P(process):
             send(('token', Q, LN), to=p)
 
     def haveToken():
-        return (orig_token and not some(sent(('token', _, _))) or
+        return (orig_token and not some(sent(('token', _, _)))) or\
                 some(received(('token', _, LN1)),
                      has=(not some(sent(('token', _, LN2)),
-                                   has=(LN2[self.id] > LN1[self.id])))))
+                                   has=(LN2[self.id] > LN1[self.id]))))
 
     def main():
         def anounce():

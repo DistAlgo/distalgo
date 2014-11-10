@@ -182,6 +182,9 @@ def pyFunctionDef(name, args=[], body=[], decorator_list=[], returns=None):
 
 def propagate_attributes(from_nodes, to_node):
     if isinstance(to_node, AST):
+        if not (isinstance(from_nodes, list) or
+                isinstance(from_nodes, set)):
+            from_nodes = [from_nodes]
         for fro in from_nodes:
             if (hasattr(fro, "prebody") and isinstance(fro.prebody, list)):
                 if not hasattr(to_node, "prebody"):
@@ -193,9 +196,11 @@ def propagate_attributes(from_nodes, to_node):
                 to_node.postbody.extend(fro.postbody)
     return to_node
 
-def propagate_subexprs(node):
-    for e in node.subexprs:
-        propagate_attributes(e, node)
+def propagate_fields(node):
+    if hasattr(node, '_fields'):
+        for f in node._fields:
+            propagate_attributes(getattr(node, f), node)
+    return node
 
 def concat_bodies(subexprs, body):
     prebody = []
@@ -545,9 +550,9 @@ class PythonGenerator(NodeVisitor):
             return propagate_attributes(ast.values, ast)
 
     def visit_DomainSpec(self, node):
+        domain = self.visit(node.domain)
         if not isinstance(node.pattern, dast.PatternExpr):
-            return comprehension(self.visit(node.pattern),
-                                 self.visit(node.domain), [])
+            result = comprehension(self.visit(node.pattern), domain, [])
         else:
             if self.query_generator is None:
                 # Legacy pattern
@@ -555,14 +560,15 @@ class PythonGenerator(NodeVisitor):
                     node.pattern)
             else:
                 target, condlist = self.query_generator.visit(node.pattern)
-            domain = self.visit(node.domain)
-            return comprehension(target, domain, condlist)
+            result = comprehension(target, domain, condlist)
+        return propagate_fields(result)
 
     def visit_QuantifiedExpr(self, node):
-        is_top_level_query = False
         if self.query_generator is None:
             self.query_generator = PatternComprehensionGenerator()
             is_top_level_query = True
+        else:
+            is_top_level_query = False
 
         body = funcbody = []
         for domspec in node.domains:
@@ -630,47 +636,85 @@ class PythonGenerator(NodeVisitor):
         return ast
 
     def visit_ComprehensionExpr(self, node):
-        is_top_level_query = False
         if self.query_generator is None:
             self.query_generator = PatternComprehensionGenerator()
             is_top_level_query = True
+        else:
+            is_top_level_query = False
 
         generators = []
-        for dom in node.domains:
+        dangling = []
+        for dom in node.conditions:
             comp = self.visit(dom)
-            generators.append(propagate_attributes((comp.target, comp.iter),
-                                                   comp))
-
-        # We can omit the 'ifs' if the only condition is 'True':
-        if not (len(node.conditions) == 1 and
-                isinstance(node.conditions[0], dast.TrueExpr)):
-            generators[-1].ifs.extend([self.visit(cond) for cond in node.conditions])
-        propagate_attributes(generators[-1].ifs, generators[-1])
-
+            if isinstance(comp, comprehension):
+                # Tuck any dangling conditions here:
+                comp.ifs.extend(dangling)
+                dangling = []
+                generators.append(comp)
+            else:
+                if len(generators) > 0:
+                    generators[-1].ifs.append(comp)
+                    propagate_attributes(generators[-1].ifs, generators[-1])
+                else:
+                    dangling.append(comp)
+        if len(dangling) == 0:
+            test = pyTrue()
+        elif len(dangling) == 1:
+            test = dangling[0]
+        else:
+            test = propagate_fields(BoolOp(And(), dangling))
         try:
             if type(node) is dast.DictCompExpr:
                 key = self.visit(node.elem.key)
                 value = self.visit(node.elem.value)
-                ast = propagate_attributes((key, value),
-                                           DictComp(key, value, generators))
-                return propagate_attributes(generators, ast)
+                if len(generators) > 0:
+                    ast = DictComp(key, value, generators)
+                else:
+                    # No generators, degenerate to IfExp:
+                    ast = IfExp(test,
+                                propagate_fields(Dict([key], [value])),
+                                Dict([], []))
+                return propagate_fields(ast)
             else:
                 elem = self.visit(node.elem)
-                if type(node) is dast.SetCompExpr:
-                    ast = SetComp(elem, generators)
-                elif type(node) is dast.ListCompExpr:
-                    ast = ListComp(elem, generators)
-                elif type(node) is dast.TupleCompExpr:
-                    ast = pyCall("tuple", args=[GeneratorExp(elem, generators)])
-                elif type(node) is dast.GeneratorExpr:
-                    ast = GeneratorExp(elem, generators)
-                elif isinstance(node, dast.AggregateExpr):
-                    ast = pyCall(AggregateMap[type(node)],
-                                 [ListComp(elem, generators)])
+                if len(generators) > 0:
+                    if isinstance(node, dast.SetCompExpr):
+                        ast = SetComp(elem, generators)
+                    elif isinstance(node, dast.ListCompExpr):
+                        ast = ListComp(elem, generators)
+                    elif isinstance(node, dast.TupleCompExpr):
+                        ast = pyCall("tuple", args=[GeneratorExp(elem, generators)])
+                    elif isinstance(node, dast.GeneratorExpr):
+                        ast = GeneratorExp(elem, generators)
+                    elif isinstance(node, dast.AggregateExpr):
+                        ast = pyCall(AggregateMap[type(node)],
+                                     [ListComp(elem, generators)])
+                    else:
+                        self.error("Unknown expression", node)
+                        return None
                 else:
-                    self.error("Unknown expression", node)
-                    return None
-                return propagate_attributes(generators + [elem], ast)
+                    # No generators, degenerate to IfExp:
+                    if isinstance(node, dast.SetCompExpr):
+                        ast = IfExp(test,
+                                    propagate_fields(pySet([elem])),
+                                    pySetC([]))
+                    elif isinstance(node, dast.ListCompExpr):
+                        ast = IfExp(test,
+                                    propagate_fields(pyList([elem])),
+                                    pyList([]))
+                    elif isinstance(node, dast.TupleCompExpr):
+                        ast = IfExp(test,
+                                    propagate_fields(pyTuple([elem])),
+                                    pyTuple([]))
+                    elif isinstance(node, dast.GeneratorExpr):
+                        # Impossible:
+                        self.error("Illegal generator expression.", node)
+                        return None
+                    else:
+                        self.error("Illegal unknown expression.", node)
+                        return None
+                return propagate_fields(ast)
+
         finally:
             if is_top_level_query:
                 self.query_generator = None
@@ -703,10 +747,10 @@ class PythonGenerator(NodeVisitor):
         op = OperatorMap[node.operator]()
         if issubclass(node.operator, dast.UnaryOperator):
             ast = UnaryOp(op, self.visit(node.right))
-            return propagate_attributes([ast.operand], ast)
+            return propagate_fields(ast)
         else:
             ast = BinOp(self.visit(node.left), op, self.visit(node.right))
-            return propagate_attributes((ast.left, ast.right), ast)
+            return propagate_fields(ast)
 
     visit_BinaryExpr = visit_ArithmeticExpr
     visit_UnaryExpr = visit_ArithmeticExpr

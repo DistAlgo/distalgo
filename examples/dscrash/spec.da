@@ -7,7 +7,7 @@ class P(process):
        for rnd in range(1, maxfail):
           send(('Value',
                 setof(v, v in V,
-                      has=(not some(sent(('Value', V2, _)), has=(v in V2)))),
+                      not some(sent(('Value', V2, _)), has=(v in V2))),
                 self.id), to=ps)
           reset("Received")
           await(some(received(('Value', _, _))))

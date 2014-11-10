@@ -231,6 +231,9 @@ class NameScope(DistNode):
         """Merges names defined in 'target' scope into this scope.
         """
 
+        if self is target:
+            # Do nothing in the trivial case:
+            return
         for name in target._names:
             if name not in self._names:
                 self._names[name] = target._names[name]
@@ -239,10 +242,11 @@ class NameScope(DistNode):
 
     @property
     def skip(self):
-        """True if this scope should be skipped in the parent-child scope hierachy.
+        """True if this scope should be skipped in the scope hierachy.
 
-        According to Python naming rules, Class scopes are not included when
-        resolving names from child scopes.
+        According to Python name resolution rules, Class scopes are not
+        included when resolving names from child scopes. This property allows
+        such rules to be implemented.
 
         """
         return False
@@ -1095,7 +1099,26 @@ class DomainSpec(Expression):
     def __str__(self):
         return str(self.pattern) + " in " + str(self.domain)
 
-class QuantifiedExpr(BooleanExpr):
+class QueryExpr(Expression):
+    def __init__(self, parent, ast=None):
+        super().__init__(parent, ast)
+
+    @property
+    def top_level_query(self):
+        top = self
+        p = self._parent
+        while p is not None:
+            # Try to traverse to the top-level QueryExpr:
+            if isinstance(p, QueryExpr):
+                top = p
+            elif isinstance(p, NameScope):
+                # A query scope can not cover expressions which are themselves
+                # namescopes (e.g. Lambda expressions):
+                break
+            p = p._parent
+        return top
+
+class QuantifiedExpr(BooleanExpr, QueryExpr):
 
     _fields = ['domains', 'operator'] + BooleanExpr._fields
 
@@ -1159,55 +1182,43 @@ class QuantifiedExpr(BooleanExpr):
             s.append(", ")
         if len(self.subexprs) > 0:
             del s[-1]
-        s.append(" | ")
-        s.append(str(self.predicate))
-        s.append(")")
+        s.extend([" | ", str(self.predicate), ")"])
         return "".join(s)
 
-class ComprehensionExpr(Expression, LockableNameScope):
+class ComprehensionExpr(QueryExpr, LockableNameScope):
 
-    _fields = ['elem', 'domains', 'conditions']
+    _fields = ['elem', 'conditions']
 
     def __init__(self, parent, ast=None):
         super().__init__(parent, ast)
         self.elem = None
-        self.domains = []
+        # List of conditions, some of which may be DomainSpecs:
         self.conditions = self.subexprs
 
     def clone(self):
         node = super().clone()
         node.elem = self.elem.clone() if self.elem is not None else None
-        node.domains = [d.clone() for d in self.domains]
         return node
 
     @property
     def ordered_nameobjs(self):
         return list(chain(*[e.ordered_nameobjs
                             for e in chain([self.elem],
-                                           self.domains,
                                            self.conditions)
                             if e is not None]))
 
     @property
     def ordered_freevars(self):
         return list(chain(*[e.ordered_freevars
-                            for e in chain(self.domains, self.conditions)
-                            if e is not None]))
+                            for e in self.conditions if e is not None]))
 
     @property
     def ordered_boundvars(self):
         return list(chain(*[e.ordered_boundvars
-                            for e in chain(self.domains, self.conditions)
-                            if e is not None]))
+                            for e in self.conditions if e is not None]))
 
     def __str__(self):
         s = [type(self).__name__, "(", str(self.elem), ": "]
-        for d in self.domains:
-            s.append(str(d))
-            s.append(", ")
-        if len(self.domains) > 0:
-            del s[-1]
-        s.append(" | ")
         for d in self.conditions:
             s.append(str(d))
             s.append(", ")
@@ -1408,7 +1419,7 @@ class PatternElement(DistNode):
 
     @property
     def ordered_nameobjs(self):
-        return chain(self.ordered_boundvars, self.ordered_freevars)
+        return self.ordered_boundvars
 
     def __str__(self):
         return type(self).__name__ + ("{%s}" % str(self.value))

@@ -184,19 +184,12 @@ class PatternParser(NodeVisitor):
 
     def __init__(self, parser, literal=False):
         self._parser = parser
-        if parser.current_query_scope is None:
-            self.namescope = dast.NameScope(parser.current_scope)
-        else:
-            self.namescope = parser.current_query_scope
+        self.namescope = parser.current_scope
         self.parent_node = parser.current_parent
         self.current_query = parser.current_query
         self.use_object_style = parser.get_option('enable_object_pattern',
                                                   default=False)
         self.literal = literal
-
-    @property
-    def outer_scope(self):
-        return self.namescope.parent_scope
 
     def visit(self, node):
         if isinstance(node, Name):
@@ -240,7 +233,7 @@ class PatternParser(NodeVisitor):
                 value=dast.NoneExpr(self.parent_node, node))
         elif self.literal:
             name = node.id
-            n = self.outer_scope.find_name(name)
+            n = self.namescope.find_name(name)
             if n is None:
                 n = self.namescope.add_name(name)
             pat = dast.BoundPattern(self.parent_node, node, value=n)
@@ -254,7 +247,7 @@ class PatternParser(NodeVisitor):
         elif name.startswith("_"):
             # Bound variable:
             name = node.id[1:]
-            n = self.outer_scope.find_name(name)
+            n = self.namescope.find_name(name)
             if n is None:
                 self._parser.warn(
                     ("new variable '%s' introduced by bound pattern." % name),
@@ -335,11 +328,19 @@ class Pattern2Constant(NodeVisitor):
 
     visit_BoundPattern = visit_ConstantPattern
 
+    def visit_FreePattern(self, node):
+        # This really shouldn't happen
+        mesg = "Can not convert FreePattern to constant!"
+        printe(mesg, node.lineno, node.col_offset)
+        return None
+
     def visit_TuplePattern(self, node):
         expr = dast.TupleExpr(self.current_parent)
         self.stack.append(expr)
         expr.subexprs = [self.visit(e) for e in node.value]
         self.stack.pop()
+        if None in expr.subexprs:
+            expr = None
         return expr
 
     def visit_ListPattern(self, node):
@@ -347,6 +348,8 @@ class Pattern2Constant(NodeVisitor):
         self.stack.append(expr)
         expr.subexprs = [self.visit(e) for e in node.value]
         self.stack.pop()
+        if None in expr.subexprs:
+            expr = None
         return expr
 
 class PatternFinder(NodeVisitor):
@@ -381,8 +384,6 @@ class Parser(NodeVisitor):
         self.current_block = None
         self.current_context = None
         self.current_label = None
-        self.current_query_scope = None
-        self.current_query = None
         self.errcnt = 0
         self.warncnt = 0
         self.program = execution_context if execution_context is not None \
@@ -392,10 +393,8 @@ class Parser(NodeVisitor):
 
     def get_option(self, option, default=None):
         if hasattr(self.cmdline_args, option):
-            self.debug("cmd says " + option)
             return getattr(self.cmdline_args, option)
         elif hasattr(self.module_args, option):
-            self.debug("module says " + option)
             return getattr(self.module_args, option)
         else:
             return default
@@ -404,14 +403,12 @@ class Parser(NodeVisitor):
         self.state_stack.append((node,
                                  self.current_context,
                                  self.current_label,
-                                 self.current_query_scope,
                                  self.current_block))
 
     def pop_state(self):
         (_,
          self.current_context,
          self.current_label,
-         self.current_query_scope,
          self.current_block) = self.state_stack.pop()
 
     def is_in_setup(self):
@@ -421,16 +418,14 @@ class Parser(NodeVisitor):
             return self.current_scope.name == "setup"
 
     def enter_query(self):
-        if self.current_query_scope is None:
-            self.current_query_scope = dast.NameScope(self.current_scope)
-            self.current_query = self.current_parent
+        pass
 
-    def leave_query(self, node=None):
-        if self.current_parent is self.current_query:
-            self.current_query = None
-            self.current_scope.parent_scope.merge_scope(self.current_query_scope)
-            if node is not None:
-                self.audit_query(self.current_parent, node)
+    def leave_query(self, merge=False, audit=False):
+        if merge:
+            self.current_query_scope.merge_scope(self.current_scope)
+        if audit:
+            if self.current_parent is self.current_query:
+                self.audit_query(self.current_parent)
 
     @property
     def current_parent(self):
@@ -438,23 +433,36 @@ class Parser(NodeVisitor):
 
     @property
     def current_process(self):
-        for node, _, _, _, _ in reversed(self.state_stack):
+        for node, _, _, _ in reversed(self.state_stack):
             if isinstance(node, dast.Process):
                 return node
         return None
 
     @property
     def current_scope(self):
-        if self.current_query_scope is not None:
-            return self.current_query_scope
-        for node, _, _, _, _ in reversed(self.state_stack):
+        for node, _, _, _ in reversed(self.state_stack):
             if isinstance(node, dast.NameScope):
                 return node
         return None
 
     @property
+    def current_query(self):
+        for node, _, _, _ in reversed(self.state_stack):
+            if isinstance(node, dast.QueryExpr):
+                return node.top_level_query
+            elif isinstance(node, dast.NameScope):
+                # A query can not span a namescope (e.g. lambda expression):
+                return None
+        return None
+
+    @property
+    def current_query_scope(self):
+        return self.current_query.scope \
+            if self.current_query is not None else None
+
+    @property
     def current_loop(self):
-        for node, _, _, _, _ in reversed(self.state_stack):
+        for node, _, _, _ in reversed(self.state_stack):
             if isinstance(node, dast.ArgumentsContainer) or \
                isinstance(node, dast.ClassStmt):
                 break
@@ -1474,7 +1482,7 @@ class Parser(NodeVisitor):
                           "first one is used, the rest are ignored.", node)
             expr.predicate = predicates[0]
         finally:
-            self.leave_query(node)
+            self.leave_query(audit=True)
             self.pop_state()
         return expr
 
@@ -1492,37 +1500,55 @@ class Parser(NodeVisitor):
         self.enter_query()
 
         first_arg = node.args[0]
-        node.args = node.args[1:]
-        try:
-            expr.domains, expr.conditions = self.parse_domains_and_predicate(node)
-            if expr_type is dast.DictCompExpr:
-                if not (isinstance(first_arg, Tuple) and
-                        len(first_arg.elts) == 2):
-                    self.error("Malformed element in dict comprehension.",
-                               first_arg)
+        for arg in node.args[1:]:
+            try:
+                # try to treat it as domain spec first:
+                dom = self.parse_domain_spec(arg)
+                if len(dom.freevars) == 0:
+                    # no freevars, degenerate to membership test:
+                    condition = self.create_expr(dast.ComparisonExpr, arg)
+                    condition.left = Pattern2Constant(
+                        self.current_parent).visit(dom.pattern.pattern)
+                    if condition.left is None:
+                        self.error("Internal error: Unable to generate "
+                                   "constant from pattern.", node)
+                    condition.comparator = dast.InOp
+                    condition.right = dom.domain
                 else:
-                    kv = dast.KeyValue(expr)
-                    kv.key = self.visit(node.key)
-                    kv.value = self.visit(node.value)
-                    expr.elem = kv
+                    condition = dom
+            except MalformedStatementError:
+                # if not, then it's just a boolean condition:
+                condition = self.visit(arg)
+            expr.conditions.append(condition)
+
+        if expr_type is dast.DictCompExpr:
+            if not (isinstance(first_arg, Tuple) and
+                    len(first_arg.elts) == 2):
+                self.error("malformed element in dict comprehension.",
+                           first_arg)
             else:
-                expr.elem = self.visit(first_arg)
-        finally:
-            self.leave_query(node)
-            self.pop_state()
+                kv = dast.KeyValue(expr)
+                kv.key = self.visit(node.key)
+                kv.value = self.visit(node.value)
+                expr.elem = kv
+        else:
+            expr.elem = self.visit(first_arg)
+
+        self.leave_query(merge=True)
+        self.pop_state()
         return expr
 
-    def audit_query(self, expr, node):
-        self.debug("auditing " + str(expr), node)
-        self.debug("...freevars: " + str(expr.freevars), node)
-        self.debug("...boundvars: " + str(expr.boundvars), node)
+    def audit_query(self, expr):
+        self.debug("auditing " + str(expr), expr)
+        self.debug("...freevars: " + str(expr.freevars), expr)
+        self.debug("...boundvars: " + str(expr.boundvars), expr)
         intersect = {v.name for v in expr.ordered_freevars} & \
                     {v.name for v in expr.ordered_boundvars}
         if intersect:
             msg = ("query variables " +
                    " ".join(["'" + n + "'" for n in intersect]) +
                    " are both free and bound.")
-            self.error(msg, node)
+            self.error(msg, expr)
 
     def parse_aggregates(self, node):
         if node.func.id == KW_AGGREGATE_SUM:
@@ -1926,8 +1952,7 @@ class Parser(NodeVisitor):
         for g in node.generators:
             expr.unlock()
             self.current_context = Assignment()
-            # DistAlgo: overload 'in' to allow pattern matching:
-            expr.domains.append(self.parse_domain_spec(g))
+            expr.conditions.append(self.parse_domain_spec(g))
             expr.lock()
             self.current_context = Read()
             expr.conditions.extend([self.visit(i) for i in g.ifs])

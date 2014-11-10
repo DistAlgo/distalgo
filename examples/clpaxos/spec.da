@@ -13,10 +13,12 @@ class Proposer(process):
             send(('Prepare', propNum, self.id), to=acceptors)
             if await(len(setof(a, received(('Promise', _propNum, _, _, a)))) > quorumsize):
                 --propose
-                voted = max(setof((n, v),
-                                  received(('Promise', _propNum, n, v, _)),
-                                  has=(len(setof(a, received(('Promise', _propNum, n, v, a)))) > f)) |
-                            {((-1, self.id), propVal)})[1]
+                _, voted = max(setof((n, v),
+                                     received(('Promise', _propNum, n, v, _)),
+                                     len(setof(a,
+                                               received(('Promise',
+                                                         _propNum, n, v, a)))) > f) |
+                               {((-1, self.id), propVal)})
 
                 send(('OneC', propNum, voted, self.id), to=acceptors)
                 if await(len(setof(a, received(('TwoAv', _propNum, _voted, a)))) > quorumsize):
@@ -37,9 +39,11 @@ class Acceptor(process):
 
     def main():
         while True:
-            if await(some(received(('TwoAv', n, v, _)),
-                          has=(len(setof(a, received(('TwoAv', n, v, a)))) > quorumsize and
-                               not sent(('TwoB', n, v))))):
+            if await(some(
+                    received(('TwoAv', n, v, _)),
+                    has=(len(setof(a, received(('TwoAv', n, v, a)))) >
+                         quorumsize and
+                         not sent(('TwoB', n, v))))):
                 send(('TwoB', n, v), to=peers)
             elif each(p in proposers, has=received(('Done',), from_=p)):
                 break
@@ -60,7 +64,7 @@ class Acceptor(process):
 
     def islegal(n, v):
         voted = setof((vn, vv), received(('Promise', _n, vn, vv, _)),
-                      has= len(setof(a, received(('Promise', _n, vn, vv, a)))) > f)
+                      len(setof(a, received(('Promise', _n, vn, vv, a)))) > f)
         if voted and (max(voted)[1] is not None):
             return v == max(voted)[1]
         else:
