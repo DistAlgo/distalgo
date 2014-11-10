@@ -1058,15 +1058,15 @@ class DomainSpec(Expression):
 
     @property
     def ordered_boundvars(self):
-        if self.subexprs[0] is not None:
-            return self.subexprs[0].ordered_boundvars
+        if self.pattern is not None and isinstance(self.pattern, PatternExpr):
+            return self.pattern.ordered_boundvars
         else:
             return []
 
     @property
     def ordered_freevars(self):
-        if self.subexprs[0] is not None:
-            return self.subexprs[0].ordered_freevars
+        if self.pattern is not None and isinstance(self.pattern, PatternExpr):
+            return self.pattern.ordered_freevars
         else:
             return []
 
