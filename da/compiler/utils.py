@@ -22,13 +22,21 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+import io
 import sys
+from da.tools.unparse import Unparser
 
 DB_ERROR = 0
 DB_WARN = 1
 DB_INFO = 2
 DB_DEBUG =3
 Debug = DB_INFO
+
+
+def to_source(tree):
+    textbuf = io.StringIO(newline='')
+    Unparser(tree, textbuf)
+    return textbuf.getvalue()
 
 def set_debug_level(level):
     global Debug

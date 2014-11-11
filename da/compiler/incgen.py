@@ -22,14 +22,13 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-import io
 import sys
-from da.tools.unparse import Unparser
 
 from ast import *
 from . import dast
 from .pygen import *
-from .utils import printd, printw, OptionsManager
+from .parser import Pattern2Constant
+from .utils import printd, printw, OptionsManager, to_source
 
 INC_MODULE_VAR = "IncModule"
 
@@ -61,11 +60,6 @@ Counter = 0                     # For unique names
 
 ##########
 # Auxiliary methods:
-
-def to_source(tree):
-    textbuf = io.StringIO(newline='')
-    Unparser(tree, textbuf)
-    return textbuf.getvalue()
 
 def iprintd(message):
     printd(message, filename=ModuleFilename)
