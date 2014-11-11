@@ -210,8 +210,16 @@ class PatternParser(NodeVisitor):
     def is_bound(self, name):
         n = self.namescope.find_name(name)
         if n is not None and self.current_query is not None:
-            return n in self.current_query.boundvars
-        return False
+            return n in self.current_query.top_level_query.boundvars
+        else:
+            return False
+
+    def is_free(self, name):
+        n = self.namescope.find_name(name)
+        if n is not None and self.current_query is not None:
+            return n in self.current_query.top_level_query.freevars
+        else:
+            return False
 
     def visit_Name(self, node):
         if self._parser.current_process is not None and \
@@ -267,9 +275,19 @@ class PatternParser(NodeVisitor):
                 n.add_read(pat)
             else:
                 self._parser.debug("[PatternParser] free name " + name, node)
-                n = self.namescope.add_name(name)
-                pat = dast.FreePattern(self.parent_node, node, value=n)
-                n.add_assignment(pat)
+                n = self.namescope.find_name(name)
+                if n is None:
+                    # New name:
+                    n = self.namescope.add_name(name)
+                    pat = dast.FreePattern(self.parent_node, node, value=n)
+                    n.add_assignment(pat)
+                else:
+                    pat = dast.FreePattern(self.parent_node, node, value=n)
+                    if self.is_free(name):
+                        # Existing free var:
+                        n.add_read(pat)
+                    else:
+                        n.add_assignment(pat)
             return pat
 
     def visit_Str(self, node):
