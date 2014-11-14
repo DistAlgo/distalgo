@@ -87,11 +87,18 @@ class DistProcess(multiprocessing.Process):
         def run(self):
             try:
                 for msg in self._parent._recvmesgs():
-                    (src, clock, data) = msg
+                    try:
+                        (src, clock, data) = msg
+                    except ValueError as e:
+                        self._parent._log.warn(
+                            "Invalid message dropped: {0}".format(str(msg)))
+                        continue
+
                     e = pattern.ReceivedEvent(
                         envelope=(clock, None, src),
                         message=data)
                     self._parent._eventq.put(e)
+
             except KeyboardInterrupt:
                 pass
 
@@ -387,18 +394,26 @@ class DistProcess(multiprocessing.Process):
         time to wait for an event.
 
         """
-        if timeout is not None and timeout < 0:
-            timeout = 0
         try:
+            if timeout is not None and timeout < 0:
+                timeout = 0
             event = self._eventq.get(block, timeout)
-            if isinstance(self._logical_clock, int):
-                self._logical_clock = max(self._logical_clock, event.timestamp) + 1
-            self._trigger_event(event)
         except queue.Empty:
             return
         except Exception as e:
             self._log.error("Caught exception while waiting for events: %r", e)
             return
+
+        if isinstance(self._logical_clock, int):
+            if not isinstance(event.timestamp, int):
+                # Most likely some peer did not turn on lamport clock, issue
+                # a warning and skip this message:
+                self._log.warn(
+                    "Invalid logical clock value: {0}; message dropped. "
+                    "".format(event.timestamp))
+                return
+            self._logical_clock = max(self._logical_clock, event.timestamp) + 1
+        self._trigger_event(event)
 
     def _trigger_event(self, event):
         """Immediately triggers 'event', skipping the event queue.
