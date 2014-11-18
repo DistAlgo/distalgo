@@ -1533,6 +1533,7 @@ class Parser(NodeVisitor):
                                    "constant from pattern.", node)
                     condition.comparator = dast.InOp
                     condition.right = dom.domain
+                    self.pop_state()
                 else:
                     condition = dom
             except MalformedStatementError:
