@@ -74,6 +74,8 @@ def combine_not_comparison(node):
         exp = dast.ComparisonExpr(parent=node.parent, ast=node.ast)
         exp.left = node.left.left
         exp.right = node.left.right
+        exp.left._parent = exp
+        exp.right._parent = exp
         exp.comparator = NegatedOperatorMap[node.left.comparator]
         return exp
     else:
@@ -90,26 +92,41 @@ def apply_demorgan_rule(node):
                                          op=dast.NotOp,
                                          subexprs=[e])
                         for e in node.left.subexprs]
-        iprintd("demorgan applied to " + str(node))
+        for e in exp.subexprs:
+            e.left._parent = e
         return exp
     else:
         return node
 
 def domain_for_condition(domainspec, condition):
     expr = dast.SetCompExpr(domainspec.parent)
-    expr.elem = dast.TupleExpr(expr)
-    expr.elem.subexprs = [dast.SimpleExpr(expr, value=v)
-                          for v in domainspec.pattern.ordered_freevars]
-    ds = domainspec.clone()
-    expr.domains.append(ds)
+    expr.conditions.append(domainspec.clone())
     expr.conditions.append(condition)
-    ds.pattern = dast.PatternExpr(domainspec)
-    ds.pattern.pattern=dast.TuplePattern(
-        ds.pattern,
-        value=[dast.FreePattern(ds.pattern, value=fv)
-               for fv in domainspec.pattern.ordered_freevars])
+    if len(domainspec.pattern.ordered_freevars) == 1:
+        expr.elem = dast.SimpleExpr(expr)
+        expr.elem.value = domainspec.pattern.ordered_freevars[0]
+        domainspec.pattern = dast.PatternExpr(domainspec)
+        domainspec.pattern.pattern = dast.FreePattern(
+            domainspec.pattern, value=expr.elem.value)
+    else:
+        expr.elem = dast.TupleExpr(expr)
+        expr.elem.subexprs = [dast.SimpleExpr(expr.elem, value=v)
+                              for v in domainspec.pattern.ordered_freevars]
+        domainspec.pattern = dast.PatternExpr(domainspec)
+        domainspec.pattern.pattern = dast.TuplePattern(
+            domainspec.pattern,
+            value = [dast.FreePattern(domainspec.pattern, value=fv.value)
+                     for fv in expr.elem.subexprs])
+    domainspec.domain = expr
     iprintd("domain_for_condition: " + str(expr))
     return expr
+
+def optimize_tuple(elt):
+    """Expand single element tuples."""
+
+    if type(elt) is Tuple and len(elt.elts) == 1:
+        elt = elt.elts[0]
+    return elt
 
 def ast_eq(left, right):
     """Structural equality of AST nodes."""
@@ -484,7 +501,7 @@ class QueryExtractor(NodeVisitor):
     def visit_ComplexExpr(self, node):
         if node.first_parent_of_type(dast.Process) is None:
             return
-        par = node.last_parent_of_type(dast.Expression)
+        par = node.last_parent_of_type(dast.QueryExpr)
         if par is None:
             par = node
         if par not in self.queries:
@@ -523,13 +540,6 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
     def reset(self):
         super().reset()
         self.reset_pattern_state()
-
-    def jb_tuple_optimize(self, elt):
-        """Eliminate single element tuples for jb_style."""
-        if Options.jb_style:
-            if type(elt) is Tuple and len(elt.elts) == 1:
-                elt = elt.elts[0]
-        return elt
 
     def visit_NamedVar(self, node):
         if node in self.mangle_names:
@@ -581,44 +591,12 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
             target, conds = self.visit(node.left)
             right = self.visit(node.right)
             gen = comprehension(target, right, conds)
-            elem = self.jb_tuple_optimize(pyTuple(node.left.ordered_freevars))
+            elem = optimize_tuple(pyTuple(node.left.ordered_freevars))
             ast = pySize(ListComp(elem, [gen])) if not Options.jb_style \
                   else pySize(SetComp(elem, [gen]))
             return ast
         else:
             return super().visit_ComparisonExpr(node)
-
-    def visit_ComprehensionExpr(self, node):
-        generators = [self.visit(dom) for dom in node.domains]
-        generators[-1].ifs.extend([self.visit(cond) for cond in
-                                   node.conditions
-                                   # Don't add redundant 'if True's:
-                                   if not isinstance(cond, dast.TrueExpr)])
-
-        if type(node) is dast.DictCompExpr:
-            key = self.visit(node.elem.key)
-            value = self.visit(node.elem.value)
-            ast = DictComp(key, value, generators)
-        else:
-            elem = self.visit(node.elem)
-            if isinstance(node, dast.SetCompExpr):
-                ast = SetComp(elem, generators)
-            elif isinstance(node, dast.ListCompExpr):
-                ast = ListComp(elem, generators)
-            elif isinstance(node, dast.TupleCompExpr):
-                ast = pyCall("tuple", args=[GeneratorExp(elem, generators)])
-            elif isinstance(node, dast.GeneratorExpr):
-                ast = GeneratorExp(elem, generators)
-            else:
-                iprintw("Warning: unknown comprehension type!")
-                ast = SetComp(elem, generators)
-        return ast
-
-    visit_GeneratorExpr = visit_ComprehensionExpr
-    visit_SetCompExpr = visit_ComprehensionExpr
-    visit_ListCompExpr = visit_ComprehensionExpr
-    visit_DictCompExpr = visit_ComprehensionExpr
-    visit_TupleCompExpr = visit_ComprehensionExpr
 
     def visit_Event(self, node):
         assert node.type is not None
@@ -657,13 +635,12 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
         return pyTuple([typ, env, msg]), evtconds
 
     def visit_DomainSpec(self, node):
+        domain = self.visit(node.domain)
         if isinstance(node.pattern, dast.PatternExpr):
             target, ifs = self.visit(node.pattern)
-            domain = self.visit(node.domain)
         else:
             target = self.visit(node.pattern)
             ifs = []
-            domain = self.visit(node.domain)
         return comprehension(target, domain, ifs)
 
     def visit_HistoryExpr(self, node):
@@ -672,8 +649,27 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
     visit_ReceivedExpr = visit_HistoryExpr
     visit_SentExpr = visit_HistoryExpr
 
+    def visit_ComprehensionExpr(self, node):
+        # We'll just trick the PythonGenerator to use this instance as the
+        # pattern generator:
+        self.pattern_generator = self
+        res = super().visit_ComprehensionExpr(node)
+        return res
+
+    visit_GeneratorExpr = visit_ComprehensionExpr
+    visit_SetCompExpr = visit_ComprehensionExpr
+    visit_ListCompExpr = visit_ComprehensionExpr
+    visit_DictCompExpr = visit_ComprehensionExpr
+    visit_TupleCompExpr = visit_ComprehensionExpr
+    visit_MaxExpr = visit_ComprehensionExpr
+    visit_MinExpr = visit_ComprehensionExpr
+    visit_SumExpr = visit_ComprehensionExpr
+    visit_SizeExpr = visit_ComprehensionExpr
+
     def visit_QuantifiedExpr(self, node):
         assert node.predicate is not None
+        if node is node.top_level_query:
+            self.reset_pattern_state()
 
         if not (Options.no_table4 or Options.no_all_tables):
             iprintd("Trying table4...")
@@ -698,7 +694,7 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
 
         # Fallback to 'any' and 'all'
         generators = [self.visit(dom) for dom in node.domains]
-        elt = self.jb_tuple_optimize(self.visit(node.predicate))
+        elt = optimize_tuple(self.visit(node.predicate))
         gexp = GeneratorExp(elt, generators)
         if node.operator is dast.UniversalOp:
             func = "all"
@@ -714,8 +710,8 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
         """
         cond = self.visit(node.predicate)
         for dom in reversed(node.domains):
-            elt = self.jb_tuple_optimize(
-                pyTuple([self.visit(name) for name in dom.freevars]))
+            elt = optimize_tuple(pyTuple([self.visit(name)
+                                          for name in dom.freevars]))
             domast = self.visit(dom)
             gexp = SetComp(elt, [domast])
             if node.operator is dast.UniversalOp:
@@ -757,7 +753,7 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
             node = node.predicate
 
         assert node is not None
-        elements = self.jb_tuple_optimize(pyTuple(elements))
+        elements = optimize_tuple(pyTuple(elements))
         generators = outer_generators + inner_generators
         bexp = self.visit(node)
         if inner_quantifier is None:
@@ -805,6 +801,7 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
         of table 4 are ignored.
 
         """
+        current_pattern_state = frozenset(self.freevars)
         pred = apply_demorgan_rule(node.predicate)
         if isinstance(pred, dast.LogicalExpr):
             # Rule 1:
@@ -812,10 +809,12 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
                     node.operator is dast.ExistentialOp):
                 iprintd("do_table4_transformation: using rule 1")
                 for i, e in enumerate(pred.subexprs):
+                    self.freevars = set(current_pattern_state)
                     newnode = node.clone()
-                    newnode.domains[-1].domain = domain_for_condition(
-                        newnode.domains[-1], e)
-                    newnode.subexprs = pred.subexprs[0:i] + pred.subexprs[(i+1):]
+                    domain_for_condition(newnode.domains[-1], e)
+                    newnode.subexprs = pred.subexprs[0:i] + \
+                                       pred.subexprs[(i+1):]
+                    iprintd("do_table4_transformation: newnode: " + str(newnode))
                     res = self.do_table3_transformation(newnode)
                     if res is not None:
                         return res
@@ -844,20 +843,19 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
                     node.operator is dast.UniversalOp):
                 iprintd("do_table4_transformation: using rule 5")
                 for idx, e in enumerate(pred.subexprs):
-                    e = e.clone()
-                    outer = dast.LogicalExpr(e.parent,
-                                             op=dast.NotOp,
-                                             subexprs=[e])
-                    e._parent = outer
+                    self.freevars = set(current_pattern_state)
+                    e = dast.LogicalExpr(e.parent,
+                                         op=dast.NotOp,
+                                         subexprs=[e])
                     newnode = node.clone()
-                    newnode.domains[-1].domain = domain_for_condition(
-                        newnode.domains[-1], e)
-                    newnode.subexprs = [s for i, s in enumerate(pred.subexprs)
-                                        if i != idx]
+                    domain_for_condition(newnode.domains[-1], e)
+                    newnode.subexprs = pred.subexprs[0:idx] + \
+                                       pred.subexprs[(idx+1):]
                     res = self.do_table3_transformation(newnode)
                     if res is not None:
                         return res
-
+        iprintd("do_table4_transformation: unable to apply.")
+        self.freevars = set(current_pattern_state)
         return None
 
     def do_table3_transformation(self, node):
@@ -890,15 +888,17 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
                    node)
             return None
 
-        pyx = self.visit(x)
-        pyy = self.visit(y)
         generators = [self.visit(dom) for dom in node.domains]
+        iprintd("do_table3_transformation: generators = " + str(generators))
+        # Need to normalize tuples here, for comparison:
+        pyx = optimize_tuple(self.visit(x))
+        pyy = optimize_tuple(self.visit(y))
         if (len(generators) == 1 and len(generators[0].ifs) == 0 and
-                ast_eq(pyx, generators[0].target)):
+                ast_eq(pyx, optimize_tuple(generators[0].target))):
             s = sp = generators[0].iter
         else:
-            pyx = self.jb_tuple_optimize(pyx)
             s = SetComp(pyx, generators)
+            iprintd("table3 s: " + to_source(s))
             if Options.jb_style:
                 # jb_style can not handle generator expressions:
                 sp = s
