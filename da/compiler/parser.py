@@ -468,7 +468,7 @@ class Parser(NodeVisitor):
     def current_query(self):
         for node, _, _, _ in reversed(self.state_stack):
             if isinstance(node, dast.QueryExpr):
-                return node.top_level_query
+                return node
             elif isinstance(node, dast.NameScope):
                 # A query can not span a namescope (e.g. lambda expression):
                 return None
