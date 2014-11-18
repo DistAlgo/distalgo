@@ -2,66 +2,66 @@ import sys
 from random import randint
 
 class Coordinator(process):
-    def setup(tid, cohorts):
-        pass
+    def setup(cohorts): pass
+
+    def to_commit():
+        send(('prepare'), to= cohorts)
+        await(each(c in cohorts, has= some(received(('vote', _), from_= c))))
+        if some(c in cohorts, has= received(('vote', 'aborting'), from_= c)):
+            s = setof(c, c in cohorts, received(('vote','ready'), from_= c))
+            send(('abort'), to= s)
+            abort()
+        if each(c in cohorts, has= received(('vote', 'ready'), from_= c)):
+            send(('commit'), to= cohorts)
+            await(each(c in cohorts, has= received(('done'), from_= c)))
+            commit()
+
+    def abort(): output('abort')
+    def commit(): output('commit')
 
     def main():
-        --start
-        send(('Prepare', tid), to=cohorts)
-        if await(each(c in cohorts, has=received(('Vote', 'ready', tid, c)))):
-            send(('Commit', tid), to=cohorts)
-            await(each(c in cohorts, has=received(('Done', tid, c))))
-            output('log complete record for' + str(tid))
-        elif each(c in cohorts, has=some(received(('Vote', _, _tid, c)))):
-            s = setof(c, received(("Vote", "ready", _tid, c)))
-            send(('Abort', tid), to=s)
-        --end
-        terminate()
+        to_commit()
 
-    def terminate():
-        send(('Done',), to=cohorts)
         output('terminating')
 
 class Cohort(process):
     def setup(failure_rate):
-        pass
+    	self.terminate = False
+
+    def receive(msg= ('prepare'), from_= coord):
+        if prepared():
+            send(('vote', 'ready'), to= coord)
+            ready()
+        else:
+            send(('vote', 'aborting'), to= coord)
+            abort()
+
+    def receive(msg= ('abort')):
+        abort()
+
+    def receive(msg= ('commit'), from_= coord):
+        send(('done'), to= coord)
+        commit()
+
+    def prepared(): return randint(0, 100) > failure_rate
+    def ready(): output('ready')
+    def abort(): output('abort'); terminate = True
+    def commit(): output('commit'); terminate = True
 
     def main():
-        await(received(('Done',)))
-
-    def receive(msg=('Prepare', tid), from_=coord):
-        if prepared(tid):
-            output("ready:" + str(tid))
-            send(('Vote', 'ready', tid, self.id), to=coord)
-        else:
-            output("failed:"  + str(tid))
-            send(('Vote', 'abort', tid, self.id), to=coord)
-
-    def receive(msg=('Commit', tid), from_=fro):
-        send(('Done', tid, self.id), to=fro)
-        commit(tid)
-
-    def receive(msg=('Abort', tid)):
-        abort(tid)
-
-    def prepared(tid):
-        return randint(0, 100) > failure_rate
-
-    def commit(tid):
-        output('commit:' + str(tid))
-
-    def abort(tid):
-        output('abort:' + str(tid))
+        await(terminate)
 
 def main():
-    nproposers = int(sys.argv[1]) if len(sys.argv) > 1 else 10
-    nacceptors = int(sys.argv[2]) if len(sys.argv) > 2 else 10
-    fail_rate = int(sys.argv[3]) if len(sys.argv) > 3 else 10
+    ncohorts = int(sys.argv[1]) if len(sys.argv) > 1 else 10
+    fail_rate = int(sys.argv[2]) if len(sys.argv) > 2 else 10
 
-    config(channel=("unfifo", "unreliable"))
+    cohorts = new(Cohort, (fail_rate,), num= ncohorts)
+    coordinators = new(Coordinator, (cohorts,), num= 1)
+    start(cohorts | coordinators)
 
-    accpts = new(Cohort, [fail_rate], num= nacceptors)
-    propsrs = new(Coordinator, [nproposers, accpts], num= 1)
+# This is an executable specification of the algorithm described in
+# Kifer, M., et al. (2006). Database Systems: An Application Oriented Approach
+# (pages 1010-1012).  Addison-Wesley.
 
-    start(accpts | propsrs)
-
+# This code includes setup for trying to commit a transaction with a given
+# number of cohorts.
