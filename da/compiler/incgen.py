@@ -292,16 +292,18 @@ def {1}({0}):
         return stubast, stubcallast
 
 def gen_reset_stub(process, events):
-    """Generate the event reset stub."""
+    """Generate the event reset stub for 'process'."""
 
-    args = [evt.name for evt in process.events if evt in events]
-    body = [Expr(pyCall(func=pyAttr(evt.name, "clear")))
-            for evt in process.events if evt in events]
-    if len(body) > 0:
-        return [pyFunctionDef(name=RESET_STUB_FORMAT % process.name,
-                              args=args, body=body)]
-    else:
-        return []
+    finder = NodetypeFinder(dast.ResetStmt)
+    finder.visit(process)
+    if finder.found:
+        args = [evt.name for evt in process.events if evt in events]
+        body = [Expr(pyCall(func=pyAttr(evt.name, "clear")))
+                for evt in process.events if evt in events]
+        if len(body) > 0:
+            return [pyFunctionDef(name=RESET_STUB_FORMAT % process.name,
+                                  args=args, body=body)]
+    return []
 
 def gen_init_event_stub(event):
     """Generate the event init stub."""
@@ -419,6 +421,18 @@ def gen_inc_module(daast, cmdline_args, filename=""):
     # Generate the main python file:
     pyast = StubcallGenerator(all_events).visit(daast)
     return module, pyast
+
+class NodetypeFinder(NodeVisitor):
+    """Looks a for specific type of node starting from a given root node."""
+    def __init__(self, nodetype):
+        self.target_type = nodetype
+        self.found = False
+
+    def visit(self, node):
+        if isinstance(node, self.target_type):
+            self.found = True
+        else:
+            super().visit(node)
 
 class StubcallGenerator(PythonGenerator):
     """Transforms DistPy AST into Python AST with calls to incrementalization
