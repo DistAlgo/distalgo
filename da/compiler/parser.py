@@ -439,9 +439,9 @@ class Parser(NodeVisitor):
     def enter_query(self):
         pass
 
-    def leave_query(self, merge=False, audit=False):
-        if merge:
-            self.current_query_scope.merge_scope(self.current_scope)
+    def leave_query(self, audit=False):
+        self.debug("Leaving query: " + str(self.current_query),
+                   self.current_query)
         if audit:
             if self.current_parent is self.current_query:
                 self.audit_query(self.current_parent)
@@ -1554,7 +1554,7 @@ class Parser(NodeVisitor):
         else:
             expr.elem = self.visit(first_arg)
 
-        self.leave_query(merge=True)
+        self.leave_query()
         self.pop_state()
         return expr
 
