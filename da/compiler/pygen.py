@@ -246,7 +246,7 @@ class PythonGenerator(NodeVisitor):
         # One instance of PatternComprehensionGenerator for each query.
         # This is needed so free vars with the same name in a query can be
         # properly unified:
-        self.query_generator = None
+        self.pattern_generator = None
 
     def reset(self):
         """Resets internal states.
@@ -258,7 +258,7 @@ class PythonGenerator(NodeVisitor):
         self.processed_patterns = set()
         self.preambles = list(PREAMBLE)
         self.postambles = list()
-        self.query_generator = None
+        self.pattern_generator = None
 
     def visit(self, node):
         """Generic visit method.
@@ -554,18 +554,18 @@ class PythonGenerator(NodeVisitor):
         if not isinstance(node.pattern, dast.PatternExpr):
             result = comprehension(self.visit(node.pattern), domain, [])
         else:
-            if self.query_generator is None:
+            if self.pattern_generator is None:
                 # Legacy pattern
                 target, condlist = PatternComprehensionGenerator().visit(
                     node.pattern)
             else:
-                target, condlist = self.query_generator.visit(node.pattern)
+                target, condlist = self.pattern_generator.visit(node.pattern)
             result = comprehension(target, domain, condlist)
         return propagate_fields(result)
 
     def visit_QuantifiedExpr(self, node):
-        if self.query_generator is None:
-            self.query_generator = PatternComprehensionGenerator()
+        if self.pattern_generator is None:
+            self.pattern_generator = PatternComprehensionGenerator()
             is_top_level_query = True
         else:
             is_top_level_query = False
@@ -632,14 +632,16 @@ class PythonGenerator(NodeVisitor):
                               value=pyNone()))
 
         if is_top_level_query:
-            self.query_generator = None
+            self.pattern_generator = None
         return ast
 
     def visit_ComprehensionExpr(self, node):
-        if self.query_generator is None:
-            self.query_generator = PatternComprehensionGenerator()
+        printd("Entering comprehension " + str(node))
+        if self.pattern_generator is None:
+            self.pattern_generator = PatternComprehensionGenerator()
             is_top_level_query = True
         else:
+            self.pattern_generator.push_state()
             is_top_level_query = False
 
         generators = []
@@ -717,7 +719,13 @@ class PythonGenerator(NodeVisitor):
 
         finally:
             if is_top_level_query:
-                self.query_generator = None
+                printd("Leaving toplevel " + str(node))
+                self.pattern_generator = None
+            else:
+                # We need to restore the pattern state because comprehensions
+                # does not bind witness values outside its scope:
+                self.pattern_generator.pop_state()
+                printd("Leaving comprehension " + str(node))
 
     visit_GeneratorExpr = visit_ComprehensionExpr
     visit_SetCompExpr = visit_ComprehensionExpr
@@ -1069,7 +1077,17 @@ for attr in dir(self):
 class PatternComprehensionGenerator(PythonGenerator):
     def __init__(self):
         super().__init__()
+        # Set of freevars seen so far. Freevars after the first occurrence
+        # needs to be unified:
         self.freevars = set()
+        self.state_stack = []
+
+    def push_state(self):
+        self.state_stack.append(frozenset(self.freevars))
+
+    def pop_state(self):
+        s = self.state_stack.pop()
+        self.freevars = set(s)
 
     def visit_FreePattern(self, node):
         conds = []
