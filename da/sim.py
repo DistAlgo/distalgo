@@ -23,9 +23,9 @@
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 import os
-import copy
 import abc
 import sys
+import copy
 import time
 import queue
 import signal
@@ -33,6 +33,7 @@ import random
 import logging
 import threading
 import traceback
+import collections
 import multiprocessing
 
 from . import pattern, common, endpoint
@@ -118,7 +119,7 @@ class DistProcess(multiprocessing.Process):
 
         self._logical_clock = None
         self._events = []
-        self._jobqueue = []
+        self._jobqueue = collections.deque()
         self._timer = None
         self._timer_expired = False
         self._lock = None
@@ -373,8 +374,9 @@ class DistProcess(multiprocessing.Process):
         self._process_jobqueue(name)
 
     def _process_jobqueue(self, label=None):
-        newq = []
-        for handler, args in self._jobqueue:
+        leftovers = collections.deque()
+        while self._jobqueue:
+            handler, args = self._jobqueue.popleft()
             if ((handler._labels is None or label in handler._labels) and
                 (handler._notlabels is None or label not in handler._notlabels)):
                 # try:
@@ -383,8 +385,8 @@ class DistProcess(multiprocessing.Process):
                 #     self._log.warn("Error calling handler: %r", e)
                 handler(**args)
             else:
-                newq.append((handler, args))
-        self._jobqueue = newq
+                leftovers.append((handler, args))
+        self._jobqueue = leftovers
 
     def _process_event(self, block, timeout=None):
         """Retrieves one message, then process the backlog event queue.
