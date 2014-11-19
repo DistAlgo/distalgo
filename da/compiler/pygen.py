@@ -401,11 +401,16 @@ class PythonGenerator(NodeVisitor):
         if node.setup is not None:
             cd.body.extend(self.visit(node.setup))
         if node.entry_point is not None:
-            cd.body.extend(self.visit(node.entry_point))
+            cd.body.extend(self._entry_point(node.entry_point))
         cd.decorator_list = [self.visit(d) for d in node.decorators]
         cd.body.extend(self.body(node.methods))
         cd.body.extend(self.generate_handlers(node))
         return [cd]
+
+    def _entry_point(self, node):
+        stmts = self.visit(node)
+        stmts[0].name = "_da_run_internal"
+        return stmts
 
     def visit_Function(self, node):
         fd = FunctionDef()

@@ -37,7 +37,7 @@ class P(process):
                      has=(not some(sent(('token', _, LN2)),
                                    has=(LN2[self.id] > LN1[self.id]))))
 
-    def main():
+    def run():
         def anounce():
             output("In cs!")
         if haveToken():

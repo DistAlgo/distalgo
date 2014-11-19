@@ -19,7 +19,7 @@ class Coordinator(process):
     def abort(tid): output('abort:' + str(tid))
     def commit(tid): output('commit:' + str(tid))
 
-    def main():
+    def run():
         to_commit()
 
         send(('done',), to= cohorts)
@@ -48,7 +48,7 @@ class Cohort(process):
     def abort(tid): output('abort:' + str(tid))
     def commit(tid): output('commit:' + str(tid))
 
-    def main():
+    def run():
         await(received(('done',)))
 
 def main():

@@ -4,7 +4,7 @@ import random
 class P(process):
     def setup(left, right): pass
 
-    def main():
+    def run():
         distance = 1
         while True:
             send(('Out', self.id, distance), to={left, right})

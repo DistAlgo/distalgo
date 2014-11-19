@@ -24,7 +24,7 @@ class P(process):
         waiting = set()
         replied = set()
 
-    def main():
+    def run():
         def anounce():
             output("In cs!")
         for i in range(nrounds) :

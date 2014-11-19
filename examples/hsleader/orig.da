@@ -7,7 +7,7 @@ class P(process):
         self.phase_left, self.phase_right = False, False
         self.phase = 0
 
-    def main():
+    def run():
         while True:
             send(('Token', self.id, 'out', 1 << phase), to={left, right})
 

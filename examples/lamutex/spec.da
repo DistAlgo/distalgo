@@ -18,7 +18,7 @@ class P(process):
     def receive(msg= ('request', c, p)):
         send(('ack', c, self.id), to= p)
 
-    def main():
+    def run():
         def task(): output('in cs')
         for i in range(nrequests):
             mutex(task)

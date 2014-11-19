@@ -31,7 +31,9 @@ from . import dast
 from .utils import printe, printw, printd, Namespace
 
 # DistAlgo keywords
+KW_ENTRY_POINT = "main"
 KW_PROCESS_DEF = "process"
+KW_PROCESS_ENTRY_POINT = "run"
 KW_CONFIG = "config"
 KW_RECV_QUERY = "received"
 KW_SENT_QUERY = "sent"
@@ -783,14 +785,14 @@ class Parser(NodeVisitor):
             n.add_assignment(s)
             s.process = self.current_process
             if isinstance(s.parent, dast.Process):
-                if s.name == "main":
+                if s.name == KW_PROCESS_ENTRY_POINT:
                     self.current_process.entry_point = s
                 elif s.name == "setup":
                     self.current_process.setup = s
                 else:
                     self.current_process.methods.append(s)
             elif (type(s.parent) is dast.Program and
-                  s.name == "main"):
+                  s.name == KW_ENTRY_POINT):
                 self.current_parent.entry_point = s
             # Ignore the label decorators:
             s.decorators, _, _ = self.parse_decorators(node)

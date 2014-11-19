@@ -2,7 +2,7 @@ import sys
 class Pong(process):
     def setup(total_pings): pass
 
-    def main():
+    def run():
         await(len(listof(p, received(('Ping',), from_=p))) == total_pings)
 
     def receive(msg=('Ping',), from_=p):
@@ -12,7 +12,7 @@ class Pong(process):
 class Ping(process):
     def setup(p, nrounds): pass
 
-    def main():
+    def run():
         for i in range(nrounds):
             clk = logical_clock()
             send(('Ping',), to=p)

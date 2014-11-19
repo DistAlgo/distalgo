@@ -23,7 +23,7 @@ class Proposer(process):
         elif timeout(TIMEOUT):
             output('failed proposal number', n)
 
-    def main():
+    def run():
         while not received(('done',)):
             to_consent()
         output('terminating')
@@ -44,7 +44,7 @@ class Acceptor(process):
         if not some(sent(('respond', n2, _)), has= n2 > n):
             send(('accepted', n, v), to= learners)
 
-    def main():
+    def run():
         await(received(('done',)))
         output('terminating')
 
@@ -64,7 +64,7 @@ class Learner(process):
         elif timeout(TIMEOUT * 10):
             output('failed learning anything')
 
-    def main():
+    def run():
         learn()
         output('terminating')
 

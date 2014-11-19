@@ -5,7 +5,7 @@ class Proposer(process):
         self.propNum = (0, self.id)          # Current proposal(ballot) number
         self.propVal = self.id          # Own value to propose
 
-    def main():
+    def run():
         count = 0
         while count < nrounds:
             work()
@@ -37,7 +37,7 @@ class Acceptor(process):
     def setup(acceptors, proposers, quorumsize, f):
         self.peers = acceptors | proposers
 
-    def main():
+    def run():
         while True:
             if await(some(
                     received(('TwoAv', n, v, _)),

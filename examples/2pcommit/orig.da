@@ -19,7 +19,7 @@ class Coordinator(process):
     def abort(): output('abort')
     def commit(): output('commit')
 
-    def main():
+    def run():
         to_commit()
 
         output('terminating')
@@ -48,7 +48,7 @@ class Cohort(process):
     def abort(): output('abort'); terminate = True
     def commit(): output('commit'); terminate = True
 
-    def main():
+    def run():
         await(terminate)
 
 def main():

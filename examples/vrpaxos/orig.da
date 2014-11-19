@@ -37,7 +37,7 @@ class Replica(process):
             state = next; slot_num += 1
             send(('response', cid, result), to= client)
 
-    def main():
+    def run():
         output('### start')
         await(received(('done',)))
         output('terminating')
@@ -58,7 +58,7 @@ class Acceptor(process):
     def setup():
         self.ballot_num = None;  self.accepted = set()
 
-    def main():
+    def run():
         output('### start')
         await(received(('done',)))
         output('terminating')
@@ -80,7 +80,7 @@ class Acceptor(process):
 class Commander(process):
     def setup(leader, acceptors, replicas, b, s, p): pass
 
-    def main():
+    def run():
         output('### start')
         send(('p2a', self.id, b, s, p), to= acceptors)
         if await(len(setof(a, received(('p2b', a, _b)))) > len(acceptors)/2):
@@ -92,7 +92,7 @@ class Scout(process):
     def setup(leader, acceptors, b):
         self.pvalues = set()
 
-    def main():
+    def run():
         output('### start')
 # add sleep
         time.sleep(random.random()) # next random float in [0.0, 1.0)
@@ -109,7 +109,7 @@ class Leader(process):
         self.active = False;  self.proposals = set()
         self.started = set()
 
-    def main():
+    def run():
         output('### start')
 #        start(new(Scout, (self.id, acceptors, ballot_num)))
         sub = new(Scout, (self.id, acceptors, ballot_num))
@@ -161,7 +161,7 @@ class Client(process):
         self.results = dict()  # map of command id to result of command
         self.count = dict()    # map of command id to number of responses
 
-    def main():
+    def run():
         for i in range(nops):
             send(('request', (self.id, cid, random.randint(0, NOPS-1))),
                  to= replicas)

@@ -209,7 +209,7 @@ class DistProcess(multiprocessing.Process):
             self._lock.acquire()
             self._wait_for_go()
 
-            result = self.main()
+            result = self._da_run_internal()
 
             self.report_times()
 

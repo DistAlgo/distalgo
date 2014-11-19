@@ -6,7 +6,7 @@ class P(process):
         self.V = {v: False}
         self.receiveflag = False
 
-    def main():
+    def run():
           --start
           for i in range(maxfail):
               --one_round

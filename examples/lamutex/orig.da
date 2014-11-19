@@ -32,7 +32,7 @@ class P(process):
 #            if tag == 'request' and p2 == p:
 #                q.remove((tag, c, p2)); break
 
-    def main(): # change to run
+    def run(): # change to run
         def task(): output('in cs')
         for i in range(nrequests):
             mutex(task)
