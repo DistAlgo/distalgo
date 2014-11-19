@@ -758,6 +758,9 @@ class Parser(NodeVisitor):
             self.proc_body([node.body[bodyidx]] +
                            node.body[:bodyidx] + node.body[(bodyidx+1):])
             self.pop_state()
+            if proc.entry_point is None:
+                self.warn("Process %s missing '%s()' method." %
+                          (proc.name, KW_PROCESS_ENTRY_POINT), node)
 
         else:
             clsobj = dast.ClassStmt(self.current_parent, node,

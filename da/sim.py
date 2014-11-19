@@ -209,8 +209,11 @@ class DistProcess(multiprocessing.Process):
             self._lock.acquire()
             self._wait_for_go()
 
-            result = self._da_run_internal()
+            if not hasattr(self, '_da_run_internal'):
+                self._log.error("Process does not have entry point!")
+                sys.exit(1)
 
+            result = self._da_run_internal()
             self.report_times()
 
         except Exception as e:
