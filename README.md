@@ -108,7 +108,7 @@ The following command installs DistAlgo for the current user:
 
       python -m da.compiler <SOURCE>
  
-   Otherwise, call the `dar` script (adding prefix `<DAROOT>/bin/` if you did
+   Otherwise, call the `dac` script (adding prefix `<DAROOT>/bin/` if you did
    not add `<DAROOT>/bin` to your `PATH` variable):
 
       dac <SOURCE>
