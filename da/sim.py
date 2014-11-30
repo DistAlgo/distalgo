@@ -377,19 +377,20 @@ class DistProcess(multiprocessing.Process):
         self._process_jobqueue(name)
 
     def _process_jobqueue(self, label=None):
-        leftovers = collections.deque()
+        leftovers = []
         while self._jobqueue:
             handler, args = self._jobqueue.popleft()
             if ((handler._labels is None or label in handler._labels) and
                 (handler._notlabels is None or label not in handler._notlabels)):
-                # try:
-                #     handler(**args)
-                # except TypeError as e:
-                #     self._log.warn("Error calling handler: %r", e)
-                handler(**args)
+                try:
+                    handler(**args)
+                except TypeError as e:
+                    self._log.error(
+                        "%s when calling handler '%s' with '%s': %s",
+                        type(e).__name__, handler.__name__, str(args), str(e))
             else:
                 leftovers.append((handler, args))
-        self._jobqueue = leftovers
+        self._jobqueue.extend(leftovers)
 
     def _process_event(self, block, timeout=None):
         """Retrieves one message, then process the backlog event queue.
