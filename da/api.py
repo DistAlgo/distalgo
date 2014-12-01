@@ -78,7 +78,6 @@ def strip_suffix(filename):
     dotidx = filename.rfind(".")
     return filename[:dotidx] if dotidx != -1 else filename
 
-@api
 def import_da(name, from_dir=None, compiler_args=[]):
     """Imports DistAlgo module 'module', returns the module object.
 
