@@ -26,7 +26,7 @@ import builtins
 import sys
 from ast import *
 
-from .. import common
+from .. import common, api
 from . import dast
 from .utils import printe, printw, printd, Namespace
 
@@ -142,18 +142,14 @@ KnownUpdateMethods = {
 }
 
 ValidResetTypes = {"Received", "Sent", ""}
-
-ApiMethods = common.api_registry.keys()
-
+ApiMethods = set(common.api_registry.keys())
+ApiMethods.add('import_da')     # 'import_da' is a special method
 BuiltinMethods = common.builtin_registry.keys()
-
 PythonBuiltins = dir(builtins)
 
 ComprehensionTypes = {KW_COMP_SET, KW_COMP_TUPLE, KW_COMP_DICT, KW_COMP_LIST}
-
 AggregateKeywords = {KW_AGGREGATE_MAX, KW_AGGREGATE_MIN,
                      KW_AGGREGATE_SIZE, KW_AGGREGATE_SUM}
-
 Quantifiers = {KW_UNIVERSAL_QUANT, KW_EXISTENTIAL_QUANT}
 
 ##########

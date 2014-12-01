@@ -37,7 +37,7 @@ import traceback
 import multiprocessing
 import os.path
 
-from . import compiler, common, sim, endpoint as ep
+from . import common, sim, endpoint as ep
 
 api = common.api
 deprecated = common.deprecated
@@ -96,6 +96,7 @@ def import_da(name, from_dir=None, compiler_args=[]):
     'sys.path'.
 
     """
+    from . import compiler
     paths = sys.path if from_dir is None else [from_dir]
     pathname = name.replace(".", os.sep)
     for suffix in DISTPY_SUFFIXES:

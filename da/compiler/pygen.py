@@ -531,7 +531,7 @@ class PythonGenerator(NodeVisitor):
         return propagate_attributes([ast.func] + ast.args, ast)
 
     def visit_ApiCallExpr(self, node):
-        ast = pyCall(pyAttr(pyAttr("da", "api"), node.func),
+        ast = pyCall(pyAttr("da", node.func),
                      [self.visit(a) for a in node.args],
                      [(key, self.visit(value)) for key, value in node.keywords],
                      self.visit(node.starargs)

@@ -1762,6 +1762,8 @@ class Program(CompoundStmt, NameScope):
         self.configurations = []
         self.processes = []
         self.entry_point = None
+        # The 'da' module is always available to all DistAlgo programs:
+        self.add_name("da")
 
     @property
     def skip(self):
