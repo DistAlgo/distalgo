@@ -1,24 +1,60 @@
+"""
+This is a small library for instrumenting DistAlgo programs for
+benchmarking. It assumes that each process is created in main()
+and lives for the duration of the benchmark.
+
+A single controller process is created to coordinate when the
+other processes ("controllees") begin and end, and to collect
+their results. The controller is initialized with the number of
+controllees to expect, and does the following steps:
+
+    1. Wait for nprocs many ('CTL_Ready',) messages.
+    2. Broadcast ('CTL_Start',) to everyone.
+    3. Wait for nprocs many ('CTL_Done', cputime) messages.
+    4. Send ('CTL_Terminate',) to everyone.
+
+It then outputs two metrics:
+
+    1) The wall-clock time, as measured by the controller, between
+       the beginning of step (2) and the end of step (3);
+    
+    2) The total sum of the process times, as measured by the
+       controllees between receiving CTL_Start and sending CTL_Done. 
+
+Note in particular that these two measurements exclude the time needed
+to create and destroy the DistAlgo processes.
+
+This data is printed on stdout in the form of a line "OUTPUT: <data>"
+where data is a simple JSON-encoded object.
+
+To adapt a DistAlgo program to use this, make the following changes.
+
+    At the top of the file, add the line
+    
+        controller = import_da('controller')
+    
+    For each process class,
+    
+      - add controller.Controllee as a base class
+      - add a process field and setup() parameter "ctl"
+      - in the body of setup(), add the line "super().setup(ctl)"
+      - above the definition of run(), add the decorator "@controller.run"
+    
+    In main(), first create a Controller process using the code
+    
+        ctl = new(controller.Controller, num= 1)
+        setup(ctl, (nprocs,))
+        start(ctl)
+    
+    where nprocs is the number of controllee processes. Then in each
+    controllee's new() or setup() method, add ctl to the list of
+    passed-in arguments.
+"""
+
 import time
 import json
 
 class Controller(process):
-    # Control node that coordinates the beginning and end of a
-    # distalgo benchmark. Takes in nprocs, the number of other
-    # processes being managed.
-    #
-    # Steps:
-    #   1. Wait for nprocs many ('CTL_Ready',) messages.
-    #   2. Broadcast ('CTL_Start',) to everyone.
-    #   3. Wait for nprocs many ('CTL_Done', cputime) messages.
-    #   4. Send ('CTL_Terminate',) to everyone.
-    #
-    # Two metrics are output afterward: The wall-clock time,
-    # as measured by the controller, between the beginning of
-    # (2) and the end of (3); and the total sum of the process
-    # times, as measured by each individual process and
-    # transmitted in the CTL_Done messages. These are output in
-    # the form of a line "OUTPUT: <jsondata>" where <jsondata>
-    # is a JSON encoded object.
     
     def setup(nprocs):
         # Processes we are controlling, and number
@@ -30,10 +66,10 @@ class Controller(process):
         # Total of all processes' cputime.
         self.cputime = 0
         
-        self.verbose = True
+        self.ctl_verbose = True
     
     def verboutput(s):
-        if verbose:
+        if ctl_verbose:
             output(s)
     
     def receive(msg=('CTL_Ready',), from_=source):
@@ -70,17 +106,14 @@ class Controller(process):
         time.sleep(1)
 
 class Controllee(process):
-    # Process that reports to a Controller.
-    # Assign the controller process to the "ctl" field.
-    # In run(), call ctlbegin() and ctlend().
     
     def setup(ctl):
         self.ctl_starttime = 0
         self.ctl_endtime = 0
-        self.verbose = True
+        self.ctl_verbose = True
     
     def verboutput(s):
-        if verbose:
+        if ctl_verbose:
             output(s)
     
     def ctl_begin():
