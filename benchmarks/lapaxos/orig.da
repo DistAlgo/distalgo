@@ -29,7 +29,6 @@ class Proposer(process, controller.Controllee):
     def run():
         while not received(('done',)):
             to_consent()
-        output('terminating')
 
     def anyof(s):
         return next(iter(s)) if s else None
@@ -51,7 +50,6 @@ class Acceptor(process, controller.Controllee):
     @controller.run
     def run():
         await(received(('done',)))
-        output('terminating')
 
     def anyof(s):
         """return any element of set s if s is not empty or 'None' otherwise"""
@@ -73,7 +71,6 @@ class Learner(process, controller.Controllee):
     @controller.run
     def run():
         learn()
-        output('terminating')
 
 def main():
     nacceptors = int(sys.argv[1]) if len(sys.argv) > 1 else 3

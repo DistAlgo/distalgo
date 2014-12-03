@@ -47,9 +47,7 @@ class Replica(process, controller.Controllee):
 
     @controller.run
     def run():
-        output('### start')
         await(received(('done',)))
-        output('terminating')
 
     def receive(msg= ('request', p)):
         output('### request', p)
@@ -70,9 +68,7 @@ class Acceptor(process, controller.Controllee):
 
     @controller.run
     def run():
-        output('### start')
         await(received(('done',)))
-        output('terminating')
 
     def receive(msg= m):
         BOTTOM = (-1, -1);
@@ -123,13 +119,11 @@ class Leader(process, controller.Controllee):
 
     @controller.run
     def run():
-        output('### start')
 #        start(new(Scout, (self.id, acceptors, ballot_num)))
         sub = new(Scout, (self.id, acceptors, ballot_num))
         start(sub); started |= sub
         await(received(('done',)))
         for tmp in started: tmp.join()
-        output('terminating')
 
     def receive(msg= ('propose', s, p)):
         output('### propose', s, p)
@@ -184,7 +178,6 @@ class Client(process, controller.Controllee):
             output('received result', cid, results[cid])
             cid += 1
         await(each(cid in range(nops), has= count[cid] == len(replicas)))
-        output('terminating')
 
     def receive(msg= ('response', cid, result)):
         output('### response', cid, result)

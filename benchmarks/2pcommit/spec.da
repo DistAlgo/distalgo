@@ -26,7 +26,6 @@ class Coordinator(process, controller.Controllee):
         to_commit()
 
         send(('done',), to= cohorts)
-        output('terminating')
 
 class Cohort(process, controller.Controllee):
     def setup(ctl, failure_rate):

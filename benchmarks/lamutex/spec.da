@@ -26,10 +26,6 @@ class P(process, controller.Controllee):
         for i in range(nrequests):
             mutex(task)
 
-        send(('done', self.id), to= s)
-        await(each(p in s, has= received(('done', p))))
-        output('terminating')
-
 def main():
     nprocs = int(sys.argv[1]) if len(sys.argv) > 1 else 10
     nrequests = int(sys.argv[2]) if len(sys.argv) > 2 else 1

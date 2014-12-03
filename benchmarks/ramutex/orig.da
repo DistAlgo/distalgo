@@ -33,9 +33,6 @@ class P(process, controller.Controllee):
             output("In cs!")
         for i in range(nrounds) :
             cs(anounce)
-        send(('Done', self.id), to=ps)
-        await(each(p in ps, has= received(('Done', p))))
-        output("Terminating..")
 
     # when receiving requests from others, enque and reply
     def receive(msg=('Request', timestamp), from_=source):
