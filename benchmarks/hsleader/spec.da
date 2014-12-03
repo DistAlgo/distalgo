@@ -1,0 +1,61 @@
+import sys
+import random
+controller = import_da('controller')
+
+class P(process, controller.Controllee):
+    def setup(ctl, left, right):
+        super().setup(ctl)
+
+    def ctl_begin(): super().ctl_begin()
+    def ctl_end(): super().ctl_end()
+
+    def run():
+        ctl_begin()
+
+        distance = 1
+        while True:
+            send(('Out', self.id, distance), to={left, right})
+            if await(some(received(('Out', self.id, d)))):
+                output("I am leader at distance %d!"%d)
+                send(('Leader', self.id), to={left, right})
+                break
+            elif some(received(('Leader', leader))):
+                output("Leader is " + str(leader))
+                break
+            elif (received(('In', self.id), from_=left) and
+                  received(('In', self.id), from_=right)):
+                distance *= 2
+                reset("Received")
+
+        ctl_end()
+
+    def receive(msg=('Out', v, d), from_=source):
+        if v > self.id:
+            if d > 1:
+                send(('Out', v, d-1), to=(right if source == left else left))
+            elif d == 1:
+                send(('In', v), to=source)
+
+    def receive(msg=('In', v), from_=source):
+        if v > self.id:
+            send(('In', v), to=(right if source == left else left))
+
+    def receive(msg=("Leader", leader), from_=source):
+        send(('Leader', leader), to=(right if source == left else left))
+
+def main():
+    n = int(sys.argv[1]) if len(sys.argv) > 1 else 10
+    config(channel="fifo")
+
+    ctl = new(controller.Controller, num= 1)
+    setup(ctl, (n,))
+    start(ctl)
+
+    topology = list(new(P, num= n))
+    random.shuffle(topology)
+    for i, p in enumerate(topology):
+        if i == len(topology)-1:
+           setup({p}, (ctl, topology[i-1], topology[0]))
+        else:
+           setup({p}, (ctl, topology[i-1], topology[i+1]))
+    start(topology)

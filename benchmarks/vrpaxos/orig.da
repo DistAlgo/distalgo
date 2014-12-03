@@ -1,0 +1,251 @@
+# Note: Acceptor, Replica, Leader, and Client are all managed and timed
+# by the controller. Commander and Scout are created by processes
+# rather than by main(), so they are unknown to the controller.
+# Consequently their time is not included in the reported total
+# process time.
+
+import sys
+import time
+import random
+controller = import_da('controller')
+
+NOPS = 10  # number of different operations that the state machine can do
+# operation i maps a state to a pair of new state and result of i on state
+def operation(i): return lambda state: (state+[i], ['result',i,'on',state])
+operations = {i: operation(i) for i in range(NOPS)}
+
+# wrong: all closures get i = NOPS - 1
+# ops = {i: (lambda state: (state+[i], ['res',i]+state)) for i in range(NOPS)}
+
+class Replica(process, controller.Controllee):
+    def setup(ctl, leaders, initial_state):
+        super().setup(ctl)
+        self.state = initial_state;  self.slot_num = 1
+        self.proposals = set();  self.decisions = set()
+
+    def ctl_begin(): super().ctl_begin()
+    def ctl_end(): super().ctl_end()
+
+    def propose(p):
+        if not some((_, _p) in decisions):
+            # find the maximum used slot number, or 0
+            maxs = max(setof(s, (s, _) in proposals | decisions) or {0})
+            # within the maximum + 1, find smallest not yet used
+            s1 = min(setof(s, s in range(1, maxs + 1 + 1), has=
+                           not some((s, _) in proposals | decisions)))
+            proposals.add((s1, p))
+            send(('propose', s1, p), to= leaders)
+
+    def perform(p):
+        output('### perform', p)
+        client, cid, op = p
+        if some((s, _p) in decisions, has= s < slot_num):
+            slot_num += 1
+        else:
+            output('===', state, op)
+            next, result = operations[op](state)
+            output('===', next, result)
+            state = next; slot_num += 1
+            send(('response', cid, result), to= client)
+
+    def run():
+        ctl_begin()
+
+        output('### start')
+        await(received(('done',)))
+        output('terminating')
+
+        ctl_end()
+
+    def receive(msg= ('request', p)):
+        output('### request', p)
+        propose(p)
+
+    def receive(msg= ('decision', s, p)):
+        output('### decision', s, p)
+        decisions.add((s, p))
+        while some((_slot_num, p1) in decisions):
+            if some((_slot_num, p2) in proposals, has= p2 != p1):
+                propose(p2)
+            perform(p1)
+
+class Acceptor(process, controller.Controllee):
+    def setup(ctl):
+        super().setup(ctl)
+        self.ballot_num = None;  self.accepted = set()
+
+    def ctl_begin(): super().ctl_begin()
+    def ctl_end(): super().ctl_end()
+
+    def run():
+        ctl_begin()
+
+        output('### start')
+        await(received(('done',)))
+        output('terminating')
+
+        ctl_end()
+
+    def receive(msg= m):
+        BOTTOM = (-1, -1);
+        ballot_num = max((setof(b, received(('p1a', _, b))) |
+                          setof(b, received(('p2a', _, b, _, _)))) or {BOTTOM})
+
+    def receive(msg= ('p1a', leader_scout, b)):
+        output('### p1a', leader_scout, b)
+        send(('p1b', self.id, ballot_num, accepted), to= leader_scout)
+
+    def receive(msg= ('p2a', leader_commander, b, s, p)):
+        output('### p2a', leader_commander, b, s, p)
+        if b == ballot_num : accepted.add((b, s, p))
+        send(('p2b', self.id, ballot_num), to= leader_commander)
+
+class Commander(process):
+    def setup(leader, acceptors, replicas, b, s, p): pass
+
+    def run():
+        output('### start')
+        send(('p2a', self.id, b, s, p), to= acceptors)
+        if await(len(setof(a, received(('p2b', a, _b)))) > len(acceptors)/2):
+            send(('decision', s, p), to= replicas)
+        elif some(received(('p2b', _, b1)), has= b1 != b):
+            send(('preempted', b1), to= leader)
+
+class Scout(process):
+    def setup(leader, acceptors, b):
+        self.pvalues = set()
+
+    def run():
+        output('### start')
+# add sleep
+        time.sleep(random.random()) # next random float in [0.0, 1.0)
+        send(('p1a', self.id, b), to= acceptors)
+        if await(len(setof(a, received(('p1b', a, _b, _)))) > len(acceptors)/2):
+            pvalues = setof(v, received(('p1b', _, _b, r)), v in r) #accepted
+            send(('adopted', b, pvalues), to= leader)
+        elif some(received(('p1b', a, b1, _)), has= b1 != b):
+            send(('preempted', b1), to= leader)
+
+class Leader(process, controller.Controllee):
+    def setup(ctl, acceptors, replicas):
+        super().setup(ctl)
+        self.ballot_num = (0, self.id);
+        self.active = False;  self.proposals = set()
+        self.started = set()
+
+    def ctl_begin(): super().ctl_begin()
+    def ctl_end(): super().ctl_end()
+
+    def run():
+        ctl_begin()
+
+        output('### start')
+#        start(new(Scout, (self.id, acceptors, ballot_num)))
+        sub = new(Scout, (self.id, acceptors, ballot_num))
+        start(sub); started |= sub
+        await(received(('done',)))
+        for tmp in started: tmp.join()
+        output('terminating')
+
+        ctl_end()
+
+    def receive(msg= ('propose', s, p)):
+        output('### propose', s, p)
+        if not some((_s, _) in proposals):
+            proposals.add((s,p))
+            if active:
+#                start(new(Commander,
+#                          (self.id, acceptors, replicas, ballot_num, s, p)))
+                sub = new(Commander,
+                          (self.id, acceptors, replicas, ballot_num, s, p))
+                start(sub); started |= sub
+
+    def receive(msg= ('adopted', ballot_num, pvals)):
+        output('### adopted', ballot_num, pvals)
+        proposals = circle_plus(proposals, pmax(pvals))
+        for (s, p) in proposals:
+#            start(new(Commander,
+#                      (self.id, acceptors, replicas, ballot_num, s, p)))
+            sub = new(Commander,
+                    (self.id, acceptors, replicas, ballot_num, s, p))
+            start(sub); started |= sub
+        active = True
+
+    def receive(msg= ('preempted', (r1, leader1))):
+        if (r1, leader1) > ballot_num:
+            active = False
+            ballot_num = (r1 + 1, self.id)
+#            start(new(Scout, (self.id, acceptors, ballot_num)))
+            sub = new(Scout, (self.id, acceptors, ballot_num))
+            start(sub); started |= sub
+
+    def circle_plus(x, y):
+        return y | setof((s, p), (s, p) in x, has= not some((s, _) in y))
+
+    def pmax(pvals):
+        return setof((s, p), (b, s, p) in pvals, has=
+                     each((b1, s, _) in pvals, has= b1 <= b))
+
+class Client(process, controller.Controllee):
+    def setup(ctl, replicas, nops):
+        super().setup(ctl)
+        self.cid = 0           # command id
+        self.results = dict()  # map of command id to result of command
+        self.count = dict()    # map of command id to number of responses
+
+    def ctl_begin(): super().ctl_begin()
+    def ctl_end(): super().ctl_end()
+
+    def run():
+        ctl_begin()
+
+        for i in range(nops):
+            send(('request', (self.id, cid, random.randint(0, NOPS-1))),
+                 to= replicas)
+            await(cid in results)
+            output('received result', cid, results[cid])
+            cid += 1
+        await(each(cid in range(nops), has= count[cid] == len(replicas)))
+        output('terminating')
+
+        ctl_end()
+
+    def receive(msg= ('response', cid, result)):
+        output('### response', cid, result)
+        if cid not in results:
+            results[cid] = result
+        elif results[cid] != result:
+            output('different result', cid, result, 'than', results[cid])
+        count[cid] = 1 if cid not in count else count[cid] + 1
+
+def main():
+    nacceptors = int(sys.argv[1]) if len(sys.argv) > 1 else 3 # 8
+    nreplicas = int(sys.argv[2]) if len(sys.argv) > 2 else 3 # 4
+    nleaders = int(sys.argv[3]) if len(sys.argv) > 3 else 1 # 2
+    nclients = int(sys.argv[4]) if len(sys.argv) > 4 else 1 # 4
+    nops = int(sys.argv[5]) if len(sys.argv) > 5 else 2 # 2
+
+    ctl = new(controller.Controller, num= 1)
+    setup(ctl, (nacceptors + nreplicas + nleaders + nclients,))
+    start(ctl)
+
+    acceptors = new(Acceptor, (ctl,), num= nacceptors)
+    replicas = new(Replica, num= nreplicas)
+    leaders = new(Leader, (ctl, acceptors, replicas), num= nleaders)
+    initial_state = [];  setup(replicas, (ctl, leaders, initial_state))
+    clients = new(Client, (ctl, replicas, nops), num= nclients)
+
+    start(acceptors)
+    start(replicas | leaders)
+    start(clients)
+
+    for c in clients: c.join()
+    print('done')
+    da.send(('done',), to= (acceptors|replicas|leaders))
+
+# This code includes setup and termination for each client to request and
+# complete a number of operations.
+
+# Not properly terminating when there are live Commanders or Scounts.
+# This happens usually when there are multiple leaders or clients;
+# adding count in client doesn't help.

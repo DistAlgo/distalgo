@@ -1,0 +1,88 @@
+import sys
+from random import randint
+controller = import_da('controller')
+
+class Coordinator(process, controller.Controllee):
+    def setup(ctl, cohorts):
+        super().setup(ctl)
+
+    def ctl_begin(): super().ctl_begin()
+    def ctl_end(): super().ctl_end()
+
+    def to_commit():
+        send(('prepare'), to= cohorts)
+        await(each(c in cohorts, has= some(received(('vote', _), from_= c))))
+        if some(c in cohorts, has= received(('vote', 'aborting'), from_= c)):
+            s = setof(c, c in cohorts, received(('vote','ready'), from_= c))
+            send(('abort'), to= s)
+            abort()
+        if each(c in cohorts, has= received(('vote', 'ready'), from_= c)):
+            send(('commit'), to= cohorts)
+            await(each(c in cohorts, has= received(('done'), from_= c)))
+            commit()
+
+    def abort(): output('abort')
+    def commit(): output('commit')
+
+    def run():
+        ctl_begin()
+
+        to_commit()
+
+        output('terminating')
+
+        ctl_end()
+
+class Cohort(process, controller.Controllee):
+    def setup(ctl, failure_rate):
+        super().setup(ctl)
+        self.terminate = False
+
+    def ctl_begin(): super().ctl_begin()
+    def ctl_end(): super().ctl_end()
+
+    def receive(msg= ('prepare'), from_= coord):
+        if prepared():
+            send(('vote', 'ready'), to= coord)
+            ready()
+        else:
+            send(('vote', 'aborting'), to= coord)
+            abort()
+
+    def receive(msg= ('abort')):
+        abort()
+
+    def receive(msg= ('commit'), from_= coord):
+        send(('done'), to= coord)
+        commit()
+
+    def prepared(): return randint(0, 100) > failure_rate
+    def ready(): output('ready')
+    def abort(): output('abort'); terminate = True
+    def commit(): output('commit'); terminate = True
+
+    def run():
+        ctl_begin()
+
+        await(terminate)
+
+        ctl_end()
+
+def main():
+    ncohorts = int(sys.argv[1]) if len(sys.argv) > 1 else 10
+    fail_rate = int(sys.argv[2]) if len(sys.argv) > 2 else 10
+
+    ctl = new(controller.Controller, num= 1)
+    setup(ctl, (ncohorts + 1,))
+    start(ctl)
+
+    cohorts = new(Cohort, (ctl, fail_rate,), num= ncohorts)
+    coordinators = new(Coordinator, (ctl, cohorts,), num= 1)
+    start(cohorts | coordinators)
+
+# This is an executable specification of the algorithm described in
+# Kifer, M., et al. (2006). Database Systems: An Application Oriented Approach
+# (pages 1010-1012).  Addison-Wesley.
+
+# This code includes setup for trying to commit a transaction with a given
+# number of cohorts.

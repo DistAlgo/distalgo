@@ -1,0 +1,55 @@
+import sys
+controller = import_da('controller')
+
+class Pong(process, controller.Controllee):
+    def setup(ctl, total_pings):
+        super().setup(ctl)
+
+    def ctl_begin(): super().ctl_begin()
+    def ctl_end(): super().ctl_end()
+
+    def run():
+        ctl_begin()
+
+        await(len(listof(p, received(('Ping',), from_=p))) == total_pings)
+
+        ctl_end()
+
+    def receive(msg=('Ping',), from_=p):
+        output("Pinged")
+        send(('Pong',), to=p)
+
+class Ping(process, controller.Controllee):
+    def setup(ctl, p, nrounds):
+        super().setup(ctl)
+
+    def ctl_begin(): super().ctl_begin()
+    def ctl_end(): super().ctl_end()
+
+    def run():
+        ctl_begin()
+
+        for i in range(nrounds):
+            clk = logical_clock()
+            send(('Ping',), to=p)
+            await(some(received(('Pong',), clk=rclk), has=(rclk > clk)))
+
+        ctl_end()
+
+    def receive(msg=('Pong',)):
+        output("Ponged.")
+
+def main():
+    nrounds = int(sys.argv[1]) if len(sys.argv) > 1 else 3
+    npings = int(sys.argv[2]) if len(sys.argv) > 2 else 3
+    config(clock='Lamport')
+
+    ctl = new(controller.Controller, num= 1)
+    setup(ctl, (npings + 1,))
+    start(ctl)
+
+    pong = new(Pong, [ctl, nrounds * npings], num= 1)
+    ping = new(Ping, num= npings)
+    setup(ping, (ctl, pong, nrounds))
+    start(pong)
+    start(ping)

@@ -3,6 +3,7 @@ __pycache__/
 *.log
 *.bak
 examples/**/*.py
+benchmarks/**/*.py
 dist/
 build/
 MANIFEST

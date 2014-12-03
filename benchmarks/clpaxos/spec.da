@@ -1,0 +1,107 @@
+import sys
+controller = import_da('controller')
+
+class Proposer(process, controller.Controllee):
+    def setup(ctl, acceptors, quorumsize, f, nrounds, timeout):
+        super().setup(ctl)
+        self.propNum = (0, self.id)          # Current proposal(ballot) number
+        self.propVal = self.id          # Own value to propose
+
+    def ctl_begin(): super().ctl_begin()
+    def ctl_end(): super().ctl_end()
+
+    def run():
+        ctl_begin()
+
+        count = 0
+        while count < nrounds:
+            work()
+            --prepare
+            send(('Prepare', propNum, self.id), to=acceptors)
+            if await(len(setof(a, received(('Promise', _propNum, _, _, a)))) > quorumsize):
+                --propose
+                _, voted = max(setof((n, v),
+                                     received(('Promise', _propNum, n, v, _)),
+                                     len(setof(a,
+                                               received(('Promise',
+                                                         _propNum, n, v, a)))) > f) |
+                               {((-1, self.id), propVal)})
+
+                send(('OneC', propNum, voted, self.id), to=acceptors)
+                if await(len(setof(a, received(('TwoAv', _propNum, _voted, a)))) > quorumsize):
+                    --end
+                    output("Succeeded proposing %r" % voted)
+                    count += 1
+                    continue
+                elif timeout(timeout):
+                    output("Failed to Propose in time, retrying.")
+            elif timeout(timeout):
+                output("Failed to Prepare in time, retrying.")
+            propNum = (propNum[0] + 1, self.id)
+        send(('Done',), to=acceptors)
+
+        ctl_end()
+
+class Acceptor(process, controller.Controllee):
+    def setup(ctl, acceptors, proposers, quorumsize, f):
+        super().setup(ctl)
+        self.peers = acceptors | proposers
+
+    def ctl_begin(): super().ctl_begin()
+    def ctl_end(): super().ctl_end()
+
+    def run():
+        ctl_begin()
+        
+        while True:
+            if await(some(
+                    received(('TwoAv', n, v, _)),
+                    has=(len(setof(a, received(('TwoAv', n, v, a)))) >
+                         quorumsize and
+                         not sent(('TwoB', n, v))))):
+                send(('TwoB', n, v), to=peers)
+            elif each(p in proposers, has=received(('Done',), from_=p)):
+                break
+
+        ctl_end()
+
+    def receive(msg=('Prepare', n, p)):
+        if n > maxpromised():
+            vn, vv = max(setof((vpn, vv), sent(('TwoAv', vpn, vv, self.id))) |
+                         {((-1, self.id), None)})
+            send(('Promise', n, vn, vv, self.id), to=peers)
+
+    def receive(msg=('OneC', n, v, p)):
+        if (n >= maxpromised() and islegal(n, v) and
+                (not some(sent(('TwoAv', _n, _, self.id))))):
+            send(('TwoAv', n, v, self.id), to=peers)
+
+    def maxpromised():
+        return max(setof(n, sent(('Promise', n, _, _, _))) | {(-2, self.id)})
+
+    def islegal(n, v):
+        voted = setof((vn, vv), received(('Promise', _n, vn, vv, _)),
+                      len(setof(a, received(('Promise', _n, vn, vv, a)))) > f)
+        if voted and (max(voted)[1] is not None):
+            return v == max(voted)[1]
+        else:
+            return True
+
+def main():
+    nproposers = int(sys.argv[1]) if len(sys.argv) > 1 else 5
+    nacceptors = int(sys.argv[2]) if len(sys.argv) > 2 else 10
+    nrounds = int(sys.argv[3]) if len(sys.argv) > 3 else 1
+    timeout = int(sys.argv[4]) if len(sys.argv) > 4 else 5
+    f = int((nacceptors-1)/3)
+    quorum = int(nacceptors/2 + f)
+
+    ctl = new(controller.Controller, num= 1)
+    setup(ctl, (nacceptors + nproposers,))
+    start(ctl)
+
+    acceptors = new(Acceptor, num=nacceptors)
+    proposers = new(Proposer, num=nproposers)
+    setup(acceptors, (ctl, acceptors, proposers, quorum, f))
+    setup(proposers, (ctl, acceptors, quorum, f, nrounds, timeout))
+    start(acceptors)
+    start(proposers)

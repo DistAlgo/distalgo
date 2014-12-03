@@ -1,0 +1,120 @@
+import sys
+from random import randint
+controller = import_da('controller')
+TIMEOUT = 1
+
+class Proposer(process, controller.Controllee):
+    def setup(ctl, acceptors):
+        super().setup(ctl) 
+        self.n = None              # proposal number
+        self.majority = acceptors  # majority of acceptors; all in other papers
+
+    def ctl_begin(): super().ctl_begin()
+    def ctl_end(): super().ctl_end()
+
+    def to_consent():
+        n = (0, self.id) if n == None else (n[0]+1, self.id)  # pick a prop num
+        send(('prepare', n), to= majority)
+
+        if await(len(setof(a, received(('respond', _n, _), from_ =a)))
+                 > len(acceptors)/2):
+            v = anyof(setof(v, received(('respond', _n, (n2, v))), has=
+                            n2==max(setof(n3, received(('respond', _n, (n3, v))))))
+                      or {randint(1,100)})  # any value, pick in 1..100
+            responded = setof(a, received(('respond', _n, _), from_ =a))
+            send(('accept', n, v), to= responded)
+            output('### chose', n, v)
+
+        elif timeout(TIMEOUT):
+            output('failed proposal number', n)
+
+    def run():
+        ctl_begin()
+
+        while not received(('done',)):
+            to_consent()
+        output('terminating')
+
+        ctl_end()
+
+    def anyof(s):
+        return next(iter(s)) if s else None
+
+class Acceptor(process, controller.Controllee):
+    def setup(ctl, learners):
+        super().setup(ctl)
+
+    def ctl_begin(): super().ctl_begin()
+    def ctl_end(): super().ctl_end()
+
+    def receive(msg= ('prepare', n), from_= p):
+        if each(sent(('respond', n2, _)), has= n > n2):
+            prop = anyof(setof((n, v), sent(('accepted', n, v)), has=
+                               n==max(setof((n, v), sent(('accepted', n, v))))))
+            send(('respond', n, prop), to =p)
+
+    def receive(msg= ('accept', n, v)):
+        if not some(sent(('respond', n2, _)), has= n2 > n):
+            send(('accepted', n, v), to= learners)
+
+    def run():
+        ctl_begin()
+
+        await(received(('done',)))
+        output('terminating')
+
+        ctl_end()
+
+    def anyof(s):
+        """return any element of set s if s is not empty or 'None' otherwise"""
+        return next(iter(s)) if s else None
+
+class Learner(process, controller.Controllee):
+    def setup(ctl, acceptors):
+        super().setup(ctl)
+
+    def ctl_begin(): super().ctl_begin()
+    def ctl_end(): super().ctl_end()
+
+    def learn():
+        if await(some(received(('accepted', n, v)),
+                      has= len(setof(a, received(('accepted', n, v), from_=a)))
+                           > len(acceptors)/2)):
+            output('learned', n, v)
+
+        elif timeout(TIMEOUT * 10):
+            output('failed learning anything')
+
+    def run():
+        ctl_begin()
+
+        learn()
+        output('terminating')
+
+        ctl_end()
+
+def main():
+    nacceptors = int(sys.argv[1]) if len(sys.argv) > 1 else 3
+    nproposers = int(sys.argv[2]) if len(sys.argv) > 2 else 3
+    nlearners = int(sys.argv[3]) if len(sys.argv) > 3 else 3
+
+    ctl = new(controller.Controller, num= 1)
+    setup(ctl, (nacceptors + nproposers + nlearners,))
+    start(ctl)
+
+    acceptors = new(Acceptor, num= nacceptors)
+    proposers = new(Proposer, (ctl, acceptors,), num= nproposers)
+    learners = new(Learner, (ctl, acceptors,), num= nlearners)
+    for p in acceptors: setup(p, (ctl, learners,))
+    start(acceptors | proposers | learners)
+
+    for p in learners: p.join()
+    print('done')
+    da.send(('done',), to= (acceptors|proposers))  # da.send not in da-lang
+
+# This is an executable specification of the algorithm described in
+# Lamport, L. (2001).  Paxos Made Simple.  ACM SIGACT News 
+# (Distributed Computing Column), 32(4):51-58, December.
+
+# This code includes setup and termination for running repeated rounds until
+# the learners all terminate after learning the consent value or timeout.

@@ -1,0 +1,39 @@
+import sys
+controller = import_da('controller')
+
+class P(process, controller.Controllee):
+   def setup(ctl, ps, v, maxfail):
+       super().setup(ctl)
+       self.V = {v}          # set of values to agree on, intially own value v
+
+   def ctl_begin(): super().ctl_begin()
+   def ctl_end(): super().ctl_end()
+
+   def run():
+       ctl_begin()
+
+       for rnd in range(1, maxfail):
+          send(('Value',
+                setof(v, v in V,
+                      not some(sent(('Value', V2, _)), has=(v in V2))),
+                self.id), to=ps)
+          reset("Received")
+          await(some(received(('Value', _, _))))
+          V |= setof(v, received(('Value', V2, _)), v in V2)
+       x = min(V)
+       output(x)
+
+       ctl_end()
+
+def main():
+      n = int(sys.argv[1]) if len(sys.argv) > 1 else 10
+      f = int(sys.argv[2]) if len(sys.argv) > 2 else 10
+
+      ctl = new(controller.Controller, num= 1)
+      setup(ctl, (n,))
+      start(ctl)
+
+      ps = new(P, num= n)
+      for i, p in enumerate(list(ps)):
+            setup({p}, (ctl, ps, i, f))
+      start(ps)

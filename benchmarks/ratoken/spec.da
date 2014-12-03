@@ -1,0 +1,76 @@
+import sys
+controller = import_da('controller')
+
+class P (process, controller.Controllee):
+    def setup(ctl, ps, nrounds, orig_token):
+        super().setup(ctl)
+        self.clock = 0
+        self.token = dict((p, 0) for p in ps)
+
+    def ctl_begin(): super().ctl_begin()
+    def ctl_end(): super().ctl_end()
+
+    def cs(task):
+        --request
+        if not token_present():
+            clock += 1
+            send(('request', clock, self.id), to=ps)
+            await(token_present())
+        token[self.id] = clock
+
+        task()                  # critical section
+
+        --release
+        for p in ps:
+            if request_pending(p) and token_present():
+                #output("sending %r-> %r" % (token, p))
+                send(('access', token), to=p)
+                break
+
+    def receive(msg=('access', newtok)):
+        token = newtok
+
+    def receive(msg=('request', c, p)):
+        if request_pending(p) and token_present():
+            send(('access', token), to=p)
+
+    def request_pending(p):
+        # p has a request after it last had the token
+        return some(received(('request', c, _p)), has=(c > token[p]))
+
+    def token_present():
+        return (orig_token and not some(sent(('access', _))) or
+                some(received(('access', token1)),
+                     has= (not some(sent(('access', token2)),
+                                    has= (token2[self.id] > token1[self.id])))))
+
+    def run():
+        ctl_begin()
+
+        def anounce():
+            output("In cs!")
+        if token_present():
+            output("I'm lucky!")
+        for i in range(nrounds):
+            cs(anounce)
+        send(('Done',), to=ps)
+        await(each(p in ps, has= received(('Done',), from_=p)))
+        output("Done!")
+
+        ctl_end()
+
+def main():
+    nprocs = int(sys.argv[1]) if len(sys.argv) > 1 else 10
+    nrounds = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+
+    ctl = new(controller.Controller, num= 1)
+    setup(ctl, (nprocs,))
+    start(ctl)
+
+    # create n process
+    ps = new(P, num= nprocs)
+
+    p = ps.pop()
+    setup(ps, (ctl, ps|{p}, nrounds, False))
+    setup([p], (ctl, ps|{p}, nrounds, True))
+    start(ps|{p})

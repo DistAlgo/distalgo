@@ -1,0 +1,99 @@
+import time
+import json
+
+class Controller(process):
+    # Control node that coordinates the beginning and end of a
+    # distalgo benchmark. Takes in nprocs, the number of other
+    # processes being managed.
+    #
+    # Steps:
+    #   1. Wait for nprocs many ('CTL_Ready',) messages.
+    #   2. Broadcast ('CTL_Start',) to everyone.
+    #   3. Wait for nprocs many ('CTL_Done', cputime) messages.
+    #   4. Send ('CTL_Terminate',) to everyone.
+    #
+    # Two metrics are output afterward: The wall-clock time,
+    # as measured by the controller, between the beginning of
+    # (2) and the end of (3); and the total sum of the process
+    # times, as measured by each individual process and
+    # transmitted in the CTL_Done messages. These are output in
+    # the form of a line "OUTPUT: <jsondata>" where <jsondata>
+    # is a JSON encoded object.
+    
+    def setup(nprocs):
+        # Processes we are controlling, and number
+        # of processes that have sent ready/done messages.
+        self.ps = set()
+        self.readys = 0
+        self.dones = 0
+        
+        # Total of all processes' cputime.
+        self.cputime = 0
+        
+        self.verbose = True
+    
+    def verboutput(s):
+        if verbose:
+            output(s)
+    
+    def receive(msg=('CTL_Ready',), from_=source):
+        # Count readys.
+        ps.add(source)
+        readys += 1
+        verboutput('Got Ready ({}/{})'.format(readys, nprocs))
+    
+    def receive(msg=('CTL_Done', time), from_=source):
+        # Count dones.
+        dones += 1
+        cputime += time
+        verboutput('Got Done ({}/{})'.format(dones, nprocs))
+    
+    def run():
+        # Start 'em up.
+        await(readys == nprocs)
+        verboutput("Controller starting everyone")
+        
+        t1 = time.perf_counter()
+        bcast(('CTL_Start',), to=ps)
+        
+        # Shut 'em down.
+        await(dones == nprocs)
+        t2 = time.perf_counter()
+        verboutput("Everyone done")
+        
+        jsondata = {'Wall time': t2 - t1,
+                    'Total process time': cputime}
+        jsonoutput = json.dumps(jsondata)
+        print("OUTPUT: " + jsonoutput)
+        
+        bcast(('CTL_Terminate',), to=ps)
+        time.sleep(1)
+
+class Controllee(process):
+    # Process that reports to a Controller.
+    # Assign the controller process to the "ctl" field.
+    # In run(), call ctlbegin() and ctlend().
+    
+    def setup(ctl):
+        self.ctl_starttime = 0
+        self.ctl_endtime = 0
+        self.verbose = True
+    
+    def verboutput(s):
+        if verbose:
+            output(s)
+    
+    def ctl_begin():
+        # Tell controller we're initialized, then wait for the signal.
+        send(('CTL_Ready',), to=ctl)
+        await(received(('CTL_Start',)))
+        
+        ctl_starttime = time.process_time()
+    
+    def ctl_end():
+        ctl_endtime = time.process_time()
+        
+        # Tell controller we're done, wait for signal.
+        send(('CTL_Done', ctl_endtime - ctl_starttime), to=ctl)
+        await(received(('CTL_Terminate',)))
+        verboutput("Terminating...")

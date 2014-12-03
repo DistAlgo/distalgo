@@ -1,0 +1,84 @@
+import sys
+from random import randint
+controller = import_da('controller')
+
+class Coordinator(process, controller.Controllee):
+    def setup(ctl, tid, cohorts):
+        super().setup(ctl)
+
+    def ctl_begin(): super().ctl_begin()
+    def ctl_end(): super().ctl_end()
+
+    def to_commit():
+        send(('prepare', tid), to= cohorts)
+        await(each(c in cohorts, has= some(received(('vote', _, _tid), from_= c))))
+        if some(c in cohorts, has= received(('vote', 'abort', tid), from_= c)):
+            s = setof(c, c in cohorts, received(('vote','ready', _tid), from_=c))
+            send(('abort', tid), to= s)
+            abort(tid)
+        if each(c in cohorts, has= received(('vote', 'ready', tid), from_= c)):
+            send(('commit', tid), to= cohorts)
+            await(each(c in cohorts, has= received(('done', tid), from_= c)))
+            commit(tid)
+
+    def abort(tid): output('abort:' + str(tid))
+    def commit(tid): output('commit:' + str(tid))
+
+    def run():
+        ctl_begin()
+
+        to_commit()
+
+        send(('done',), to= cohorts)
+        output('terminating')
+
+        ctl_end()
+
+class Cohort(process, controller.Controllee):
+    def setup(ctl, failure_rate):
+        super().setup(ctl)
+
+    def ctl_begin(): super().ctl_begin()
+    def ctl_end(): super().ctl_end()
+
+    def receive(msg=('prepare', tid), from_= coord):
+        if prepared(tid):
+            send(('vote', 'ready', tid), to= coord)
+            ready(tid)
+        else:
+            send(('vote', 'abort', tid), to= coord)
+            abort(tid)
+
+    def receive(msg=('abort', tid)):
+        abort(tid)
+
+    def receive(msg=('commit', tid), from_= coord):
+        send(('done', tid), to= coord)
+        commit(tid)
+
+    def prepared(tid): return randint(0, 100) > failure_rate
+    def ready(tid): output('ready:' + str(tid))
+    def abort(tid): output('abort:' + str(tid))
+    def commit(tid): output('commit:' + str(tid))
+
+    def run():
+        ctl_begin()
+
+        await(received(('done',)))
+
+        ctl_end()
+
+def main():
+    ncohorts = int(sys.argv[1]) if len(sys.argv) > 1 else 10
+    fail_rate = int(sys.argv[2]) if len(sys.argv) > 2 else 10
+
+    ctl = new(controller.Controller, num= 1)
+    setup(ctl, (ncohorts + 1,))
+    start(ctl)
+
+    cohorts = new(Cohort, (ctl, fail_rate,), num= ncohorts)
+    coordinators = new(Coordinator, (ctl, '001', cohorts), num= 1)
+    start(cohorts | coordinators)
+
+# this code includes setup and termination for trying to commit a
+# transaction with a given number of cohorts.
