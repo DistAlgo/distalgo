@@ -6,9 +6,6 @@ class Coordinator(process, controller.Controllee):
     def setup(ctl, cohorts):
         super().setup(ctl)
 
-    def ctl_begin(): super().ctl_begin()
-    def ctl_end(): super().ctl_end()
-
     def to_commit():
         send(('prepare'), to= cohorts)
         await(each(c in cohorts, has= some(received(('vote', _), from_= c))))
@@ -24,22 +21,16 @@ class Coordinator(process, controller.Controllee):
     def abort(): output('abort')
     def commit(): output('commit')
 
+    @controller.run
     def run():
-        ctl_begin()
-
         to_commit()
 
         output('terminating')
-
-        ctl_end()
 
 class Cohort(process, controller.Controllee):
     def setup(ctl, failure_rate):
         super().setup(ctl)
         self.terminate = False
-
-    def ctl_begin(): super().ctl_begin()
-    def ctl_end(): super().ctl_end()
 
     def receive(msg= ('prepare'), from_= coord):
         if prepared():
@@ -61,12 +52,9 @@ class Cohort(process, controller.Controllee):
     def abort(): output('abort'); terminate = True
     def commit(): output('commit'); terminate = True
 
+    @controller.run
     def run():
-        ctl_begin()
-
         await(terminate)
-
-        ctl_end()
 
 def main():
     ncohorts = int(sys.argv[1]) if len(sys.argv) > 1 else 10

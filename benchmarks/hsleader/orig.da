@@ -9,12 +9,8 @@ class P(process, controller.Controllee):
         self.phase_left, self.phase_right = False, False
         self.phase = 0
 
-    def ctl_begin(): super().ctl_begin()
-    def ctl_end(): super().ctl_end()
-
+    @controller.run
     def run():
-        ctl_begin()
-
         while True:
             send(('Token', self.id, 'out', 1 << phase), to={left, right})
 
@@ -28,8 +24,6 @@ class P(process, controller.Controllee):
             elif some(received(('Leader', leader))):
                 output("Leader is " + str(leader))
                 break
-
-        ctl_end()
 
     def receive(msg=('Token', v, direction, h), from_=source):
         if source == left and direction == 'out':

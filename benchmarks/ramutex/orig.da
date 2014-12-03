@@ -8,9 +8,6 @@ class P(process, controller.Controllee):
       self.waiting = set()
       self.replied = set()
 
-    def ctl_begin(): super().ctl_begin()
-    def ctl_end(): super().ctl_end()
-
     def cs(task):
       # to enter cs, enque and send request to all, then await replies from all
         --start
@@ -30,9 +27,8 @@ class P(process, controller.Controllee):
         waiting = set()
         replied = set()
 
+    @controller.run
     def run():
-        ctl_begin()
-
         def anounce():
             output("In cs!")
         for i in range(nrounds) :
@@ -40,8 +36,6 @@ class P(process, controller.Controllee):
         send(('Done', self.id), to=ps)
         await(each(p in ps, has= received(('Done', p))))
         output("Terminating..")
-
-        ctl_end()
 
     # when receiving requests from others, enque and reply
     def receive(msg=('Request', timestamp), from_=source):

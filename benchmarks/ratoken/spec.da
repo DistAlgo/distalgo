@@ -7,9 +7,6 @@ class P (process, controller.Controllee):
         self.clock = 0
         self.token = dict((p, 0) for p in ps)
 
-    def ctl_begin(): super().ctl_begin()
-    def ctl_end(): super().ctl_end()
-
     def cs(task):
         --request
         if not token_present():
@@ -44,9 +41,8 @@ class P (process, controller.Controllee):
                      has= (not some(sent(('access', token2)),
                                     has= (token2[self.id] > token1[self.id])))))
 
+    @controller.run
     def run():
-        ctl_begin()
-
         def anounce():
             output("In cs!")
         if token_present():
@@ -56,8 +52,6 @@ class P (process, controller.Controllee):
         send(('Done',), to=ps)
         await(each(p in ps, has= received(('Done',), from_=p)))
         output("Done!")
-
-        ctl_end()
 
 def main():
     nprocs = int(sys.argv[1]) if len(sys.argv) > 1 else 10

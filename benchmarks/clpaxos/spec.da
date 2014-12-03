@@ -7,12 +7,8 @@ class Proposer(process, controller.Controllee):
         self.propNum = (0, self.id)          # Current proposal(ballot) number
         self.propVal = self.id          # Own value to propose
 
-    def ctl_begin(): super().ctl_begin()
-    def ctl_end(): super().ctl_end()
-
+    @controller.run
     def run():
-        ctl_begin()
-
         count = 0
         while count < nrounds:
             work()
@@ -40,19 +36,13 @@ class Proposer(process, controller.Controllee):
             propNum = (propNum[0] + 1, self.id)
         send(('Done',), to=acceptors)
 
-        ctl_end()
-
 class Acceptor(process, controller.Controllee):
     def setup(ctl, acceptors, proposers, quorumsize, f):
         super().setup(ctl)
         self.peers = acceptors | proposers
 
-    def ctl_begin(): super().ctl_begin()
-    def ctl_end(): super().ctl_end()
-
+    @controller.run
     def run():
-        ctl_begin()
-        
         while True:
             if await(some(
                     received(('TwoAv', n, v, _)),
@@ -62,8 +52,6 @@ class Acceptor(process, controller.Controllee):
                 send(('TwoB', n, v), to=peers)
             elif each(p in proposers, has=received(('Done',), from_=p)):
                 break
-
-        ctl_end()
 
     def receive(msg=('Prepare', n, p)):
         if n > maxpromised():

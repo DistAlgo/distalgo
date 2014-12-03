@@ -8,12 +8,8 @@ class P(process, controller.Controllee):
         self.V = {v: False}
         self.receiveflag = False
 
-    def ctl_begin(): super().ctl_begin()
-    def ctl_end(): super().ctl_end()
-
+    @controller.run
     def run():
-          ctl_begin()
-
           --start
           for i in range(maxfail):
               --one_round
@@ -26,8 +22,6 @@ class P(process, controller.Controllee):
           --end
           x = max(listof(v, v in V, V[v]))
           output("x = %r" % (x))
-
-          ctl_end()
 
     def receive(msg=('Value', v)):
        receiveflag = True

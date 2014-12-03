@@ -23,9 +23,6 @@ class Replica(process, controller.Controllee):
         self.state = initial_state;  self.slot_num = 1
         self.proposals = set();  self.decisions = set()
 
-    def ctl_begin(): super().ctl_begin()
-    def ctl_end(): super().ctl_end()
-
     def propose(p):
         if not some((_, _p) in decisions):
             # find the maximum used slot number, or 0
@@ -48,14 +45,11 @@ class Replica(process, controller.Controllee):
             state = next; slot_num += 1
             send(('response', cid, result), to= client)
 
+    @controller.run
     def run():
-        ctl_begin()
-
         output('### start')
         await(received(('done',)))
         output('terminating')
-
-        ctl_end()
 
     def receive(msg= ('request', p)):
         output('### request', p)
@@ -74,17 +68,11 @@ class Acceptor(process, controller.Controllee):
         super().setup(ctl)
         self.ballot_num = None;  self.accepted = set()
 
-    def ctl_begin(): super().ctl_begin()
-    def ctl_end(): super().ctl_end()
-
+    @controller.run
     def run():
-        ctl_begin()
-
         output('### start')
         await(received(('done',)))
         output('terminating')
-
-        ctl_end()
 
     def receive(msg= m):
         BOTTOM = (-1, -1);
@@ -133,12 +121,8 @@ class Leader(process, controller.Controllee):
         self.active = False;  self.proposals = set()
         self.started = set()
 
-    def ctl_begin(): super().ctl_begin()
-    def ctl_end(): super().ctl_end()
-
+    @controller.run
     def run():
-        ctl_begin()
-
         output('### start')
 #        start(new(Scout, (self.id, acceptors, ballot_num)))
         sub = new(Scout, (self.id, acceptors, ballot_num))
@@ -146,8 +130,6 @@ class Leader(process, controller.Controllee):
         await(received(('done',)))
         for tmp in started: tmp.join()
         output('terminating')
-
-        ctl_end()
 
     def receive(msg= ('propose', s, p)):
         output('### propose', s, p)
@@ -193,12 +175,8 @@ class Client(process, controller.Controllee):
         self.results = dict()  # map of command id to result of command
         self.count = dict()    # map of command id to number of responses
 
-    def ctl_begin(): super().ctl_begin()
-    def ctl_end(): super().ctl_end()
-
+    @controller.run
     def run():
-        ctl_begin()
-
         for i in range(nops):
             send(('request', (self.id, cid, random.randint(0, NOPS-1))),
                  to= replicas)
@@ -207,8 +185,6 @@ class Client(process, controller.Controllee):
             cid += 1
         await(each(cid in range(nops), has= count[cid] == len(replicas)))
         output('terminating')
-
-        ctl_end()
 
     def receive(msg= ('response', cid, result)):
         output('### response', cid, result)

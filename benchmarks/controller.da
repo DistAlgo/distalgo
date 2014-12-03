@@ -97,3 +97,14 @@ class Controllee(process):
         send(('CTL_Done', ctl_endtime - ctl_starttime), to=ctl)
         await(received(('CTL_Terminate',)))
         verboutput("Terminating...")
+    
+    def run():
+        # Stub to squelch warning.
+        pass
+
+def run(func):
+    def ctl_run(self):
+        self.ctl_begin()
+        func(self)
+        self.ctl_end()
+    return ctl_run

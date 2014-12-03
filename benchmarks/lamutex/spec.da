@@ -5,9 +5,6 @@ class P(process, controller.Controllee):
     def setup(ctl, s, nrequests):  # s is set of all other processes
         super().setup(ctl)
 
-    def ctl_begin(): super().ctl_begin()
-    def ctl_end(): super().ctl_end()
-
     def mutex(task):
         -- request
         c = logical_clock()
@@ -23,9 +20,8 @@ class P(process, controller.Controllee):
     def receive(msg= ('request', c, p)):
         send(('ack', c, self.id), to= p)
 
+    @controller.run
     def run():
-        ctl_begin()
-
         def task(): output('in cs')
         for i in range(nrequests):
             mutex(task)
@@ -33,8 +29,6 @@ class P(process, controller.Controllee):
         send(('done', self.id), to= s)
         await(each(p in s, has= received(('done', p))))
         output('terminating')
-
-        ctl_end()
 
 def main():
     nprocs = int(sys.argv[1]) if len(sys.argv) > 1 else 10

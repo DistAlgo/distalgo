@@ -5,15 +5,9 @@ class Pong(process, controller.Controllee):
     def setup(ctl, total_pings):
         super().setup(ctl)
 
-    def ctl_begin(): super().ctl_begin()
-    def ctl_end(): super().ctl_end()
-
+    @controller.run
     def run():
-        ctl_begin()
-
         await(len(listof(p, received(('Ping',), from_=p))) == total_pings)
-
-        ctl_end()
 
     def receive(msg=('Ping',), from_=p):
         output("Pinged")
@@ -23,18 +17,12 @@ class Ping(process, controller.Controllee):
     def setup(ctl, p, nrounds):
         super().setup(ctl)
 
-    def ctl_begin(): super().ctl_begin()
-    def ctl_end(): super().ctl_end()
-
+    @controller.run
     def run():
-        ctl_begin()
-
         for i in range(nrounds):
             clk = logical_clock()
             send(('Ping',), to=p)
             await(some(received(('Pong',), clk=rclk), has=(rclk > clk)))
-
-        ctl_end()
 
     def receive(msg=('Pong',)):
         output("Ponged.")

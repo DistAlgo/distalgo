@@ -6,12 +6,8 @@ class P(process, controller.Controllee):
     def setup(ctl, left, right):
         super().setup(ctl)
 
-    def ctl_begin(): super().ctl_begin()
-    def ctl_end(): super().ctl_end()
-
+    @controller.run
     def run():
-        ctl_begin()
-
         distance = 1
         while True:
             send(('Out', self.id, distance), to={left, right})
@@ -26,8 +22,6 @@ class P(process, controller.Controllee):
                   received(('In', self.id), from_=right)):
                 distance *= 2
                 reset("Received")
-
-        ctl_end()
 
     def receive(msg=('Out', v, d), from_=source):
         if v > self.id:

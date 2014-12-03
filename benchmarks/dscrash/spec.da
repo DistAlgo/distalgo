@@ -6,12 +6,8 @@ class P(process, controller.Controllee):
        super().setup(ctl)
        self.V = {v}          # set of values to agree on, intially own value v
 
-   def ctl_begin(): super().ctl_begin()
-   def ctl_end(): super().ctl_end()
-
+   @controller.run
    def run():
-       ctl_begin()
-
        for rnd in range(1, maxfail):
           send(('Value',
                 setof(v, v in V,
@@ -22,8 +18,6 @@ class P(process, controller.Controllee):
           V |= setof(v, received(('Value', V2, _)), v in V2)
        x = min(V)
        output(x)
-
-       ctl_end()
 
 def main():
       n = int(sys.argv[1]) if len(sys.argv) > 1 else 10
