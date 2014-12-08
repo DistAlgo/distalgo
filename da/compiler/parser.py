@@ -1260,8 +1260,10 @@ class Parser(NodeVisitor):
             # Update operation:
             self.current_context = Update()
         expr = self.create_expr(dast.AttributeExpr, node)
-        if type(self.current_context) is Assignment:
-            # Assigning to an attribute of an object updates that object:
+        if isinstance(self.current_context, Assignment) or\
+           isinstance(self.current_context, Delete):
+            # Assigning to or deleting an attribute of an object updates that
+            # object:
             self.current_context = Update()
         expr.value = self.visit(node.value)
         expr.attr = node.attr
@@ -1281,11 +1283,11 @@ class Parser(NodeVisitor):
                     self.error("Undefined process state variable: " +
                                str(expr.attr), node)
             else:
-                if isinstance(self.current_context, Assignment):
+                if isinstance(self.current_context, Assignment) or \
+                   isinstance(self.current_context, Delete):
                     self.debug("Assignment to variable '%s'" % str(n), node)
                     n.add_assignment(expr)
-                elif isinstance(self.current_context, Update) or \
-                     isinstance(self.current_context, Delete):
+                elif isinstance(self.current_context, Update):
                     self.debug("Update to process variable '%s'" % str(n), node)
                     n.add_update(expr)
                 else:
@@ -1749,15 +1751,15 @@ class Parser(NodeVisitor):
         # NamedVar is not by itself an Expression, we'll have to wrap it in a
         # SimpleExpr:
         expr = self.create_expr(dast.SimpleExpr, node)
-        if isinstance(self.current_context, Assignment):
+        if isinstance(self.current_context, Assignment) or\
+           isinstance(self.current_context, Delete):
             n = self.current_scope.find_name(node.id, local=False)
             if n is None:
                 self.debug("Adding name %s to %s" % (node.id,
                                                      self.current_scope), node)
                 n = self.current_scope.add_name(node.id)
             n.add_assignment(expr)
-        elif isinstance(self.current_context, Update) or\
-             isinstance(self.current_context, Delete):
+        elif isinstance(self.current_context, Update):
             n = self.current_scope.find_name(node.id, local=False)
             if n is None:
                 self.warn("Possible use of uninitialized variable '%s'" %
@@ -1913,6 +1915,10 @@ class Parser(NodeVisitor):
 
     def visit_Subscript(self, node):
         expr = self.create_expr(dast.SubscriptExpr, node)
+        if isinstance(self.current_context, Assignment) or\
+           isinstance(self.current_context, Delete):
+            # Assignment to an index position is an update to the container:
+            self.current_context = Update()
         expr.value = self.visit(node.value)
         self.current_context = Read()
         expr.index = self.visit(node.slice)
