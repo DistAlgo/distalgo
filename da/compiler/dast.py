@@ -730,6 +730,13 @@ class SubscriptExpr(SimpleExpr):
         self.subexprs.append(None)
 
     @property
+    def ordered_nameobjs(self):
+        res = super().ordered_nameobjs
+        if self.index is not None:
+            res += self.index.ordered_nameobjs
+        return res
+
+    @property
     def index(self):
         return self.subexprs[1]
 
@@ -1697,6 +1704,19 @@ class Statement(DistNode):
         return node
 
     @property
+    def ordered_nameobjs(self):
+        return []
+
+    @property
+    def nameobjs(self):
+        """A set of NamedVar objects appearing in this expression.
+
+        This is generated from 'ordered_nameobjs'.
+
+        """
+        return set(self.ordered_nameobjs)
+
+    @property
     def statement(self):
         return self
 
@@ -1728,6 +1748,13 @@ class SimpleStmt(Statement):
         node.expr = self.expr.clone() if self.expr is not None else None
         return node
 
+    @property
+    def ordered_nameobjs(self):
+        if self.expr is not None:
+            return self.expr.ordered_nameobjs
+        else:
+            return []
+
 class CompoundStmt(Statement):
     """Block statements are compound statements that contain one or more blocks of
     sub-statements.
@@ -1748,6 +1775,11 @@ class CompoundStmt(Statement):
                 self.body[idx] = newnode
             elif node is not None:
                 node.replace_child(oldnode, newnode)
+
+    @property
+    def ordered_nameobjs(self):
+        return list(chain(*[l.ordered_nameobjs for l in self.body
+                            if l is not None]))
 
 class Program(CompoundStmt, NameScope):
     """The global NameScope.
@@ -1841,6 +1873,12 @@ class AssignmentStmt(SimpleStmt):
         self.targets = []
         self.value = None
 
+    @property
+    def ordered_nameobjs(self):
+        return list(chain(*[t.ordered_nameobjs
+                            for t in chain(self.targets, [self.value])
+                            if t is not None]))
+
 class OpAssignmentStmt(AssignmentStmt):
 
     _fields = ['operator'] + AssignmentStmt._fields
@@ -1868,6 +1906,12 @@ class IfStmt(CompoundStmt):
         self.body = []
         self.elsebody = []
 
+    @property
+    def ordered_nameobjs(self):
+        return list(chain(*[l.ordered_nameobjs
+                            for l in chain(self.body, self.elsebody)
+                            if l is not None]))
+
 class LoopStmt(CompoundStmt):
     """Abstract class for loops."""
     pass
@@ -1882,6 +1926,12 @@ class WhileStmt(LoopStmt):
         self.body = []
         self.elsebody = []
 
+    @property
+    def ordered_nameobjs(self):
+        return list(chain(*[l.ordered_nameobjs
+                            for l in chain(self.body, self.elsebody)
+                            if l is not None]))
+
 class ForStmt(LoopStmt):
 
     _fields = ['domain', 'body', 'elsebody']
@@ -1891,6 +1941,12 @@ class ForStmt(LoopStmt):
         self.domain = None
         self.body = []
         self.elsebody = []
+
+    @property
+    def ordered_nameobjs(self):
+        return list(chain(*[l.ordered_nameobjs
+                            for l in chain(self.body, self.elsebody)
+                            if l is not None]))
 
 class TryStmt(CompoundStmt):
 
@@ -1903,6 +1959,13 @@ class TryStmt(CompoundStmt):
         self.elsebody = []
         self.finalbody = []
 
+    @property
+    def ordered_nameobjs(self):
+        return list(chain(*[l.ordered_nameobjs
+                            for l in chain(self.body, self.excepthandlers,
+                                           self.elsebody, self.finalbody)
+                            if l is not None]))
+
 class ExceptHandler(DistNode):
 
     _fields = ['type', 'body']
@@ -1913,6 +1976,11 @@ class ExceptHandler(DistNode):
         self.name = None
         self.type = None
         self.body = []
+
+    @property
+    def ordered_nameobjs(self):
+        return list(chain(*[l.ordered_nameobjs for l in self.body
+                            if l is not None]))
 
 class TryFinallyStmt(CompoundStmt):
 
@@ -1943,6 +2011,12 @@ class AwaitStmt(CompoundStmt):
             return False
         return True
 
+    @property
+    def ordered_nameobjs(self):
+        return list(chain(*[l.ordered_nameobjs
+                            for l in chain(self.branches, self.orelse)
+                            if l is not None]))
+
 class LoopingAwaitStmt(CompoundStmt):
 
     _fields = ['condition', 'timeout', 'body']
@@ -1961,6 +2035,12 @@ class Branch(DistNode):
         super().__init__(parent, ast)
         self.condition = condition
         self.body = []
+
+    @property
+    def ordered_nameobjs(self):
+        return list(chain(*[l.ordered_nameobjs
+                            for l in chain([self.condition], self.body)
+                            if l is not None]))
 
 class ReturnStmt(SimpleStmt):
 
