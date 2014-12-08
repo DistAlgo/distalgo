@@ -3,6 +3,8 @@ class Pong(process):
     def setup(total_pings): pass
 
     def run():
+        a = False
+        output(setof(s, s in {1, 2}, some(a in {3,4}), a))
         await(len(listof(p, received(('Ping',), from_=p))) == total_pings)
 
     def receive(msg=('Ping',), from_=p):

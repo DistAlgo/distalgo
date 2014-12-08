@@ -14,7 +14,7 @@ class Proposer(process):
         if await(len(setof(a, received(('respond', _n, _), from_ =a)))
                  > len(acceptors)/2):
             v = anyof(setof(v, received(('respond', _n, (n2, v))), has=
-                            n2==max(setof(n3, received(('respond', _n, (n3, v))))))
+                            n2==max(setof(n3, received(('respond', _n, (n3, _v))))))
                       or {randint(1,100)})  # any value, pick in 1..100
             responded = setof(a, received(('respond', _n, _), from_ =a))
             send(('accept', n, v), to= responded)
@@ -57,7 +57,7 @@ class Learner(process):
 
     def learn():
         if await(some(received(('accepted', n, v)),
-                      has= len(setof(a, received(('accepted', n, v), from_=a)))
+                      has= len(setof(a, received(('accepted', _n, _v), from_=a)))
                            > len(acceptors)/2)):
             output('learned', n, v)
 

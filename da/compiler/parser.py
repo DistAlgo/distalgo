@@ -187,6 +187,8 @@ class PatternParser(NodeVisitor):
         self.current_query = parser.current_query
         self.use_object_style = parser.get_option('enable_object_pattern',
                                                   default=False)
+        self.use_top_semantic = parser.get_option('use_top_semantic',
+                                                  default=False)
         self.literal = literal
 
     def visit(self, node):
@@ -208,14 +210,20 @@ class PatternParser(NodeVisitor):
     def is_bound(self, name):
         n = self.namescope.find_name(name)
         if n is not None and self.current_query is not None:
-            return n in self.current_query.top_level_query.boundvars
+            if self.use_top_semantic:
+                return n in self.current_query.top_level_query.boundvars
+            else:
+                return n in self.current_query.boundvars
         else:
             return False
 
     def is_free(self, name):
         n = self.namescope.find_name(name)
         if n is not None and self.current_query is not None:
-            return n in self.current_query.top_level_query.freevars
+            if self.use_top_semantic:
+                return n in self.current_query.top_level_query.freevars
+            else:
+                return n in self.current_query.freevars
         else:
             return False
 
@@ -440,7 +448,7 @@ class Parser(NodeVisitor):
     def leave_query(self, audit=False):
         self.debug("Leaving query: " + str(self.current_query),
                    self.current_query)
-        if audit:
+        if audit and self.get_option('use_top_semantic', default=False):
             if self.current_parent is self.current_query:
                 self.audit_query(self.current_parent)
 

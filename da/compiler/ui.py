@@ -90,7 +90,7 @@ def dastr_to_pyast(src, filename='<str>', args=None):
     """
     daast = daast_from_str(src, filename, args)
     if daast is not None:
-        pyast = PythonGenerator(filename).visit(daast)
+        pyast = PythonGenerator(filename, args).visit(daast)
         if pyast is None:
             print("Error: unable to generate Python AST from DistAlgo AST"
                   " for file ", filename, file=stderr)
@@ -108,7 +108,7 @@ def dafile_to_pyast(filename, args=None):
     """
     daast = daast_from_file(filename, args)
     if daast is not None:
-        pyast = PythonGenerator(filename).visit(daast)
+        pyast = PythonGenerator(filename, args).visit(daast)
         if pyast is None:
             print("Error: unable to generate Python AST from DistAlgo AST"
                   " for file ", filename, file=stderr)
@@ -280,6 +280,11 @@ def main(argv=None):
                     "support using tuple patterns in the target, "
                     "e.g.: '[b for (_a, 1, b) in S]', which is equivalent to "
                     "'[b for (var1, var2, b) in S if var1 == a if var2 == b]'",
+                    action='store_true')
+    ap.add_argument('--use-top-semantic',
+                    help="Use 'top' semantics for query variable and "
+                    "parameter resolution. Under 'top' semantics, only "
+                    "parameters to the top-level query are marked.",
                     action='store_true')
     ap.add_argument('-i',
                     help="Generate interface code for plugging"

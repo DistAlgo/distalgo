@@ -21,6 +21,8 @@ class P(process):
         if len(Q) > 0:
             p = Q.pop()
             send(('token', Q, LN), to=p)
+        del LN
+        del RN[self.id]
 
     def receive(msg=('token', Q1, LN1)):
         Q = Q1

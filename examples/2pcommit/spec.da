@@ -6,7 +6,7 @@ class Coordinator(process):
 
     def to_commit():
         send(('prepare', tid), to= cohorts)
-        await(each(c in cohorts, has= some(received(('vote', _, _tid), from_= c))))
+        await(each(c in cohorts, has= some(received(('vote', _, _tid), from_= _c))))
         if some(c in cohorts, has= received(('vote', 'abort', tid), from_= c)):
             s = setof(c, c in cohorts, received(('vote','ready', _tid), from_=c))
             send(('abort', tid), to= s)

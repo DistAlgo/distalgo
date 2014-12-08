@@ -21,7 +21,7 @@ class Replica(process):
             maxs = max(setof(s, (s, _) in proposals | decisions) or {0})
             # within the maximum + 1, find smallest not yet used
             s1 = min(setof(s, s in range(1, maxs + 1 + 1), has=
-                           not some((s, _) in proposals | decisions)))
+                           not some((_s, _) in proposals | decisions)))
             proposals.add((s1, p))
             send(('propose', s1, p), to= leaders)
 
@@ -149,11 +149,11 @@ class Leader(process):
             start(sub); started |= sub
 
     def circle_plus(x, y):
-        return y | setof((s, p), (s, p) in x, has= not some((s, _) in y))
+        return y | setof((s, p), (s, p) in x, has= not some((_s, _) in y))
 
     def pmax(pvals):
         return setof((s, p), (b, s, p) in pvals, has=
-                     each((b1, s, _) in pvals, has= b1 <= b))
+                     each((b1, _s, _) in pvals, has= b1 <= b))
 
 class Client(process):
     def setup(replicas, nops):

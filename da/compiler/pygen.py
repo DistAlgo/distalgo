@@ -238,7 +238,7 @@ class PythonGenerator(NodeVisitor):
 
     """
 
-    def __init__(self, filename=""):
+    def __init__(self, filename="", options=None):
         self.filename = filename
         self.processed_patterns = set()
         self.preambles = list(PREAMBLE)
@@ -247,6 +247,16 @@ class PythonGenerator(NodeVisitor):
         # This is needed so free vars with the same name in a query can be
         # properly unified:
         self.pattern_generator = None
+        self.cmdline_args = options
+        self.module_args = None
+
+    def get_option(self, option, default=None):
+        if hasattr(self.cmdline_args, option):
+            return getattr(self.cmdline_args, option)
+        elif hasattr(self.module_args, option):
+            return getattr(self.module_args, option)
+        else:
+            return default
 
     def reset(self):
         """Resets internal states.
@@ -301,6 +311,7 @@ class PythonGenerator(NodeVisitor):
         return res
 
     def visit_Program(self, node):
+        self.module_args = node._compiler_options
         body = []
         body.extend(self.body(node.body))
         return Module(self.preambles + body + self.postambles)
@@ -574,6 +585,9 @@ class PythonGenerator(NodeVisitor):
             is_top_level_query = True
         else:
             is_top_level_query = False
+            if not self.get_option('use_top_semantic', default=False):
+                self.pattern_generator.push_state()
+                self.pattern_generator.reset_state()
 
         body = funcbody = []
         for domspec in node.domains:
@@ -638,6 +652,8 @@ class PythonGenerator(NodeVisitor):
 
         if is_top_level_query:
             self.pattern_generator = None
+        elif not self.get_option('use_top_semantic', default=False):
+            self.pattern_generator.pop_state()
         return ast
 
     def visit_ComprehensionExpr(self, node):
@@ -648,6 +664,8 @@ class PythonGenerator(NodeVisitor):
         else:
             self.pattern_generator.push_state()
             is_top_level_query = False
+            if not self.get_option('use_top_semantic', default=False):
+                self.pattern_generator.reset_state()
 
         generators = []
         dangling = []
@@ -1093,6 +1111,9 @@ class PatternComprehensionGenerator(PythonGenerator):
     def pop_state(self):
         s = self.state_stack.pop()
         self.freevars = set(s)
+
+    def reset_state(self):
+        self.freevars = set()
 
     def visit_FreePattern(self, node):
         conds = []
