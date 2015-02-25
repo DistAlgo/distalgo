@@ -314,7 +314,7 @@ def {0}():
     return globals()['{1}']
 """ if not Options.jb_style else """
 def {0}():
-    globals()['{1}'] = runtimelib.Set()
+    globals()['{1}'] = invinc.runtime.Set()
     return globals()['{1}']
 """
 
@@ -335,7 +335,7 @@ def gen_inc_module(daast, cmdline_args, filename=""):
     module = parse(PREAMBLE)
     if Options.jb_style:
         # Additional import for jb_style
-        module.body.insert(0, parse("import runtimelib").body[0])
+        module.body.insert(0, parse("import invinc.runtime").body[0])
     quex = QueryExtractor()
     quex.visit(daast)
 
