@@ -214,11 +214,15 @@ def dafile_to_incfiles(args):
     'filename' is the input DistAlgo source file. Optional property 'outname'
     specifies the file to write the result to. If 'outname' is None the
     filename is inferred by replacing the suffix of 'filename' with '.py'.
+    Optional property 'incname' is the file to write the incrementalization
+    module to. If 'incname' is None it defaults to the base of 'filename'
+    plus '_inc.py'.
 
     """
 
     filename = args.infile
     outname = args.outfile
+    incname = args.incfile
     purename, _, suffix = filename.rpartition(".")
     if len(purename) == 0:
         purename = suffix
@@ -230,18 +234,18 @@ def dafile_to_incfiles(args):
         stderr.write("Warning: unknown suffix '%s' in filename '%s'\n" %
                       (suffix, filename))
     daast = daast_from_file(filename, args)
-    module_name = purename + "_inc"
-    module_filename = module_name + ".py"
+    if outname is None:
+        outname = purename + ".py"
+    if incname is None:
+        incname = purename + "_inc.py" 
     if daast is not None:
-        inc, ast = gen_inc_module(daast, args, filename=module_filename)
-        if outname is None:
-            outname = purename + ".py"
+        inc, ast = gen_inc_module(daast, args, filename=incname)
         with open(outname, "w") as outfd:
             Unparser(ast, outfd)
             stderr.write("Written compiled file %s.\n"% outname)
-        with open(module_filename, "w") as outfd:
+        with open(incname, "w") as outfd:
             Unparser(inc, outfd)
-            stderr.write("Written interface file %s.\n" % module_filename)
+            stderr.write("Written interface file %s.\n" % incname)
         return 0
     else:
         return 1
@@ -290,6 +294,10 @@ def main(argv=None):
                     help="Generate interface code for plugging"
                     " into incrementalizer.",
                     action='store_true', dest="geninc", default=False)
+    ap.add_argument("-m", "--inc-module-name",
+                    help="name of the incrementalized interface module, "
+                    "defaults to source module name + '_inc'. ",
+                    dest="incfile", default=None)
     ap.add_argument('--no-table1',
                     help="Disable table 1 quantification transformations. "
                     "Only used when '-i' is enabled.",
