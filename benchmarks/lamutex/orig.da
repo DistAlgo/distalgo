@@ -2,7 +2,7 @@ import sys
 controller = import_da('controller')
 
 class P(process, controller.Controllee):
-    def setup(ctl, s, nrequests):  # s is set of all other processes
+    def setup(ctl, s:set, nrequests):  # s is set of all other processes
         super().setup(ctl)
         self.q = set()
 

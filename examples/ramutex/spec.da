@@ -1,6 +1,6 @@
 import sys
 class P(process):
-    def setup(s, n):           # pass in set of all processes
+    def setup(s:set, n:int):           # pass in set of all processes
         self.ownc = 0
 
     def cs(task):

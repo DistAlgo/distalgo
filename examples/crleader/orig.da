@@ -1,7 +1,7 @@
 import sys
 
 class P(process):
-    def setup(left):
+    def setup(left:P):
         self.leaderid = None
 
     def initiate():

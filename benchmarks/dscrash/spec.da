@@ -2,7 +2,7 @@ import sys
 controller = import_da('controller')
 
 class P(process, controller.Controllee):
-   def setup(ctl, ps, v, maxfail):
+   def setup(ctl, ps:set, v, maxfail):
        super().setup(ctl)
        self.V = {v}          # set of values to agree on, intially own value v
 

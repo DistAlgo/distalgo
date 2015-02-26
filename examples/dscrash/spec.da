@@ -1,6 +1,6 @@
 import sys
 class P(process):
-   def setup(ps, v, maxfail):
+   def setup(ps:set, v:int, maxfail:int):
        self.V = {v}          # set of values to agree on, intially own value v
 
    def run():

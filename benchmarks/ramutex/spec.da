@@ -2,7 +2,7 @@ import sys
 controller = import_da('controller')
 
 class P(process, controller.Controllee):
-    def setup(ctl, s, n):       # pass in set of all processes
+    def setup(ctl, s:set, n):       # pass in set of all processes
         super().setup(ctl)
         self.ownc = 0
 

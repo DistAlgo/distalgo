@@ -1,6 +1,7 @@
 import sys
 class P(process):
-    def setup(ps, orig_token, nrounds): # other procs, and whether self.id holds token
+    def setup(ps:set, orig_token:dict,
+              nrounds:int): # other procs, and whether self.id holds token
         self.RN = dict((p, 0) for p in ps)        # last request number received
         # Token structure:
         self.Q = []                   # queue of pending requests

@@ -1,7 +1,7 @@
 import sys
 
 class P(process):
-    def setup(ps, v, maxfail):
+    def setup(ps:set, v:P, maxfail:int):
         self.x = -1
         self.V = {v: False}
         self.receiveflag = False

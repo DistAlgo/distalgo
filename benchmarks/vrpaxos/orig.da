@@ -18,7 +18,7 @@ operations = {i: operation(i) for i in range(NOPS)}
 # ops = {i: (lambda state: (state+[i], ['res',i]+state)) for i in range(NOPS)}
 
 class Replica(process, controller.Controllee):
-    def setup(ctl, leaders, initial_state):
+    def setup(ctl, leaders:set, initial_state):
         super().setup(ctl)
         self.state = initial_state;  self.slot_num = 1
         self.proposals = set();  self.decisions = set()
@@ -85,7 +85,7 @@ class Acceptor(process, controller.Controllee):
         send(('p2b', self.id, ballot_num), to= leader_commander)
 
 class Commander(process):
-    def setup(leader, acceptors, replicas, b, s, p): pass
+    def setup(leader, acceptors:set, replicas:set, b, s, p): pass
 
     def run():
         output('### start')
@@ -96,7 +96,7 @@ class Commander(process):
             send(('preempted', b1), to= leader)
 
 class Scout(process):
-    def setup(leader, acceptors, b):
+    def setup(leader, acceptors:set, b):
         self.pvalues = set()
 
     def run():
@@ -111,7 +111,7 @@ class Scout(process):
             send(('preempted', b1), to= leader)
 
 class Leader(process, controller.Controllee):
-    def setup(ctl, acceptors, replicas):
+    def setup(ctl, acceptors:set, replicas:set):
         super().setup(ctl)
         self.ballot_num = (0, self.id);
         self.active = False;  self.proposals = set()
@@ -163,7 +163,7 @@ class Leader(process, controller.Controllee):
                      each((b1, s, _) in pvals, has= b1 <= b))
 
 class Client(process, controller.Controllee):
-    def setup(ctl, replicas, nops):
+    def setup(ctl, replicas:set, nops):
         super().setup(ctl)
         self.cid = 0           # command id
         self.results = dict()  # map of command id to result of command

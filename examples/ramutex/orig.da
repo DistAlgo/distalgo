@@ -1,6 +1,6 @@
 import sys
 class P(process):
-    def setup(ps, nrounds):
+    def setup(ps:set, nrounds:int):
       self.reqc = None
       self.waiting = set()
       self.replied = set()

@@ -3,7 +3,7 @@ from random import randint
 TIMEOUT = 1
 
 class Proposer(process):
-    def setup(acceptors): 
+    def setup(acceptors:set):
         self.n = None              # proposal number
         self.majority = acceptors  # majority of acceptors; all in other papers
 
@@ -32,7 +32,7 @@ class Proposer(process):
         return next(iter(s)) if s else None
 
 class Acceptor(process):
-    def setup(learners): pass
+    def setup(learners:set): pass
 
     def receive(msg= ('prepare', n), from_= p):
         if each(sent(('respond', n2, _)), has= n > n2):
@@ -53,7 +53,7 @@ class Acceptor(process):
         return next(iter(s)) if s else None
 
 class Learner(process):
-    def setup(acceptors): pass
+    def setup(acceptors:set): pass
 
     def learn():
         if await(some(received(('accepted', n, v)),

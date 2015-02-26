@@ -2,7 +2,7 @@ import sys
 from random import randint
 
 class Coordinator(process):
-    def setup(cohorts): pass
+    def setup(cohorts:set): pass
 
     def to_commit():
         send(('prepare'), to= cohorts)

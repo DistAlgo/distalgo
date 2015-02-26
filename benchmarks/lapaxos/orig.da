@@ -4,7 +4,7 @@ controller = import_da('controller')
 TIMEOUT = 1
 
 class Proposer(process, controller.Controllee):
-    def setup(ctl, acceptors):
+    def setup(ctl, acceptors:set):
         super().setup(ctl) 
         self.n = None              # proposal number
         self.majority = acceptors  # majority of acceptors; all in other papers
@@ -34,7 +34,7 @@ class Proposer(process, controller.Controllee):
         return next(iter(s)) if s else None
 
 class Acceptor(process, controller.Controllee):
-    def setup(ctl, learners):
+    def setup(ctl, learners:set):
         super().setup(ctl)
 
     def receive(msg= ('prepare', n), from_= p):
@@ -56,7 +56,7 @@ class Acceptor(process, controller.Controllee):
         return next(iter(s)) if s else None
 
 class Learner(process, controller.Controllee):
-    def setup(ctl, acceptors):
+    def setup(ctl, acceptors:set):
         super().setup(ctl)
 
     def learn():

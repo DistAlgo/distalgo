@@ -1,7 +1,8 @@
 import sys
 
 class Proposer(process):
-    def setup(acceptors, quorumsize, f, nrounds, timeout):
+    def setup(acceptors:set, quorumsize:int,
+              f:float, nrounds:int, timeout:float):
         self.propNum = (0, self.id)          # Current proposal(ballot) number
         self.propVal = self.id          # Own value to propose
 
@@ -34,7 +35,7 @@ class Proposer(process):
         send(('Done',), to=acceptors)
 
 class Acceptor(process):
-    def setup(acceptors, proposers, quorumsize, f):
+    def setup(acceptors:set, proposers:set, quorumsize:int, f:float):
         self.peers = acceptors | proposers
 
     def run():

@@ -2,7 +2,7 @@ import sys
 controller = import_da('controller')
 
 class P (process, controller.Controllee):
-    def setup(ctl, ps, nrounds, orig_token):
+    def setup(ctl, ps:set, nrounds, orig_token):
         super().setup(ctl)
         self.clock = 0
         self.token = dict((p, 0) for p in ps)

@@ -343,36 +343,43 @@ class Arguments(DistNode):
     def scope(self):
         return self.parent
 
-    def add_arg(self, name):
+    def add_arg(self, name, annotation=None):
         assert isinstance(name, str)
         e = self.parent.add_name(name)
-        e.add_assignment(self)
+        e.add_assignment(self, annotation)
         self.args.append(e)
 
-    def add_defaultarg(self, name, value):
+    def add_defaultarg(self, name, value, annotation=None):
         assert isinstance(name, str) and isinstance(value, DistNode)
         e = self.parent.add_name(name)
-        e.add_assignment(self, typectx=value)
+        # User annotated type takes precedence:
+        if annotation is None:
+            e.add_assignment(self, typectx=value)
+        else:
+            e.add_assignment(self, typectx=annotation)
         self.args.append(e)
         self.defaults.append(value)
 
-    def add_vararg(self, name):
+    def add_vararg(self, name, annotation=None):
         assert self.vararg is None and isinstance(name, str)
         e = self.parent.add_name(name)
-        e.add_assignment(self, typectx=list)
+        # User annotated type takes precedence:
+        e.add_assignment(self, typectx=(list if annotation is None else annotation))
         self.vararg = e
 
-    def add_kwonlyarg(self, name, value):
+    def add_kwonlyarg(self, name, value, annotation=None):
         assert isinstance(name, str) and isinstance(value, DistNode)
         e = self.parent.add_name(name)
-        e.add_assignment(self, typectx=value)
+        # User annotated type takes precedence:
+        e.add_assignment(self, typectx=(value if annotation is None else annotation))
         self.kwonlyargs.append(e)
         self.kw_defaults.append(value)
 
-    def add_kwarg(self, name):
+    def add_kwarg(self, name, annotation=None):
         assert self.kwarg is None and isinstance(name, str)
         e = self.parent.add_name(name)
-        e.add_assignment(self, typectx=dict)
+        # User annotated type takes precedence:
+        e.add_assignment(self, typectx=(dict if annotation is None else annotation))
         self.kwarg = e
 
     @property
@@ -444,7 +451,7 @@ class NamedVar(DistNode):
     def set_scope(self, scope):
         self._scope = scope
 
-    def add_assignment(self, node, typectx=object):
+    def add_assignment(self, node, typectx=None):
         """Add a node where this variable is being assigned to.
 
         An 'assignment' is a point in the program where a new value is
@@ -455,7 +462,7 @@ class NamedVar(DistNode):
         assert node.parent is not None
         self.assignments.append((node, typectx))
 
-    def add_update(self, node, attr=None, attrtype=object):
+    def add_update(self, node, attr=None, attrtype=None):
         """Add a node where this variable is being updated.
 
         An 'update' is a point in the program where the state of the object
@@ -467,7 +474,7 @@ class NamedVar(DistNode):
         assert node.parent is not None
         self.updates.append((node, attr, attrtype))
 
-    def add_read(self, node, typectx=object):
+    def add_read(self, node, typectx=None):
         """Add a node where the value of this variable is being read.
         """
         assert node.parent is not None
@@ -496,6 +503,24 @@ class NamedVar(DistNode):
             if place is node or place.is_child_of(node):
                 return True
         return False
+
+    @property
+    def type(self):
+        """Returns the type of this name, if known.
+
+        This is a best-effort guess at the type of the variable.
+        """
+
+        for _, typectx in self.assignments:
+            if typectx is not None:
+                return typectx
+        for _, _, typectx in self.updates:
+            if typectx is not None:
+                return typectx
+        for _, typectx in self.reads:
+            if typectx is not None:
+                return typectx
+        return None
 
     @property
     def scope(self):

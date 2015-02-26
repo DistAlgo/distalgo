@@ -2,7 +2,7 @@ import sys
 from random import randint
 
 class Coordinator(process):
-    def setup(tid, cohorts): pass
+    def setup(tid:str, cohorts:set): pass
 
     def to_commit():
         send(('prepare', tid), to= cohorts)
@@ -26,7 +26,7 @@ class Coordinator(process):
         output('terminating')
 
 class Cohort(process):
-    def setup(failure_rate): pass
+    def setup(failure_rate:float): pass
 
     def receive(msg=('prepare', tid), from_= coord):
         if prepared(tid):

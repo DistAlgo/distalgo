@@ -707,23 +707,43 @@ class Parser(NodeVisitor):
         padding = len(node.args) - len(node.defaults)
         container = self.current_parent.args
         for arg in node.args[:padding]:
-            container.add_arg(arg.arg)
+            if arg.annotation is not None:
+                annotation = self.visit(arg.annotation)
+                container.add_arg(arg.arg, annotation)
+            else:
+                container.add_arg(arg.arg)
         for arg, val in zip(node.args[padding:], node.defaults):
-            container.add_defaultarg(arg.arg, self.visit(val))
+            if arg.annotation is not None:
+                annotation = self.visit(arg.annotation)
+                container.add_defaultarg(arg.arg, self.visit(val), annotation)
+            else:
+                container.add_defaultarg(arg.arg, self.visit(val))
         if node.vararg is not None:
             # Python 3.4 compatibility:
             if type(node.vararg) is str:
                 container.add_vararg(node.vararg)
             else:
-                container.add_vararg(node.vararg.arg)
+                if arg.annotation is not None:
+                    annotation = self.visit(arg.annotation)
+                    container.add_vararg(node.vararg.arg, annotation)
+                else:
+                    container.add_vararg(node.vararg.arg)
         if node.kwarg is not None:
             # Python 3.4 compatibility:
             if type(node.kwarg) is str:
                 container.add_kwarg(node.kwarg)
             else:
-                container.add_vararg(node.kwarg.arg)
+                if node.kwarg.annotation is not None:
+                    annotation = self.visit(node.kwarg.annotation)
+                    container.add_vararg(node.kwarg.arg, annotation)
+                else:
+                    container.add_vararg(node.kwarg.arg)
         for kwarg, val in zip(node.kwonlyargs, node.kw_defaults):
-            container.add_kwonlyarg(kwarg.arg, self.visit(val))
+            if kwarg.annotation is not None:
+                annotation = self.visit(kwarg.annotation)
+                container.add_kwonlyarg(kwarg.arg, self.visit(val), annotation)
+            else:
+                container.add_kwonlyarg(kwarg.arg, self.visit(val))
 
 
     # Top-level blocks:
@@ -761,6 +781,10 @@ class Parser(NodeVisitor):
             # setup() has to be parsed first:
             self.proc_body([node.body[bodyidx]] +
                            node.body[:bodyidx] + node.body[(bodyidx+1):])
+            dbgstr = ["Process ", proc.name, " has names: "]
+            for n in proc._names.values():
+                dbgstr.append("%s: %s; " % (n, str(n.type)))
+            self.debug("".join(dbgstr))
             self.pop_state()
             if proc.entry_point is None:
                 self.warn("Process %s missing '%s()' method." %
@@ -780,6 +804,10 @@ class Parser(NodeVisitor):
             self.push_state(clsobj)
             self.current_block = clsobj.body
             self.body(node.body)
+            dbgstr = ["Class ", proc.name, " has names: "]
+            for n in proc._names.values():
+                dbgstr.append("%s: %s; " % (n, str(n.type)))
+            self.debug("".join(dbgstr))
             self.pop_state()
 
     def visit_FunctionDef(self, node):
@@ -807,6 +835,10 @@ class Parser(NodeVisitor):
             if not self.is_in_setup():
                 self.signature(node.args)
             self.body(node.body)
+            dbgstr = [s.name, " has names: "]
+            for n in s._names.values():
+                dbgstr.append(("%s: %s; " % (n, str(n.type))))
+            self.debug("".join(dbgstr))
             self.pop_state()
 
         else:

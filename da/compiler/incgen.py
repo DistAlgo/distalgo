@@ -262,10 +262,15 @@ def gen_update_stub(nameobj, updnode):
                   for arg in params])
     return updfun, updcall
 
-def gen_assign_stub(nameobj, stub_only=False):
-    """Generate assignment stub and call node for 'nameobj'."""
+def is_a(nameobj, typexpr):
+    if nameobj.type is not None and \
+       isinstance(nameobj.type, dast.SimpleExpr) and \
+       nameobj.type.value is typexpr:
+        return True
+    else:
+        return False
 
-    stub = """
+STUB_ASSIGN = """
 def {1}({0}):
     if type({0}) is set:
         res = set()
@@ -274,13 +279,32 @@ def {1}({0}):
         {0} = res
     {0} = {0}
     return {0}
-    """ if not Options.jb_style else """
-def {1}({0}):
-    globals()['{0}'] = {0}
+"""
+STUB_ASSIGN_JB = """
+def {1}(_{0}):
+    globals()['{0}'] = _{0}
     return {0}
 """
+STUB_ASSIGN_JB_SET = """
+def {1}(_{0}):
+    global {0}
+    {0} = invinc.runtime.Set()
+    {0}.update(_{0})
+    return {0}
+"""
+
+def gen_assign_stub(nameobj, stub_only=False):
+    """Generate assignment stub and call node for 'nameobj'."""
+
     vname = mangle_name(nameobj)
     fname = ASSIGN_STUB_FORMAT % mangle_name(nameobj)
+    if Options.jb_style:
+        if is_a(nameobj, nameobj.scope.find_name("set")):
+            stub = STUB_ASSIGN_JB_SET
+        else:
+            stub = STUB_ASSIGN_JB
+    else:
+        stub = STUB_ASSIGN
     stubast = parse(stub.format(vname, fname)).body[0]
     if stub_only:
         return stubast
@@ -288,7 +312,7 @@ def {1}({0}):
         vnode = PythonGenerator().visit(nameobj)
         stubcallast = Assign(targets=[vnode],
                              value=pyCall(func=pyAttr(INC_MODULE_VAR, fname),
-                                          keywords=[(vname, vnode)]))
+                                          keywords=[("_" + vname, vnode)]))
         return stubast, stubcallast
 
 def gen_reset_stub(process, events):

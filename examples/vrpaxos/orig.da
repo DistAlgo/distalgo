@@ -11,7 +11,7 @@ operations = {i: operation(i) for i in range(NOPS)}
 # ops = {i: (lambda state: (state+[i], ['res',i]+state)) for i in range(NOPS)}
 
 class Replica(process):
-    def setup(leaders, initial_state):
+    def setup(leaders:set, initial_state:list):
         self.state = initial_state;  self.slot_num = 1
         self.proposals = set();  self.decisions = set()
 
@@ -78,7 +78,8 @@ class Acceptor(process):
         send(('p2b', self.id, ballot_num), to= leader_commander)
 
 class Commander(process):
-    def setup(leader, acceptors, replicas, b, s, p): pass
+    def setup(leader:Leader, acceptors:set, replicas:set,
+              b, s, p): pass
 
     def run():
         output('### start')
@@ -104,7 +105,7 @@ class Scout(process):
             send(('preempted', b1), to= leader)
 
 class Leader(process):
-    def setup(acceptors, replicas):
+    def setup(acceptors:set, replicas:set):
         self.ballot_num = (0, self.id);
         self.active = False;  self.proposals = set()
         self.started = set()
@@ -156,7 +157,7 @@ class Leader(process):
                      each((b1, _s, _) in pvals, has= b1 <= b))
 
 class Client(process):
-    def setup(replicas, nops):
+    def setup(replicas:set, nops:int):
         self.cid = 0           # command id
         self.results = dict()  # map of command id to result of command
         self.count = dict()    # map of command id to number of responses

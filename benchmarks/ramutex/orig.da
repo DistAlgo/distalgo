@@ -2,7 +2,7 @@ import sys
 controller = import_da('controller')
 
 class P(process, controller.Controllee):
-    def setup(ctl, ps, nrounds):
+    def setup(ctl, ps:set, nrounds):
       super().setup(ctl)
       self.reqc = None
       self.waiting = set()

@@ -1,10 +1,9 @@
 import sys
 class Pong(process):
-    def setup(total_pings): pass
+    def setup(total_pings:int): pass
 
     def run():
         a = False
-        output(setof(s, s in {1, 2}, some(a in {3,4}), a))
         await(len(listof(p, received(('Ping',), from_=p))) == total_pings)
 
     def receive(msg=('Ping',), from_=p):
@@ -12,7 +11,7 @@ class Pong(process):
         send(('Pong',), to=p)
 
 class Ping(process):
-    def setup(p, nrounds): pass
+    def setup(p:Pong, nrounds:int): pass
 
     def run():
         for i in range(nrounds):

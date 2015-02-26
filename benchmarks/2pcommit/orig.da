@@ -3,7 +3,7 @@ from random import randint
 controller = import_da('controller')
 
 class Coordinator(process, controller.Controllee):
-    def setup(ctl, cohorts):
+    def setup(ctl, cohorts:set):
         super().setup(ctl)
 
     def to_commit():

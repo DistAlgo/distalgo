@@ -2,7 +2,7 @@ import sys
 import random
 
 class P(process):
-    def setup(left, right):
+    def setup(left:P, right:P):
         self.status = "Unknown"      # Current status, can be {"Unknown", "Leader"}
         self.phase_left, self.phase_right = False, False
         self.phase = 0

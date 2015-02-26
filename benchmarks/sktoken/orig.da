@@ -2,7 +2,7 @@ import sys
 controller = import_da('controller')
 
 class P(process, controller.Controllee):
-    def setup(ctl, ps, orig_token, nrounds): # other procs, and whether self.id holds token
+    def setup(ctl, ps:set, orig_token, nrounds): # other procs, and whether self.id holds token
         super().setup(ctl)
         self.RN = dict((p, 0) for p in ps)        # last request number received
         # Token structure:
