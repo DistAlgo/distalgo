@@ -1,10 +1,12 @@
+# Changes:
+# - made setup() take V instead of v, so set annotation could be used.
 import sys
 controller = import_da('controller')
 
 class P(process, controller.Controllee):
-   def setup(ctl, ps:set, v, maxfail):
+   def setup(ctl, ps:set, V:set, maxfail):
        super().setup(ctl)
-       self.V = {v}          # set of values to agree on, intially own value v
+       # V is set of values to agree on, initially own value
 
    @controller.run
    def run():
@@ -29,5 +31,5 @@ def main():
 
       ps = new(P, num= n)
       for i, p in enumerate(list(ps)):
-            setup({p}, (ctl, ps, i, f))
+            setup({p}, (ctl, ps, {i}, f))
       start(ps)
