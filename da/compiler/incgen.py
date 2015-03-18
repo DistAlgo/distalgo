@@ -271,13 +271,13 @@ def is_a(nameobj, typexpr):
         return False
 
 STUB_ASSIGN = """
-def {1}({0}):
-    if type({0}) is set:
-        res = set()
+def {1}(_{0}):
+    global {0}
+    if type(_{0}) is set:
+        {0} = set()
         for elt in {0}:
-            res.add(elt)
-        {0} = res
-    {0} = {0}
+            {0}.add(elt)
+    {0} = _{0}
     return {0}
 """
 STUB_ASSIGN_JB = """
