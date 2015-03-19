@@ -799,13 +799,12 @@ class Parser(NodeVisitor):
                 self.current_block.append(clsobj)
                 n = self.current_scope.add_name(node.name)
                 n.add_assignment(clsobj)
-            self.current_context = Read()
             clsobj.decorators, _, _ = self.parse_decorators(node)
             self.push_state(clsobj)
             self.current_block = clsobj.body
             self.body(node.body)
-            dbgstr = ["Class ", proc.name, " has names: "]
-            for n in proc._names.values():
+            dbgstr = ["Class ", clsobj.name, " has names: "]
+            for n in clsobj._names.values():
                 dbgstr.append("%s: %s; " % (n, str(n.type)))
             self.debug("".join(dbgstr))
             self.pop_state()
