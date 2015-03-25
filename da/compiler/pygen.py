@@ -220,6 +220,15 @@ def is_all_wildcards(targets):
             return False
     return True
 
+class PythonGeneratorException(Exception): pass
+
+def translate(distalgo_ast, filename="", options=None):
+    pg = PythonGenerator(filename, options)
+    try:
+        return pg.visit(distalgo_ast)
+    except Exception as ex:
+        raise PythonGeneratorException(str(pg.current_node)) from ex
+
 # List of arguments needed to initialize a process:
 PROC_INITARGS = ["parent", "initq", "channel", "props"]
 
@@ -250,6 +259,8 @@ class PythonGenerator(NodeVisitor):
         self.cmdline_args = options
         self.module_args = None
 
+        self.current_node = None
+
     def get_option(self, option, default=None):
         if hasattr(self.cmdline_args, option):
             return getattr(self.cmdline_args, option)
@@ -273,11 +284,13 @@ class PythonGenerator(NodeVisitor):
     def visit(self, node):
         """Generic visit method.
 
-        If the Incrementalization interface generated code for this node, then
-        returns the generated code. Otherwise, call the normal visit method.
+        If the Incrementalization interface generated code for this node, as
+        indicated by the 'ast_override' attribute, then return the generated
+        code. Otherwise, call the normal visit method.
 
         """
         assert node is None or isinstance(node, dast.DistNode)
+        self.current_node = node
         if hasattr(node, "ast_override"):
             res = node.ast_override
         else:
