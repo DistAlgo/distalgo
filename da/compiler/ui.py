@@ -54,6 +54,7 @@ def daast_from_file(filename, args=None):
             return daast_from_str(infd.read(), filename, args)
     except Exception as e:
         print(type(e).__name__, ':', str(e), file=stderr)
+        raise e
     return None
 
 def daast_from_str(src, filename='<str>', args=None):
@@ -262,8 +263,6 @@ def main(argv=None):
                     dest="outfile", default=None)
     ap.add_argument('-L', help="Logging output level.",
                     dest="debug", default=None)
-    # ap.add_argument('-p', help="Generate pseudo code instead of Python code.",
-    #                 action='store_true', dest="genpsd")
     ap.add_argument('--full-event-pattern',
                     help="If set, use the 'full' format "
                     "(TYPE, (CLK, DST, SRC), MSG) for event patterns;"
@@ -322,6 +321,11 @@ def main(argv=None):
                     help="Disable all quantification transformations. "
                     "Only useful with '-i'.",
                     action='store_true')
+    ap.add_argument('-I', '--interactive',
+                    help="Launch interactive shell.",
+                    action='store_true', default=False)
+    # ap.add_argument('-p', help="Generate pseudo code instead of Python code.",
+    #                 action='store_true', dest="genpsd")
     # ap.add_argument('--psdfile', help="Name of output pseudo code file.",
     #                 dest="psdfile", default=None)
     ap.add_argument('infile', metavar='SOURCEFILE', type=str,
@@ -330,6 +334,12 @@ def main(argv=None):
     if argv is None:
         argv = sys.argv[1:]
     args = ap.parse_args(argv)
+
+    if args.interactive:
+        import code
+        code.interact()
+        return
+
     if args.debug is not None:
         try:
             level = int(args.debug)
