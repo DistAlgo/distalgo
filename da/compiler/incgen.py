@@ -40,6 +40,9 @@ INIT_STUB_PREFIX = "Init_"
 UPDATE_STUB_PREFIX = "Update_"
 
 SELF_ID_NAME = "SELF_ID"
+JB_STYLE_MODULE = "invinc.runtime"
+JB_STYLE_SET = JB_STYLE_MODULE + ".Set"
+JB_STYLE_MAP = JB_STYLE_MODULE + ".Map"
 
 NegatedOperatorMap = {
     dast.EqOp : NotEq,
@@ -186,14 +189,16 @@ def mangle_name(nameobj):
 
 PREAMBLE = """
 import da
+{jbstyle_import}
 ReceivedEvent = da.pat.ReceivedEvent
 SentEvent = da.pat.SentEvent
-{0} = None
+{self_name} = None
 Witness = None
+JbStyle = {is_jbstyle}
 def init(procobj):
-    global {0}
-    {0} = procobj.id
-""".format(SELF_ID_NAME)
+    global {self_name}
+    {self_name} = procobj.id
+"""
 
 GLOBAL_READ = "globals()['{0}']"
 GLOBAL_WRITE = "globals()['{0}'] = {1}"
@@ -299,7 +304,7 @@ def generate_update_stub(updnode, state):
     astval = IncInterfaceGenerator(params).visit(updnode)
     # the body depends on the syntactic type of update we're handling:
     if isinstance(updnode, dast.Expression):
-        body = [Expr(astval) if Options.jb_style else Return(astval)]
+        body = [Return(astval)]
     elif isinstance(updnode, dast.AssignmentStmt):
         body = astval
     elif isinstance(updnode, dast.DeleteStmt):
@@ -543,7 +548,7 @@ def process_initializers(state):
     for event in state.events:
         state.module.body.append(generate_initializer_stub(
             varname=event.name,
-            typename="invinc.runtime.Set" if Options.jb_style else "set"))
+            typename=JB_STYLE_SET if Options.jb_style else "set"))
 
     if Options.jb_style:
         for nameobj in state.parameters:
@@ -551,11 +556,11 @@ def process_initializers(state):
             if nameobj.is_a("set"):
                 stub = generate_initializer_stub(
                     varname=mangle_name(nameobj),
-                    typename="invinc.runtime.Set")
+                    typename=JB_STYLE_SET)
             elif nameobj.is_a("dict"):
                 stub = generate_initializer_stub(
                     varname=mangle_name(nameobj),
-                    typename="invinc.runtime.Map")
+                    typename=JB_STYLE_MAP)
             if stub is not None:
                 state.module.body.append(stub)
 
@@ -591,10 +596,11 @@ def flatten_opassignments(state):
     transformer.visit(state.input_ast)
 
 def generate_header(state):
-    module = parse(PREAMBLE)
-    if Options.jb_style:
-        # Additional import for jb_style
-        module.body.insert(0, parse("import invinc.runtime").body[0])
+    module = parse(
+        PREAMBLE.format(self_name=SELF_ID_NAME,
+                        jbstyle_import=("import " + JB_STYLE_MODULE
+                                        if Options.jb_style else ""),
+                        is_jbstyle=str(Options.jb_style)))
     state.module = module
 
 def translate_with_stubs(state):

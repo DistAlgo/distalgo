@@ -24,6 +24,7 @@
 
 import os
 import sys
+import copy
 import os.path
 import logging
 import importlib
@@ -33,6 +34,7 @@ from functools import wraps
 
 GlobalOptions = None
 CurrentProcess = None
+InvIncBaseType = None           # invinc.runtime.Type, if using invinc
 
 log = logging.getLogger(__name__)
 formatter = logging.Formatter(
@@ -55,6 +57,11 @@ def global_options():
 
 def current_process():
     return CurrentProcess
+
+def get_inc_module():
+    if not hasattr(sys.modules, GlobalOptions.inc_module_name):
+        return None
+    return sys.modules[GlobalOptions.inc_module_name]
 
 def sysinit():
     setup_root_logger()
@@ -97,10 +104,13 @@ def setup_root_logger():
         rootlog.addHandler(logging.NullHandler())
 
 def load_modules():
+    global InvIncBaseType
     if not GlobalOptions.load_inc_module:
         return
     main = sys.modules[GlobalOptions.this_module_name]
     inc = importlib.import_module(GlobalOptions.inc_module_name)
+    if inc.JbStyle:
+        InvIncBaseType = importlib.import_module("invinc.runtime").Type
     if GlobalOptions.control_module_name is not None:
         ctrl = importlib.import_module(GlobalOptions.control_module_name)
         main.IncModule = ModuleIntrument(ctrl, inc)
@@ -286,6 +296,10 @@ class frozendict(dict):
         return "frozendict(%s)" % dict.__repr__(self)
 
 def freeze(obj):
+    if InvIncBaseType is not None:
+        if isinstance(obj, InvIncBaseType):
+            return copy.deepcopy(obj)
+
     if isinstance(obj, list):
         # list -> tuple
         return tuple(freeze(elem) for elem in obj)
