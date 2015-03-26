@@ -25,6 +25,18 @@
 from ast import AST
 from itertools import chain
 
+##################################################
+# Auxiliary functions:
+
+def flatten_attr(obj, attr_name):
+    if isinstance(obj, list):
+        return list(chain(*[flatten_attr(elem, attr_name) for elem in obj]))
+    else:
+        return getattr(obj, attr_name)
+
+##################################################
+# AST classes:
+
 class DistNode(AST):
     """Base class for the DistAlgo AST.
 
@@ -311,7 +323,9 @@ class LockableNameScope(NameScope):
         self.locked = False
 
 class Arguments(DistNode):
-    """A special type of NameScope that takes arguments.
+    """A node representing arguments.
+
+    This class simply mirrors the 'arguments' node in the Python AST.
 
     """
 
@@ -455,8 +469,8 @@ class NamedVar(DistNode):
         """Add a node where this variable is being assigned to.
 
         An 'assignment' is a point in the program where a new value is
-        assigned to this variable. This includes assignment statements and
-        argument definitions.
+        assigned to this variable. This includes assignment statements, delete
+        statements, and argument definitions.
 
         """
         assert node.parent is not None
@@ -468,7 +482,8 @@ class NamedVar(DistNode):
         An 'update' is a point in the program where the state of the object
         referred to by this variable is changed (in Python, primitive types
         such as int and float can not be updated). This includes assigning to
-        attributes and calling methods which potentially change object state.
+        or deleting attributes or slices, and calling methods which
+        potentially change object state.
 
         """
         assert node.parent is not None
@@ -497,18 +512,48 @@ class NamedVar(DistNode):
         return removed
 
     def is_assigned_in(self, node):
-        """True if this variable is being assigned to inside node."""
+        """True if this name is being assigned to inside 'node'."""
 
         for place, _ in self.assignments:
             if place is node or place.is_child_of(node):
                 return True
         return False
 
-    @property
-    def type(self):
-        """Returns the type of this name, if known.
+    def is_a(self, typename):
+        """True if we can deduce this name is of type 'typename'.
 
-        This is a best-effort guess at the type of the variable.
+        'typename' should be a string. Result is guessed from the type
+        context this name first appeared in, type context conflict (arises
+        when this name is subsequently used in a different type context) is
+        not yet handled.
+
+        """
+
+        ctx = self.get_typectx()
+        typenode = self.scope.find_name(typename)
+        if ctx is None or typenode is None:
+            # Missing information
+            return False
+
+        if ((isinstance(ctx, SimpleExpr) and ctx.value is typenode) or
+            (isinstance(ctx, CallExpr) and
+             isinstance(ctx.func, SimpleExpr) and
+             ctx.func.value is typenode) or
+            (isinstance(ctx, CallExpr) and
+             isinstance(ctx.func, str) and
+             isinstance(typenode, NamedVar) and
+             ctx.func == typenode.name)):
+            return True
+        else:
+            return False
+
+    def get_typectx(self):
+        """Returns the type context of this name, if known.
+
+        This is a best-effort guess at the type of the variable: assignments
+        take precedence over updates, and updates take precedence over
+        reads.
+
         """
 
         for _, typectx in self.assignments:
@@ -1775,10 +1820,10 @@ class SimpleStmt(Statement):
 
     @property
     def ordered_nameobjs(self):
-        if self.expr is not None:
-            return self.expr.ordered_nameobjs
-        else:
-            return []
+        return list(chain(*[flatten_attr(getattr(self, field_name),
+                                         "ordered_nameobjs")
+                            for field_name in self._fields
+                            if getattr(self, field_name) is not None]))
 
 class CompoundStmt(Statement):
     """Block statements are compound statements that contain one or more blocks of

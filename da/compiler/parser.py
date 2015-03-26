@@ -159,8 +159,9 @@ class MalformedStatementError(Exception): pass
 ##########
 # Name context types:
 class NameContext:
-    def __init__(self, type=None):
-        self.type = type
+    def __init__(self, node, type=None):
+        self.node = node        # The node containing this context
+        self.type = type        # Optional, for type analysis
 
 class Assignment(NameContext): pass
 class Update(NameContext): pass
@@ -200,7 +201,6 @@ class PatternParser(NodeVisitor):
             return self.visit_List(node)
 
         # Parse general expressions:
-        self._parser.current_context = Read()
         expr = self._parser.visit(node)
         if isinstance(expr, dast.ConstantExpr):
             return dast.ConstantPattern(self.parent_node, node, value=expr)
@@ -286,14 +286,14 @@ class PatternParser(NodeVisitor):
                     # New name:
                     n = self.namescope.add_name(name)
                     pat = dast.FreePattern(self.parent_node, node, value=n)
-                    n.add_assignment(pat)
+                    n.add_assignment(self.parent_node)
                 else:
                     pat = dast.FreePattern(self.parent_node, node, value=n)
                     if self.is_free(name):
                         # Existing free var:
                         n.add_read(pat)
                     else:
-                        n.add_assignment(pat)
+                        n.add_assignment(self.parent_node)
             return pat
 
     def visit_Str(self, node):
@@ -504,7 +504,7 @@ class Parser(NodeVisitor):
             self.program.add_name(name)
         self.push_state(self.program)
         self.current_block = self.program.body
-        self.current_context = Read()
+        self.current_context = Read(self.program)
         self.body(node.body)
         self.pop_state()
 
@@ -663,11 +663,11 @@ class Parser(NodeVisitor):
         """Process a block of statements.
         """
         for stmt in statements:
-            self.current_context = Read()
+            self.current_context = None
             self.visit(stmt)
         if self.current_label is not None:
             # Create a noop statement to hold the last label:
-            self.create_stmt(dast.NoopStmt, statements[-1])
+            self.create_stmt(dast.NoopStmt, statements[-1], nopush=True)
 
     def proc_body(self, statements):
         """Process the body of a process definition.
@@ -699,7 +699,7 @@ class Parser(NodeVisitor):
             self.visit(stmt)
         if self.current_label is not None:
             # Create a noop statement to hold the last label:
-            self.create_stmt(dast.NoopStmt, statements[-1])
+            self.create_stmt(dast.NoopStmt, statements[-1], nopush=True)
 
     def signature(self, node):
         """Process the argument lists."""
@@ -783,7 +783,7 @@ class Parser(NodeVisitor):
                            node.body[:bodyidx] + node.body[(bodyidx+1):])
             dbgstr = ["Process ", proc.name, " has names: "]
             for n in proc._names.values():
-                dbgstr.append("%s: %s; " % (n, str(n.type)))
+                dbgstr.append("%s: %s; " % (n, str(n.get_typectx())))
             self.debug("".join(dbgstr))
             self.pop_state()
             if proc.entry_point is None:
@@ -805,7 +805,7 @@ class Parser(NodeVisitor):
             self.body(node.body)
             dbgstr = ["Class ", clsobj.name, " has names: "]
             for n in clsobj._names.values():
-                dbgstr.append("%s: %s; " % (n, str(n.type)))
+                dbgstr.append("%s: %s; " % (n, str(n.get_typectx())))
             self.debug("".join(dbgstr))
             self.pop_state()
 
@@ -836,7 +836,7 @@ class Parser(NodeVisitor):
             self.body(node.body)
             dbgstr = [s.name, " has names: "]
             for n in s._names.values():
-                dbgstr.append(("%s: %s; " % (n, str(n.type))))
+                dbgstr.append(("%s: %s; " % (n, str(n.get_typectx()))))
             self.debug("".join(dbgstr))
             self.pop_state()
 
@@ -902,7 +902,6 @@ class Parser(NodeVisitor):
             self.current_block.append(stmtobj)
         if not nopush:
             self.push_state(stmtobj)
-        self.current_context = Read()
         return stmtobj
 
     def create_expr(self, exprcls, ast, params=None, nopush=False):
@@ -919,9 +918,9 @@ class Parser(NodeVisitor):
 
     def visit_Assign(self, node):
         stmtobj = self.create_stmt(dast.AssignmentStmt, node)
-        self.current_context = Read()
+        self.current_context = Read(stmtobj)
         stmtobj.value = self.visit(node.value)
-        self.current_context = Assignment(stmtobj.value)
+        self.current_context = Assignment(stmtobj, type=stmtobj.value)
         for target in node.targets:
             stmtobj.targets.append(self.visit(target))
         self.pop_state()
@@ -929,9 +928,9 @@ class Parser(NodeVisitor):
     def visit_AugAssign(self, node):
         stmtobj = self.create_stmt(dast.OpAssignmentStmt, node,
                                    params={'op':OperatorMap[type(node.op)]})
-        self.current_context = Read()
+        self.current_context = Read(stmtobj)
         valexpr = self.visit(node.value)
-        self.current_context = Assignment(valexpr)
+        self.current_context = Assignment(stmtobj, type=valexpr)
         tgtexpr = self.visit(node.target)
         stmtobj.target = tgtexpr
         stmtobj.value = valexpr
@@ -1016,6 +1015,7 @@ class Parser(NodeVisitor):
                                keywords={},
                                optional_keywords={KW_AWAIT_TIMEOUT}):
                 stmtobj = self.create_stmt(dast.AwaitStmt, node)
+                self.current_context = Read(stmtobj)
                 branch = dast.Branch(stmtobj, node,
                                      condition=self.visit(e.args[0]))
                 stmtobj.branches.append(branch)
@@ -1030,17 +1030,20 @@ class Parser(NodeVisitor):
 
             elif self.expr_check(KW_SEND, 1, 1, e, keywords={KW_SEND_TO}):
                 stmtobj = self.create_stmt(dast.SendStmt, node)
+                self.current_context = Read(stmtobj)
                 stmtobj.message = self.parse_message(e.args[0])
                 stmtobj.target = self.visit(e.keywords[0].value)
 
             elif self.expr_check(KW_BROADCAST, 1, 1, e, keywords={KW_SEND_TO}):
                 stmtobj = self.create_stmt(dast.SendStmt, node)
+                self.current_context = Read(stmtobj)
                 stmtobj.message = self.parse_message(e.args[0])
                 stmtobj.target = self.visit(e.keywords[0].value)
 
             elif self.expr_check(KW_PRINT, 1, None, e,
                                  optional_keywords={KW_LEVEL, KW_SEP}):
                 stmtobj = self.create_stmt(dast.OutputStmt, node)
+                self.current_context = Read(stmtobj)
                 stmtobj.message = [self.visit(arg) for arg in e.args]
                 for kw in e.keywords:
                     if kw.arg == KW_LEVEL:
@@ -1051,6 +1054,7 @@ class Parser(NodeVisitor):
             elif self.current_process is not None and \
                  self.expr_check(KW_RESET, 0, 1, e):
                 stmtobj = self.create_stmt(dast.ResetStmt, node)
+                self.current_context = Read(stmtobj)
                 if len(e.args) > 0:
                     stmtobj.expr = self.visit(e.args[0])
                     if not isinstance(stmtobj.expr, dast.ConstantExpr):
@@ -1068,14 +1072,17 @@ class Parser(NodeVisitor):
             # 'yield' and 'yield from' should be statements, handle them here:
             elif type(e) is Yield:
                 stmtobj = self.create_stmt(dast.YieldStmt, node)
+                self.current_context = Read(stmtobj)
                 stmtobj.expr = self.visit(e)
             elif type(e) is YieldFrom:
                 # 'yield' should be a statement, handle it here:
                 stmtobj = self.create_stmt(dast.YieldFromStmt, node)
+                self.current_context = Read(stmtobj)
                 stmtobj.expr = self.visit(e)
 
             else:
                 stmtobj = self.create_stmt(dast.SimpleStmt, node)
+                self.current_context = Read(stmtobj)
                 stmtobj.expr = self.visit(node.value)
 
         except MalformedStatementError:
@@ -1092,6 +1099,7 @@ class Parser(NodeVisitor):
         try:
             if self.expr_check(KW_AWAIT, 1, 1, node.test):
                 stmtobj = self.create_stmt(dast.AwaitStmt, node)
+                self.current_context = Read(stmtobj)
                 branch = dast.Branch(stmtobj, node.test,
                                      condition=self.visit(node.test.args[0]))
                 self.current_block = branch.body
@@ -1123,6 +1131,7 @@ class Parser(NodeVisitor):
 
             else:
                 stmtobj = self.create_stmt(dast.IfStmt, node)
+                self.current_context = Read(stmtobj)
                 stmtobj.condition = self.visit(node.test)
                 self.current_block = stmtobj.body
                 self.body(node.body)
@@ -1137,9 +1146,9 @@ class Parser(NodeVisitor):
 
     def visit_For(self, node):
         s = self.create_stmt(dast.ForStmt, node)
-        self.current_context = Assignment()
+        self.current_context = Assignment(s)
         s.domain = self.parse_domain_spec(node)
-        self.current_context = Read()
+        self.current_context = None
         self.current_block = s.body
         self.body(node.body)
         self.current_block = s.elsebody
@@ -1150,12 +1159,14 @@ class Parser(NodeVisitor):
         if self.expr_check(KW_AWAIT, 1, 2, node.test,
                            optional_keywords={KW_AWAIT_TIMEOUT}):
             s = self.create_stmt(dast.LoopingAwaitStmt, node)
+            self.current_context = Read(s)
             s.condition = self.visit(node.test.args[0])
             if len(node.test.args) == 2:
                 s.timeout = self.visit(node.test.args[1])
 
         else:
             s = self.create_stmt(dast.WhileStmt, node)
+            self.current_context = Read(s)
             s.condition = self.visit(node.test)
         self.current_block = s.body
         self.body(node.body)
@@ -1167,14 +1178,14 @@ class Parser(NodeVisitor):
     def visit_With(self, node):
         s = self.create_stmt(dast.WithStmt, node)
         for item in node.items:
-            self.current_context = Read()
+            self.current_context = Read(s)
             ctxexpr = self.visit(item.context_expr)
             if item.optional_vars is not None:
-                self.current_context = Assignment(ctxexpr)
+                self.current_context = Assignment(s, type=ctxexpr)
                 s.items.append((ctxexpr, self.visit(item.optional_vars)))
             else:
                 s.items.append((ctxexpr, None))
-        self.current_context = Read()
+        self.current_context = None
         self.current_block = s.body
         self.body(node.body)
         self.pop_state()
@@ -1198,7 +1209,7 @@ class Parser(NodeVisitor):
 
     def visit_Delete(self, node):
         s = self.create_stmt(dast.DeleteStmt, node)
-        self.current_context = Delete()
+        self.current_context = Delete(s)
         for target in node.targets:
             s.targets.append(self.visit(target))
         self.pop_state()
@@ -1207,7 +1218,7 @@ class Parser(NodeVisitor):
         s = self.create_stmt(dast.TryStmt, node)
         self.current_block = s.body
         self.body(node.body)
-        self.current_context = Read()
+        self.current_context = Read(s)
         for handler in node.handlers:
             h = dast.ExceptHandler(s, handler)
             h.name = handler.name
@@ -1229,6 +1240,7 @@ class Parser(NodeVisitor):
 
     def visit_Assert(self, node):
         s = self.create_stmt(dast.AssertStmt, node)
+        self.current_context = Read(s)
         s.expr = self.visit(node.test)
         if node.msg is not None:
             s.msg = self.visit(node.msg)
@@ -1274,12 +1286,14 @@ class Parser(NodeVisitor):
 
     def visit_Return(self, node):
         s = self.create_stmt(dast.ReturnStmt, node)
+        self.current_context = Read(s)
         if node.value is not None:
             s.value = self.visit(node.value)
         self.pop_state()
 
     def visit_Raise(self, node):
         s = self.create_stmt(dast.RaiseStmt, node)
+        self.current_context = Read(s)
         if node.exc is not None:
             s.expr = self.visit(node.exc)
         if node.cause is not None:
@@ -1293,17 +1307,19 @@ class Parser(NodeVisitor):
     # constructed dast AST node
 
     def visit_Attribute(self, node):
+        expr = self.create_expr(dast.AttributeExpr, node)
         if (isinstance(self.current_context, FunCall) and
                 node.attr in KnownUpdateMethods):
             # Calling a method that is known to update an object's state is an
             # Update operation:
-            self.current_context = Update()
-        expr = self.create_expr(dast.AttributeExpr, node)
-        if isinstance(self.current_context, Assignment) or\
-           isinstance(self.current_context, Delete):
+            self.current_context = Update(self.current_context.node,
+                                          self.current_context.type)
+        elif isinstance(self.current_context, Assignment) or\
+             isinstance(self.current_context, Delete):
             # Assigning to or deleting an attribute of an object updates that
             # object:
-            self.current_context = Update()
+            self.current_context = Update(self.current_context.node,
+                                          self.current_context.type)
         expr.value = self.visit(node.value)
         expr.attr = node.attr
         self.pop_state()
@@ -1316,7 +1332,8 @@ class Parser(NodeVisitor):
                     self.debug("Adding name '%s' to process scope"
                                " from setup()." % expr.attr, node)
                     n = self.current_process.add_name(expr.attr)
-                    n.add_assignment(expr)
+                    n.add_assignment(self.current_context.node,
+                                     self.current_context.type)
                     n.set_scope(self.current_process)
                 else:
                     self.error("Undefined process state variable: " +
@@ -1325,10 +1342,12 @@ class Parser(NodeVisitor):
                 if isinstance(self.current_context, Assignment) or \
                    isinstance(self.current_context, Delete):
                     self.debug("Assignment to variable '%s'" % str(n), node)
-                    n.add_assignment(expr)
+                    n.add_assignment(self.current_context.node,
+                                     self.current_context.type)
                 elif isinstance(self.current_context, Update):
                     self.debug("Update to process variable '%s'" % str(n), node)
-                    n.add_update(expr)
+                    n.add_update(self.current_context.node,
+                                 self.current_context.type)
                 else:
                     n.add_read(expr)
         return expr
@@ -1502,9 +1521,9 @@ class Parser(NodeVisitor):
         elif (isinstance(node, Compare) and len(node.ops) == 1 and
               type(node.ops[0]) is In):
             expr = self.create_expr(dast.DomainSpec, node)
-            self.current_context = Assignment()
+            self.current_context = Assignment(expr)
             expr.pattern = self.parse_pattern_expr(node.left)
-            self.current_context = IterRead(expr.pattern)
+            self.current_context = IterRead(expr, type=expr.pattern)
             expr.domain = self.visit(node.comparators[0])
             if isinstance(expr.domain, dast.HistoryExpr):
                 expr.pattern = self.pattern_from_event(expr.domain.event)
@@ -1512,12 +1531,12 @@ class Parser(NodeVisitor):
             return expr
         elif isinstance(node, comprehension) or isinstance(node, For):
             expr = self.create_expr(dast.DomainSpec, node)
-            self.current_context = Assignment()
+            self.current_context = Assignment(expr)
             if self.get_option('enable_iterator_pattern', default=False):
                 expr.pattern = self.parse_pattern_expr(node.target)
             else:
                 expr.pattern = self.visit(node.target)
-            self.current_context = IterRead(expr.pattern)
+            self.current_context = IterRead(expr, type=expr.pattern)
             expr.domain = self.visit(node.iter)
             if isinstance(expr.domain, dast.HistoryExpr):
                 expr.pattern = self.pattern_from_event(expr.domain.event)
@@ -1535,6 +1554,7 @@ class Parser(NodeVisitor):
             raise MalformedStatementError("Unknown quantifier.")
 
         expr = self.create_expr(dast.QuantifiedExpr, node, {'op': context})
+        self.current_context = Read(expr)
         self.enter_query()
         try:
             expr.domains, predicates = self.parse_domains_and_predicate(node)
@@ -1623,6 +1643,7 @@ class Parser(NodeVisitor):
             expr_type = dast.MaxExpr
 
         expr = self.create_expr(expr_type, node)
+        self.current_context = Read(expr)
         first_arg = node.args[0]
         node.args = node.args[1:]
         try:
@@ -1648,7 +1669,6 @@ class Parser(NodeVisitor):
         if len(domains) == 0:
             self.warn("No domain specifiers in comprehension expression.", node)
         dadomains = [self.parse_domain_spec(node) for node in domains]
-        self.current_context = Read()
         dapredicates = [self.visit(pred) for pred in preds]
         return dadomains, dapredicates
 
@@ -1727,6 +1747,7 @@ class Parser(NodeVisitor):
                 self.pop_state()
                 return outer
 
+        expr = None
         if self.call_check(ApiMethods, None, None, node):
             self.debug("Api method call: " + node.func.id, node)
             expr = self.create_expr(dast.ApiCallExpr, node)
@@ -1739,10 +1760,10 @@ class Parser(NodeVisitor):
             if isinstance(node.func, Name):
                 self.debug("Method call: " + str(node.func.id), node)
             expr = self.create_expr(dast.CallExpr, node)
-            self.current_context = FunCall()
+            self.current_context = FunCall(expr)
             expr.func = self.visit(node.func)
 
-        self.current_context = Read()
+        self.current_context = Read(expr)
         expr.args = [self.visit(a) for a in node.args]
         expr.keywords = [(kw.arg, self.visit(kw.value))
                          for kw in node.keywords]
@@ -1790,25 +1811,25 @@ class Parser(NodeVisitor):
         # NamedVar is not by itself an Expression, we'll have to wrap it in a
         # SimpleExpr:
         expr = self.create_expr(dast.SimpleExpr, node)
+        n = self.current_scope.find_name(node.id, local=False)
         if isinstance(self.current_context, Assignment) or\
            isinstance(self.current_context, Delete):
-            n = self.current_scope.find_name(node.id, local=False)
             if n is None:
                 self.debug("Adding name %s to %s" % (node.id,
                                                      self.current_scope), node)
                 n = self.current_scope.add_name(node.id)
-            n.add_assignment(expr)
+            n.add_assignment(self.current_context.node,
+                             self.current_context.type)
         elif isinstance(self.current_context, Update):
-            n = self.current_scope.find_name(node.id, local=False)
             if n is None:
                 self.warn("Possible use of uninitialized variable '%s'" %
                           node.id, node)
                 self.debug(str(self.current_scope.parent_scope), node)
                 n = self.current_scope.add_name(node.id)
-            n.add_update(expr)
+            n.add_update(self.current_context.node, None,
+                         self.current_context.type)
         elif isinstance(self.current_context, Read) or \
              isinstance(self.current_context, FunCall):
-            n = self.current_scope.find_name(node.id, local=False)
             if n is None:
                 self.warn("Possible use of uninitialized variable '%s'" %
                           node.id, node)
@@ -1819,6 +1840,10 @@ class Parser(NodeVisitor):
                     self.debug(self.current_scope._names, node)
                 n = self.current_scope.add_name(node.id)
             n.add_read(expr)
+        if n is None:
+            # A fallback for the cases we don't care about (i.e.
+            # annontations)
+            n = self.current_scope.add_name(node.id)
         expr.value = n
         self.pop_state()
         return expr
@@ -1957,9 +1982,9 @@ class Parser(NodeVisitor):
         if isinstance(self.current_context, Assignment) or\
            isinstance(self.current_context, Delete):
             # Assignment to an index position is an update to the container:
-            self.current_context = Update()
+            self.current_context = Update(self.current_context.node)
         expr.value = self.visit(node.value)
-        self.current_context = Read()
+        self.current_context = Read(expr)
         expr.index = self.visit(node.slice)
         self.pop_state()
         return expr
@@ -2014,13 +2039,12 @@ class Parser(NodeVisitor):
         else:
             expr = self.create_expr(dast.GeneratorExpr, node)
 
+        self.current_context = Read(expr)
         self.enter_query()
         for g in node.generators:
             expr.unlock()
-            self.current_context = Assignment()
             expr.conditions.append(self.parse_domain_spec(g))
             expr.lock()
-            self.current_context = Read()
             expr.conditions.extend([self.visit(i) for i in g.ifs])
         if isinstance(node, DictComp):
             kv = dast.KeyValue(expr)
