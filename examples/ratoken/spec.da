@@ -1,6 +1,6 @@
 import sys
 class P (process):
-    def setup(ps:set, nrounds:int, orig_token:dict):
+    def setup(ps:set, nrounds:int, orig_token:bool):
         self.clock = 0
         self.token = dict((p, 0) for p in ps)
 

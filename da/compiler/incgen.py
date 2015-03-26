@@ -28,15 +28,16 @@ from ast import *
 from . import dast
 from .pygen import *
 from .parser import Pattern2Constant
-from .utils import printd, printw, OptionsManager, to_source
+from .utils import printe, printd, printw, OptionsManager, to_source
 
 INC_MODULE_VAR = "IncModule"
 
 QUERY_STUB_FORMAT = "Query_%d"
 ASSIGN_STUB_FORMAT = "Assign_%s"
-UPDATE_STUB_FORMAT = "Update_%s_%d"
-INIT_STUB_FORMAT = "Init_Event_%s"
+DEL_STUB_FORMAT = "Delete_%s"
 RESET_STUB_FORMAT = "Reset_%s_Events"
+INIT_STUB_PREFIX = "Init_"
+UPDATE_STUB_PREFIX = "Update_"
 
 SELF_ID_NAME = "SELF_ID"
 
@@ -53,10 +54,11 @@ NegatedOperatorMap = {
     dast.NotInOp : In
 }
 
+##################################################
+# Global states:
+
 Options = None                  # Command line options
 ModuleFilename = ""
-
-Counter = 0                     # For unique names
 
 ##########
 # Auxiliary methods:
@@ -161,6 +163,11 @@ def is_all_wildcards(targets):
     return True
 
 def mangle_name(nameobj):
+    """Generate a name for 'nameobj' that is unique in the flat namespace of the
+    inc module.
+
+    """
+
     if isinstance(nameobj, dast.Event):
         # Event.name is already unique
         return nameobj.name
@@ -182,6 +189,7 @@ import da
 ReceivedEvent = da.pat.ReceivedEvent
 SentEvent = da.pat.SentEvent
 {0} = None
+Witness = None
 def init(procobj):
     global {0}
     {0} = procobj.id
@@ -190,19 +198,43 @@ def init(procobj):
 GLOBAL_READ = "globals()['{0}']"
 GLOBAL_WRITE = "globals()['{0}'] = {1}"
 
-def gen_query_stub(query):
-    global Counter
-    assert isinstance(query, dast.Expression)
-    iprintd("Processing %r" % query)
+def extract_all_queries(distalgo_ast):
+    """Return a list of all queries in given ast node."""
 
-    qname = QUERY_STUB_FORMAT % Counter
-    Counter += 1
-    params = list(set(nobj for nobj in query.ordered_nameobjs
-                      if query.is_child_of(nobj.scope)
-                      if not nobj.is_assigned_in(query)))
-    evtex = EventExtractor()
-    evtex.visit(query)
-    events = list(evtex.events)
+    quex = QueryExtractor()
+    quex.visit(distalgo_ast)
+    return quex.queries
+
+def extract_query_parameters(query):
+    """Return set of parameters of 'query'."""
+
+    return set(nobj for nobj in query.ordered_nameobjs
+               if query.is_child_of(nobj.scope)
+               # NOTE: this assumes a name can not both be a parameter
+               # and assigned to inside the query, which is not true
+               # for Python in general, but is true for DistAlgo
+               # queries that we can handle:
+               if not nobj.is_assigned_in(query))
+
+def extract_query_events(query):
+    """Return set of events used in 'query'."""
+
+    ev = EventExtractor()
+    ev.visit(query)
+    return ev.events
+
+def process_query(query, state):
+    """Generates stub and hook for 'query'."""
+
+    assert isinstance(query, dast.Expression)
+
+    iprintd("Processing %r" % query)
+    qname = QUERY_STUB_FORMAT % state.counter
+    state.counter += 1
+    params = list(extract_query_parameters(query))
+    events = list(extract_query_events(query))
+    state.parameters.update(params)
+    state.events.update(events)
     incqu = IncInterfaceGenerator(params).visit(query)
     qrydef = FunctionDef(
         name=qname,
@@ -219,28 +251,60 @@ def gen_query_stub(query):
         returns=None,
         body=[Expr(Str(to_source(query.ast))),
               Return(incqu)])
-    qrycall = pyCall(
+    # Replace the query node in the main module with the hook:
+    qryhook = pyCall(
         func=pyAttr(INC_MODULE_VAR, qname),
         args=[],
         keywords=([(mangle_name(arg), PythonGenerator().visit(arg))
                    for arg in params] +
                   [(evt.name, pyAttr("self", evt.name)) for evt in events]))
+    query.ast_override = qryhook
+    # Replace the query node in the inc module with the hook:
+    inchook = pyCall(
+        func=qname,
+        args=[],
+        keywords=([(mangle_name(arg), pyName(mangle_name(arg)))
+                   for arg in params] +
+                  [(evt.name, pyName(evt.name)) for evt in events]))
+    query.inc_query_override = inchook
+    return qrydef
 
-    return qrydef, qrycall, params, events
+def process_all_queries(queries, state):
+    """Generates query stubs for given queries."""
 
-def gen_update_stub(nameobj, updnode):
-    """Generate update stub and call node for 'nameobj'."""
+    query_stubs = [process_query(query, state) for query in queries]
+    state.module.body.extend(query_stubs)
 
-    global Counter
-    vname = mangle_name(nameobj)
-    uname = UPDATE_STUB_FORMAT % (vname, Counter)
-    Counter += 1
+def gen_update_stub_name_for_node(updnode, state):
+    """Generates an update stub name for the given update node.
 
+    Generated name is based on the query parameters updated in 'updnode'. A
+    counter is appended to the end to ensure uniqueness.
+
+    """
+
+    name_comps = UPDATE_STUB_PREFIX + \
+                 "".join([mangle_name(nameobj)
+                          for nameobj in state.updates[updnode]] +
+                         [str(state.counter)])
+    state.counter += 1
+    return name_comps
+
+def generate_update_stub(updnode, state):
+    """Generate update stub and hook for 'updnode'."""
+
+    uname = gen_update_stub_name_for_node(updnode, state)
     params = [nobj for nobj in updnode.nameobjs
-              if updnode.is_child_of(nobj.scope)]
-    iprintd("".join(["*** params:"] +
-                    [mangle_name(p) for p in chain(params, [nameobj])]))
-    astval = IncInterfaceGenerator(params + [nameobj]).visit(updnode)
+              if updnode.is_contained_in(nobj.scope)]
+    astval = IncInterfaceGenerator(params).visit(updnode)
+    # the body depends on the syntactic type of update we're handling:
+    if isinstance(updnode, dast.Expression):
+        body = [Expr(astval) if Options.jb_style else Return(astval)]
+    elif isinstance(updnode, dast.AssignmentStmt):
+        body = astval
+    elif isinstance(updnode, dast.DeleteStmt):
+        body = astval
+
     updfun = FunctionDef(name=uname,
                          args=arguments(
                              args=([arg(mangle_name(nobj), None)
@@ -252,23 +316,35 @@ def gen_update_stub(nameobj, updnode):
                              defaults=[]),
                          decorator_list=[],
                          returns=None,
-                         # Don't add the 'return' for jb_style:
-                         body=[Expr(astval) if Options.jb_style
-                               else Return(astval)])
-    updcall = pyCall(
+                         body=body)
+    updhook = pyCall(
         func=pyAttr(INC_MODULE_VAR, uname),
         args=[],
         keywords=[(mangle_name(arg), PythonGenerator().visit(arg))
                   for arg in params])
-    return updfun, updcall
-
-def is_a(nameobj, typexpr):
-    if nameobj.type is not None and \
-       isinstance(nameobj.type, dast.SimpleExpr) and \
-       nameobj.type.value is typexpr:
-        return True
+    if isinstance(updnode, dast.Expression):
+        updnode.ast_override = updhook
     else:
-        return False
+        updnode.ast_override = [Expr(updhook)]
+    return updfun
+
+def process_updates(state):
+    # Accumulate all updates:
+    for vobj in state.parameters:
+        for node, _, _ in vobj.updates:
+            if state.updates.get(node) is None:
+                state.updates[node] = set()
+            state.updates[node].add(vobj)
+
+    for node in state.updates:
+        for query in state.queries:
+            if node.is_child_of(query):
+                # We can not handle queries with side-effects:
+                iprintw("Update %s inside query %s is ignored!" %
+                        (node, query))
+                break
+        else:
+            state.module.body.append(generate_update_stub(node, state))
 
 STUB_ASSIGN = """
 def {1}(_{0}):
@@ -287,102 +363,77 @@ def {1}(_{0}):
 """
 STUB_ASSIGN_JB_SET = """
 def {1}(_{0}):
-    global {0}
-    {0} = invinc.runtime.Set()
-    {0}.update(_{0})
+    {0}.assign_update(_{0})
     return {0}
 """
+STUB_ASSIGN_JB_MAP = """
+def {1}(_{0}):
+    {0}.mapassign_update(_{0})
+    return {0}
+"""
+STUB_DELETE = """
+def {1}():
+    global {0}
+    del {0}
+"""
 
-def gen_assign_stub(nameobj, stub_only=False):
-    """Generate assignment stub and call node for 'nameobj'."""
+def generate_assignment_stub_and_hook(nameobj):
+    """Generate assignment stub and hook node for 'nameobj'.
 
+    Assignment stubs notifies the incrementalizer of changes to value of
+    variables, and gives the incrementalizer a chance to perform necessary
+    housekeeping.
+
+    """
+
+    assert isinstance(nameobj, dast.NamedVar)
     vname = mangle_name(nameobj)
-    fname = ASSIGN_STUB_FORMAT % mangle_name(nameobj)
+    fname = ASSIGN_STUB_FORMAT % vname
     if Options.jb_style:
-        if is_a(nameobj, nameobj.scope.find_name("set")):
+        if nameobj.is_a("set"):
             stub = STUB_ASSIGN_JB_SET
+        elif nameobj.is_a("dict"):
+            stub = STUB_ASSIGN_JB_MAP
         else:
             stub = STUB_ASSIGN_JB
     else:
         stub = STUB_ASSIGN
     stubast = parse(stub.format(vname, fname)).body[0]
-    if stub_only:
-        return stubast
-    else:
-        vnode = PythonGenerator().visit(nameobj)
-        stubcallast = Assign(targets=[vnode],
-                             value=pyCall(func=pyAttr(INC_MODULE_VAR, fname),
-                                          keywords=[("_" + vname, vnode)]))
-        return stubast, stubcallast
+    vnode = PythonGenerator().visit(nameobj)
+    stubcallast = Assign(targets=[vnode],
+                         value=pyCall(func=pyAttr(INC_MODULE_VAR, fname),
+                                      keywords=[("_" + vname, vnode)]))
+    return stubast, stubcallast
 
-def gen_reset_stub(process, events):
-    """Generate the event reset stub for 'process'."""
+def generate_deletion_stub_and_hook(nameobj):
+    """Generate delete stub and hook node for 'nameobj'."""
 
-    finder = NodetypeFinder(dast.ResetStmt)
-    finder.visit(process)
-    if finder.found:
-        args = [evt.name for evt in process.events if evt in events]
-        body = [Expr(pyCall(func=pyAttr(evt.name, "clear")))
-                for evt in process.events if evt in events]
-        if len(body) > 0:
-            return [pyFunctionDef(name=RESET_STUB_FORMAT % process.name,
-                                  args=args, body=body)]
-    return []
+    vname = mangle_name(nameobj)
+    fname = DEL_STUB_FORMAT % mangle_name(nameobj)
+    stub = parse(STUB_DELETE.format(vname, fname)).body[0]
+    hook = Expr(value=pyCall(func=pyAttr(INC_MODULE_VAR, fname)))
+    return stub, hook
 
-def gen_init_event_stub(event):
-    """Generate the event init stub."""
+def process_assignments_and_deletions(state):
+    """Generate stub and hook for assignments and deletions.
 
-    blueprint = """
-def {0}():
-    globals()['{1}'] = set()
-    return globals()['{1}']
-""" if not Options.jb_style else """
-def {0}():
-    globals()['{1}'] = invinc.runtime.Set()
-    return globals()['{1}']
-"""
+    This should be called after the query parameters have been accumulated.
 
-    src = blueprint.format(INIT_STUB_FORMAT % event.name, event.name)
-    return parse(src).body[0]
+    """
 
-def gen_inc_module(daast, cmdline_args, filename=""):
-    """Generates the interface file from a DistPy AST."""
+    for vobj in state.parameters:
+        # We only need one assignment or delete stub per variable:
+        stub, hook = generate_assignment_stub_and_hook(vobj)
+        del_stub, del_hook = generate_deletion_stub_and_hook(vobj)
+        has_assign, has_del = False, False
 
-    assert isinstance(daast, dast.Program)
-
-    global Options
-    global ModuleFilename
-    global Counter
-    Options = OptionsManager(cmdline_args, daast._compiler_options)
-    ModuleFilename = filename
-
-    module = parse(PREAMBLE)
-    if Options.jb_style:
-        # Additional import for jb_style
-        module.body.insert(0, parse("import invinc.runtime").body[0])
-    quex = QueryExtractor()
-    quex.visit(daast)
-
-    # Generate the query functions and accumulate set of parameters:
-    all_params = set()
-    all_events = set()        # Events have to be handled separately
-
-    # Generate query stubs:
-    for query in quex.queries:
-        qrydef, qrycall, params, events = gen_query_stub(query)
-        all_params.update(params)
-        all_events.update(events)
-        module.body.append(qrydef)
-        query.ast_override = qrycall
-
-    # Generate assignments and updates:
-    for vobj in all_params:
-        # We only need one assignment stub per variable:
-        stub, stubcall = gen_assign_stub(vobj)
-        module.body.append(stub)
-
-        # Inject call to stub at all assignment points:
+        # Inject call to stub at all assignments to vobj:
         for node, ctx in vobj.assignments:
+            if (isinstance(node.parent, dast.Program) or
+                (isinstance(node, dast.Function) and
+                 isinstance(node.parent, dast.Process))):
+                continue
+
             if isinstance(node, dast.Arguments):
                 # this is a function or process argument
                 node = node.parent
@@ -390,50 +441,127 @@ def gen_inc_module(daast, cmdline_args, filename=""):
                     body = node.setup.body
                 else:
                     body = node.body
+                assert len(body) > 0
                 if not hasattr(body[0], "prebody"):
                     body[0].prebody = []
-                assert len(body) > 0
-                body[0].prebody.insert(0, stubcall)
-            elif not (isinstance(node.parent, dast.Program) or
-                      (isinstance(node, dast.Function) and
-                       isinstance(node.parent, dast.Process))):
+                body[0].prebody.insert(0, hook)
+                has_assign = True
+            elif isinstance(node, dast.AssignmentStmt):
                 # This is a normal assignment
                 if not hasattr(node, "postbody"):
                     node.postbody = []
-                node.postbody.append(stubcall)
+                node.postbody.append(hook)
+                has_assign = True
+            elif isinstance(node, dast.DeleteStmt):
+                # This is a del assignment
+                if not hasattr(node, "prebody"):
+                    node.prebody = []
+                node.prebody.append(del_hook)
+                has_del = True
+            elif isinstance(node, dast.ForStmt) or \
+                 isinstance(node, dast.WithStmt):
+                first = node.body[0]
+                if not hasattr(first, "prebody"):
+                    first.prebody = []
+                first.prebody.append(hook)
+                has_assign = True
+            elif isinstance(node, dast.TryStmt):
+                # We need to find the except handler that binds this name
+                for handler in node.excepthandlers:
+                    if handler.name == vobj.name:
+                        first = handler.body[0]
+                        if not hasattr(first, "prebody"):
+                            first.prebody = []
+                        first.prebody.append(hook)
+                        has_assign = True
+            state.assignments.add(node)
 
-        for node, attr, attrtype in vobj.updates:
-            node = node.last_parent_of_type(dast.Expression)
-            for query in quex.queries:
-                if node.is_child_of(query):
-                    printw("Update %s inside query %s is ignored!" %
-                           (node, query))
-                    break
-                elif query is node or query.is_child_of(node):
-                    printw("Query %s inside update %s is ignored!" %
-                           (query, node))
-                    break
-            else:
-                updfun, updcall = gen_update_stub(vobj, node)
-                module.body.append(updfun)
-                node.ast_override = updcall
+        if has_assign:
+            state.module.body.append(stub)
+        if has_del:
+            state.module.body.append(del_stub)
 
+def generate_event_reset_stub(process, state):
+    """Generate the event reset stub for 'process'."""
+
+    finder = NodetypeFinder(dast.ResetStmt)
+    # Only generate the stub if the process contains a 'reset' statement:
+    finder.visit(process)
+    if finder.found:
+        args = [evt.name for evt in process.events if evt in state.events]
+        body = [Expr(pyCall(func=pyAttr(evt.name, "clear")))
+                for evt in process.events if evt in state.events]
+        if len(body) > 0:
+            return [pyFunctionDef(name=RESET_STUB_FORMAT % process.name,
+                                  args=args, body=body)]
+    return []
+
+def generate_event_initializer_stub(event):
+    """Generate the initializer stub for 'event'."""
+
+    assert isinstance(event, dast.Event)
+    vname = mangle_name(event)
+    fname = ASSIGN_STUB_FORMAT % vname
+    if Options.jb_style:
+        stub = STUB_ASSIGN_JB
+    else:
+        stub = STUB_ASSIGN
+    stubast = parse(stub.format(vname, fname)).body[0]
+    return stubast
+
+def process_events(state):
     # Generate stubs for events:
-    for event in all_events:
-        uname = UPDATE_STUB_FORMAT % (event.name, 0)
+    for event in state.events:
+        uname = UPDATE_STUB_PREFIX + event.name
         aname = ASSIGN_STUB_FORMAT % event.name
         updfun = pyFunctionDef(name=uname,
                                args=[event.name, "element"],
                                body=[Expr(pyCall(
                                    func=pyAttr(event.name, "add"),
                                    args=[pyName("element")]))])
-        module.body.append(gen_assign_stub(event, stub_only=True))
-        module.body.append(gen_init_event_stub(event))
-        module.body.append(updfun)
+        state.module.body.append(generate_event_initializer_stub(event))
+        state.module.body.append(updfun)
+    for proc in state.input_ast.processes:
+        state.module.body.extend(generate_event_reset_stub(proc, state))
 
+STUB_INIT = """
+def {name}():
+    globals()['{var}'] = {type}()
+    return globals()['{var}']
+"""
+
+def generate_initializer_stub(varname, typename):
+    """Generate initializer stub for given name."""
+
+    src = STUB_INIT.format(name=(INIT_STUB_PREFIX + varname),
+                           var=varname, type=typename)
+    return parse(src).body[0]
+
+def process_initializers(state):
+    """Generate initializer stubs for parameters."""
+
+    for event in state.events:
+        state.module.body.append(generate_initializer_stub(
+            varname=event.name,
+            typename="invinc.runtime.Set" if Options.jb_style else "set"))
+
+    if Options.jb_style:
+        for nameobj in state.parameters:
+            stub = None
+            if nameobj.is_a("set"):
+                stub = generate_initializer_stub(
+                    varname=mangle_name(nameobj),
+                    typename="invinc.runtime.Set")
+            elif nameobj.is_a("dict"):
+                stub = generate_initializer_stub(
+                    varname=mangle_name(nameobj),
+                    typename="invinc.runtime.Map")
+            if stub is not None:
+                state.module.body.append(stub)
+
+def process_setups(state):
     # Inject calls to stub init for each process:
-    for proc in daast.processes:
-        module.body.extend(gen_reset_stub(proc, all_events))
+    for proc in state.input_ast.processes:
         setup_body = proc.setup.body
         if not hasattr(setup_body[0], "prebody"):
             setup_body[0].prebody = []
@@ -442,9 +570,64 @@ def gen_inc_module(daast, cmdline_args, filename=""):
                 func=pyAttr(INC_MODULE_VAR, "init"),
                 args=[pyName("self")])))
 
+
+class CompilerState:
+    """States shared by different parts of the compiler."""
+
+    def __init__(self, input):
+        self.counter = 0        # For unique names
+        self.input_ast = input
+        self.queries = set()
+        self.parameters = set()
+        self.events = set()
+        self.assignments = set()
+        self.updates = dict()
+        self.module = None
+
+class StubfileGenerationException(Exception): pass
+
+def flatten_opassignments(state):
+    transformer = OpAssignmentTransformer()
+    transformer.visit(state.input_ast)
+
+def generate_header(state):
+    module = parse(PREAMBLE)
+    if Options.jb_style:
+        # Additional import for jb_style
+        module.body.insert(0, parse("import invinc.runtime").body[0])
+    state.module = module
+
+def translate_with_stubs(state):
+    sg = StubcallGenerator(state)
+    try:
+        return sg.visit(state.input_ast)
+    except Exception as ex:
+        raise StubfileGenerationException(sg.current_node) from ex
+
+def gen_inc_module(daast, cmdline_args, filename=""):
+    """Generates the interface file from a DistPy AST."""
+
+    assert isinstance(daast, dast.Program)
+
+    global Options, ModuleFilename
+
+    Options = OptionsManager(cmdline_args, daast._compiler_options)
+    ModuleFilename = filename
+
+    state = CompilerState(daast)
+
+    flatten_opassignments(state)
+    generate_header(state)
+    process_all_queries(extract_all_queries(daast), state)
+    process_assignments_and_deletions(state)
+    process_updates(state)
+    process_events(state)
+    process_initializers(state)
+    process_setups(state)
+
     # Generate the main python file:
-    pyast = StubcallGenerator(all_events).visit(daast)
-    return module, pyast
+    pyast = translate_with_stubs(state)
+    return state.module, pyast
 
 class NodetypeFinder(NodeVisitor):
     """Looks a for specific type of node starting from a given root node."""
@@ -458,31 +641,59 @@ class NodetypeFinder(NodeVisitor):
         else:
             super().visit(node)
 
+class OpAssignmentTransformer(NodeTransformer):
+    """Transforms operator assignment statements into plain assignments."""
+
+    def visit_OpAssignmentStmt(self, node):
+        if node.first_parent_of_type(dast.Process) is None:
+            # Ignore if not in Process
+            return node
+
+        newstmt = dast.AssignmentStmt(parent=node.parent, ast=node.ast)
+        expr = dast.BinaryExpr(parent=newstmt, ast=node.ast, op=node.operator)
+        expr.left = node.target
+        expr.right = node.value
+        expr.left._parent = expr.right._parent = expr
+        newstmt.value = expr
+        newstmt.targets = [node.target.clone()]
+        newstmt.targets[0]._parent = newstmt
+        for nobj in newstmt.nameobjs:
+            nobj.replace_node(node, newstmt)
+        return newstmt
+
 class StubcallGenerator(PythonGenerator):
     """Transforms DistPy AST into Python AST with calls to incrementalization
     stubs injected.
 
     """
 
-    def __init__(self, events):
+    def __init__(self, compiler_state):
         super().__init__()
-        self.events = events
+        self.compiler_state = compiler_state
         self.preambles.append(Assign([pyName(INC_MODULE_VAR)], pyNone()))
 
     def history_initializers(self, node):
-        return [Assign(
+        evtinit = [Assign(
             targets=[pyAttr("self", evt.name)],
             value=(pyCall(func=pyAttr(INC_MODULE_VAR,
-                                      INIT_STUB_FORMAT % evt.name))
-                   if evt in self.events else pyList([])))
+                                      INIT_STUB_PREFIX + evt.name))
+                   if evt in self.compiler_state.events else pyList([])))
                 for evt in node.events if evt.record_history]
+        if Options.jb_style:
+            varinit = [Expr(pyCall(
+                func=pyAttr(INC_MODULE_VAR,
+                            INIT_STUB_PREFIX + mangle_name(param))))
+                       for param in self.compiler_state.parameters
+                       if param.is_a("set") or param.is_a("dict")]
+        else:
+            varinit = []
+        return evtinit + varinit
 
 
     def history_stub(self, node):
-        if node.record_history and node in self.events:
+        if node.record_history and node in self.compiler_state.events:
             return pyAttr(INC_MODULE_VAR,
-                          UPDATE_STUB_FORMAT %
-                          (node.name, 0))
+                          UPDATE_STUB_PREFIX + node.name)
         else:
             return super().history_stub(node)
 
@@ -494,12 +705,13 @@ class StubcallGenerator(PythonGenerator):
                              args=[pyAttr("self", evt.name)
                                    for evt in proc.events
                                    if evt.record_history
-                                   if evt in self.events]))]
+                                   if evt in self.compiler_state.events]))]
         # Clear all remaining events:
         stmts.extend([Expr(pyCall(func=pyAttr(pyAttr("self", evt.name),
                                               "clear")))
                       for evt in proc.events
-                      if evt.record_history if evt not in self.events])
+                      if evt.record_history
+                      if evt not in self.compiler_state.events])
         return stmts
 
 class EventExtractor(NodeVisitor):
@@ -562,7 +774,7 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
     def __init__(self, mangle_names=None, last_freevars=None):
         super().__init__()
         self.mangle_names = mangle_names if mangle_names is not None else set()
-        # Set of free vars seens so far in this pattern.
+        # Set of free vars seen so far in this pattern.
         # This is needed so free vars with the same name in the pattern can be
         # properly unified:
         self.freevars = set() if last_freevars is None else last_freevars
@@ -578,6 +790,20 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
     def reset(self):
         super().reset()
         self.reset_pattern_state()
+
+    def visit(self, node):
+        """Generic visit method.
+
+        If the node is a query, then 'process_query' would have attached a
+        call to the query method on the 'inc_query_override' attribute, so we
+        simply return that node. Otherwise, pass along to the parent 'visit'.
+
+        """
+
+        if hasattr(node, 'inc_query_override'):
+            return node.inc_query_override
+        else:
+            return super().visit(node)
 
     def visit_NamedVar(self, node):
         if node in self.mangle_names:

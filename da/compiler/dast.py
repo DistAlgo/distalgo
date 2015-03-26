@@ -141,6 +141,9 @@ class DistNode(AST):
                 p = p.parent
         return False
 
+    def is_contained_in(self, node):
+        return self is node or self.is_child_of(node)
+
     @property
     def scope(self):
         """The local scope containing this node."""
@@ -462,6 +465,37 @@ class NamedVar(DistNode):
         self.reads.extend(target.reads)
         self.aliases.extend(target.aliases)
 
+    def replace_node(self, oldnode, newnode=None):
+        """Replaces all references to 'oldnode' with 'newnode'.
+
+        If 'newnode' is None then delete all 'oldnode' references.
+        """
+
+        pairs = ['assignments', 'reads', 'aliases']
+        triples = ['updates']
+        if newnode is None:
+            for attr in pairs:
+                setattr(self, attr,
+                        [(node, ctx)
+                         for node, ctx in getattr(self, attr)
+                         if node is not oldnode])
+            for attr in triples:
+                setattr(self, attr,
+                        [(node, ctx, val)
+                         for node, ctx, val in getattr(self, attr)
+                         if node is not oldnode])
+        else:
+            for attr in pairs:
+                setattr(self, attr,
+                        [(node, ctx) if node is not oldnode else
+                         (newnode, ctx)
+                         for node, ctx in getattr(self, attr)])
+            for attr in triples:
+                setattr(self, attr,
+                        [(node, ctx, val) if node is not oldnode else
+                         (newnode, ctx, val)
+                         for node, ctx, val in getattr(self, attr)])
+
     def set_scope(self, scope):
         self._scope = scope
 
@@ -729,16 +763,6 @@ class Expression(DistNode):
             del s[-1]
         s.append(")")
         return "".join(s)
-
-    def __eq__(self, target):
-        if target is None:
-            return False
-        elif type(target) is not type(self):
-            return False
-        elif len(self.subexprs) != len(target.subexprs):
-            return False
-        else:
-            return self.subexprs == target.subexprs
 
 
 class PythonExpr(Expression):
