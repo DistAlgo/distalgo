@@ -195,9 +195,6 @@ SentEvent = da.pat.SentEvent
 {self_name} = None
 Witness = None
 JbStyle = {is_jbstyle}
-def init(procobj):
-    global {self_name}
-    {self_name} = procobj.id
 """
 
 GLOBAL_READ = "globals()['{0}']"
@@ -501,21 +498,9 @@ def generate_event_reset_stub(process, state):
                                   args=args, body=body)]
     return []
 
-def generate_event_initializer_stub(event):
-    """Generate the initializer stub for 'event'."""
-
-    assert isinstance(event, dast.Event)
-    vname = mangle_name(event)
-    fname = ASSIGN_STUB_FORMAT % vname
-    if Options.jb_style:
-        stub = STUB_ASSIGN_JB
-    else:
-        stub = STUB_ASSIGN
-    stubast = parse(stub.format(vname, fname)).body[0]
-    return stubast
-
 def process_events(state):
-    # Generate stubs for events:
+    """Generate stubs for events."""
+
     for event in state.events:
         uname = UPDATE_STUB_PREFIX + event.name
         aname = ASSIGN_STUB_FORMAT % event.name
@@ -524,7 +509,6 @@ def process_events(state):
                                body=[Expr(pyCall(
                                    func=pyAttr(event.name, "add"),
                                    args=[pyName("element")]))])
-        state.module.body.append(generate_event_initializer_stub(event))
         state.module.body.append(updfun)
     for proc in state.input_ast.processes:
         state.module.body.extend(generate_event_reset_stub(proc, state))
@@ -542,6 +526,12 @@ def generate_initializer_stub(varname, typename):
                            var=varname, type=typename)
     return parse(src).body[0]
 
+INIT_FUN = """
+def init(procobj):
+    global {self_name}
+    {self_name} = procobj.id
+"""
+
 def process_initializers(state):
     """Generate initializer stubs for parameters."""
 
@@ -550,6 +540,7 @@ def process_initializers(state):
             varname=event.name,
             typename=JB_STYLE_SET if Options.jb_style else "set"))
 
+    initnames = []
     if Options.jb_style:
         for nameobj in state.parameters:
             stub = None
@@ -563,17 +554,35 @@ def process_initializers(state):
                     typename=JB_STYLE_MAP)
             if stub is not None:
                 state.module.body.append(stub)
+                initnames.append(mangle_name(nameobj))
+
+    init = parse(INIT_FUN.format(self_name=SELF_ID_NAME)).body[0]
+    if Options.jb_style:
+        # For jb_style: inject calls to initalizers. This sets up the set
+        # and map objects in the inc module namespace:
+        init.body.extend([Expr(pyCall(INIT_STUB_PREFIX + name))
+                          for name in initnames])
+    state.module.body.append(init)
 
 def process_setups(state):
-    # Inject calls to stub init for each process:
+    """Inject calls to stub initializers from 'setup'."""
+
     for proc in state.input_ast.processes:
         setup_body = proc.setup.body
         if not hasattr(setup_body[0], "prebody"):
             setup_body[0].prebody = []
-        setup_body[0].prebody.insert(
-            0, Expr(pyCall(
-                func=pyAttr(INC_MODULE_VAR, "init"),
-                args=[pyName("self")])))
+
+        his_init = [Assign(
+            targets=[pyAttr("self", evt.name)],
+            value=(pyCall(func=pyAttr(INC_MODULE_VAR,
+                                      INIT_STUB_PREFIX + evt.name))
+                   if evt in state.events else pyList([])))
+                    for evt in proc.events if evt.record_history]
+        incmodule_init = [Expr(pyCall(
+            func=pyAttr(INC_MODULE_VAR, "init"),
+            args=[pyName("self")]))]
+        setup_body[0].prebody = incmodule_init + his_init + \
+                                setup_body[0].prebody
 
 
 class CompilerState:
@@ -679,22 +688,9 @@ class StubcallGenerator(PythonGenerator):
         self.preambles.append(Assign([pyName(INC_MODULE_VAR)], pyNone()))
 
     def history_initializers(self, node):
-        evtinit = [Assign(
-            targets=[pyAttr("self", evt.name)],
-            value=(pyCall(func=pyAttr(INC_MODULE_VAR,
-                                      INIT_STUB_PREFIX + evt.name))
-                   if evt in self.compiler_state.events else pyList([])))
-                for evt in node.events if evt.record_history]
-        if Options.jb_style:
-            varinit = [Expr(pyCall(
-                func=pyAttr(INC_MODULE_VAR,
-                            INIT_STUB_PREFIX + mangle_name(param))))
-                       for param in self.compiler_state.parameters
-                       if param.is_a("set") or param.is_a("dict")]
-        else:
-            varinit = []
-        return evtinit + varinit
-
+        # When using inc, event histories are initialized in 'setup', so do
+        # nothing here:
+        return []
 
     def history_stub(self, node):
         if node.record_history and node in self.compiler_state.events:
