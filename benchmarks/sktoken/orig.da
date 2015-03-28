@@ -30,7 +30,7 @@ class P(process, controller.Controllee):
         LN = LN1
 
     def receive(msg=('request', p, n)):
-        RN[p] = max((RN[p], n))
+        RN[p] = max({RN[p], n})
         if (haveToken() and RN[p] == LN[p] + 1):
             send(('token', Q, LN), to=p)
 
