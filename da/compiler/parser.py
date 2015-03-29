@@ -144,17 +144,25 @@ KnownUpdateMethods = {
 ValidResetTypes = {"Received", "Sent", ""}
 ApiMethods = set(common.api_registry.keys())
 ApiMethods.add('import_da')     # 'import_da' is a special method
-BuiltinMethods = common.builtin_registry.keys()
+BuiltinMethods = set(common.builtin_registry.keys())
 PythonBuiltins = dir(builtins)
 
 ComprehensionTypes = {KW_COMP_SET, KW_COMP_TUPLE, KW_COMP_DICT, KW_COMP_LIST}
 AggregateKeywords = {KW_AGGREGATE_MAX, KW_AGGREGATE_MIN,
                      KW_AGGREGATE_SIZE, KW_AGGREGATE_SUM}
+EventKeywords = {KW_EVENT_DESTINATION, KW_EVENT_SOURCE, KW_EVENT_LABEL,
+                 KW_EVENT_TIMESTAMP}
 Quantifiers = {KW_UNIVERSAL_QUANT, KW_EXISTENTIAL_QUANT}
 
 ##########
 # Exceptions:
-class MalformedStatementError(Exception): pass
+class MalformedStatementError(Exception):
+    def __init__(self, reason=None, node=None, name=None, msg=None):
+        super().__init__(reason, node, name, msg)
+        self.reason = reason
+        self.node = node
+        self.name = name
+        self.msg = msg
 
 ##########
 # Name context types:
@@ -953,34 +961,39 @@ class Parser(NodeVisitor):
 
     visit_Import = visit_ImportFrom
 
-    def expr_check(self, name, minargs, maxargs, node,
+    def expr_check(self, names, minargs, maxargs, node,
                    keywords={}, optional_keywords={}):
         if not (isinstance(node, Call) and
                 isinstance(node.func, Name) and
-                node.func.id == name):
+                ((isinstance(names, set) and node.func.id in names) or
+                 node.func.id == names)):
             return False
-        errmsg = None
-        if (minargs is None or len(node.args) >= minargs) and \
-           (maxargs is None or len(node.args) <= maxargs):
-            if keywords is None:
-                return True
-            for kw in node.keywords:
-                if kw.arg in keywords:
-                    keywords -= {kw.arg}
-                elif kw.arg not in optional_keywords:
-                    errmsg = "unrecognized keyword in %s statement." % name
-                    break
-            if errmsg is None:
-                if len(keywords) > 0:
-                    errmsg = ("missing required keywords: " + keywords +
-                              " in " + name + " statement.")
-                else:
-                    return True
-        else:
-            errmsg = "Malformed %s statement." % name
 
-        self.error(errmsg, node)
-        raise MalformedStatementError
+        try:
+            if minargs is not None and len(node.args) < minargs:
+                raise MalformedStatementError("too few arguments.")
+            if maxargs is not None and len(node.args) > maxargs:
+                raise MalformedStatementError("too many arguments.")
+            if keywords is not None:
+                for kw in node.keywords:
+                    if kw.arg in keywords:
+                        keywords -= {kw.arg}
+                    elif optional_keywords is None or \
+                         kw.arg not in optional_keywords:
+                        raise MalformedStatementError(
+                            "unrecognized keyword: '%s'." % kw.arg)
+                if len(keywords) > 0:
+                    raise MalformedStatementError(
+                        "missing required keywords: " + keywords)
+        except MalformedStatementError as e:
+            # Pre-format an error message for the common case:
+            e.node = node
+            e.name = node.func.id
+            e.msg = "malformed {stname} statement: {msg}".format(
+                stname=e.name, msg=e.reason)
+            raise e
+
+        return True
 
     def kw_check(self, node, names):
         if not isinstance(node, Name):
@@ -1085,9 +1098,8 @@ class Parser(NodeVisitor):
                 self.current_context = Read(stmtobj)
                 stmtobj.expr = self.visit(node.value)
 
-        except MalformedStatementError:
-            # already errored in expr_check so just ignore:
-            pass
+        except MalformedStatementError as e:
+            self.error(e.msg, e.node)
         finally:
             if stmtobj is not None:
                 self.pop_state()
@@ -1138,42 +1150,54 @@ class Parser(NodeVisitor):
                 self.current_block = stmtobj.elsebody
                 self.body(node.orelse)
 
-        except MalformedStatementError:
-            pass
+        except MalformedStatementError as e:
+            self.error(e.msg, e.node)
         finally:
             if stmtobj is not None:
                 self.pop_state()
 
     def visit_For(self, node):
         s = self.create_stmt(dast.ForStmt, node)
-        self.current_context = Assignment(s)
-        s.domain = self.parse_domain_spec(node)
-        self.current_context = None
-        self.current_block = s.body
-        self.body(node.body)
-        self.current_block = s.elsebody
-        self.body(node.orelse)
-        self.pop_state()
-
-    def visit_While(self, node):
-        if self.expr_check(KW_AWAIT, 1, 2, node.test,
-                           optional_keywords={KW_AWAIT_TIMEOUT}):
-            s = self.create_stmt(dast.LoopingAwaitStmt, node)
-            self.current_context = Read(s)
-            s.condition = self.visit(node.test.args[0])
-            if len(node.test.args) == 2:
-                s.timeout = self.visit(node.test.args[1])
-
-        else:
-            s = self.create_stmt(dast.WhileStmt, node)
-            self.current_context = Read(s)
-            s.condition = self.visit(node.test)
-        self.current_block = s.body
-        self.body(node.body)
-        if hasattr(s, "elsebody"):
+        try:
+            self.current_context = Assignment(s)
+            s.domain = self.parse_domain_spec(node)
+            self.current_context = None
+            self.current_block = s.body
+            self.body(node.body)
             self.current_block = s.elsebody
             self.body(node.orelse)
-        self.pop_state()
+        except MalformedStatementError as e:
+            self.error(e.msg if e.msg is not None else e.reason,
+                       e.node)
+        finally:
+            self.pop_state()
+
+    def visit_While(self, node):
+        s = None
+        try:
+            if self.expr_check(KW_AWAIT, 1, 2, node.test,
+                               optional_keywords={KW_AWAIT_TIMEOUT}):
+                s = self.create_stmt(dast.LoopingAwaitStmt, node)
+                self.current_context = Read(s)
+                s.condition = self.visit(node.test.args[0])
+                if len(node.test.args) == 2:
+                    s.timeout = self.visit(node.test.args[1])
+
+            else:
+                s = self.create_stmt(dast.WhileStmt, node)
+                self.current_context = Read(s)
+                s.condition = self.visit(node.test)
+            self.current_block = s.body
+            self.body(node.body)
+            if hasattr(s, "elsebody"):
+                self.current_block = s.elsebody
+                self.body(node.orelse)
+
+        except MalformedStatementError as e:
+            self.error(e.msg, e.node)
+        finally:
+            if s is not None:
+                self.pop_state()
 
     def visit_With(self, node):
         s = self.create_stmt(dast.WithStmt, node)
@@ -1488,23 +1512,32 @@ class Parser(NodeVisitor):
         self.pop_state()
         return expr
 
-    def call_check(self, names, minargs, maxargs, node):
-        if (isinstance(node.func, Name) and node.func.id in names):
-            if ((minargs is not None and len(node.args) < minargs) or
-                    (maxargs is not None and len(node.args) > maxargs)):
-                self.error("Malformed %s expression." % node.func.id, node)
-                return False
-            else:
+    def test_domain_spec(self, node):
+        try:
+            if (self.current_process is not None and
+                    isinstance(node, Call) and
+                    self.expr_check({KW_RECV_QUERY, KW_SENT_QUERY},
+                                    1, 1, node,
+                                    optional_keywords=EventKeywords)):
                 return True
+            elif (isinstance(node, Compare) and len(node.ops) == 1 and
+                  type(node.ops[0]) is In):
+                return True
+            elif isinstance(node, comprehension) or isinstance(node, For):
+                return True
+        except MalformedStatementError as e:
+                pass
         return False
 
     def parse_domain_spec(self, node):
         if (self.current_process is not None and
                 isinstance(node, Call) and
-                self.call_check({KW_RECV_QUERY, KW_SENT_QUERY}, 1, 1, node)):
-            # As a short hand, "sent" and "rcvd" can be used as a domain spec:
-            # some(rcvd(EVENT_PATTERN) | PRED) is semantically equivalent to
-            # some(EVENT_PATTERN in rcvd | PRED).
+                self.expr_check({KW_RECV_QUERY, KW_SENT_QUERY},
+                                1, 1, node,
+                                optional_keywords=EventKeywords)):
+            # As a short hand, "sent" and "rcvd" can be used as a domain
+            # spec: some(rcvd(EVENT_PATTERN) | PRED) is semantically
+            # equivalent to some(EVENT_PATTERN in rcvd | PRED).
             expr = self.create_expr(dast.DomainSpec, node)
             event = self.parse_event_expr(node, literal=False)
             if event is not None:
@@ -1543,7 +1576,7 @@ class Parser(NodeVisitor):
             self.pop_state()
             return expr
         else:
-            raise MalformedStatementError("malformed domain specifier.")
+            raise MalformedStatementError("malformed domain specifier.", node)
 
     def parse_quantified_expr(self, node):
         if node.func.id == KW_EXISTENTIAL_QUANT:
@@ -1551,7 +1584,8 @@ class Parser(NodeVisitor):
         elif node.func.id == KW_UNIVERSAL_QUANT:
             context = dast.UniversalOp
         else:
-            raise MalformedStatementError("Unknown quantifier.")
+            raise MalformedStatementError("unknown quantifier.", node,
+                                          node.func.id)
 
         expr = self.create_expr(dast.QuantifiedExpr, node, {'op': context})
         self.current_context = Read(expr)
@@ -1559,7 +1593,7 @@ class Parser(NodeVisitor):
         try:
             expr.domains, predicates = self.parse_domains_and_predicate(node)
             if len(predicates) > 1:
-                self.warn("Multiple predicates in quantified expression, "
+                self.warn("multiple predicates in quantified expression, "
                           "first one is used, the rest are ignored.", node)
             expr.predicate = predicates[0]
         finally:
@@ -1582,26 +1616,31 @@ class Parser(NodeVisitor):
 
         first_arg = node.args[0]
         for arg in node.args[1:]:
-            try:
-                # try to treat it as domain spec first:
-                dom = self.parse_domain_spec(arg)
-                if len(dom.freevars) == 0:
-                    # no freevars, degenerate to membership test:
-                    condition = self.create_expr(dast.ComparisonExpr, arg)
-                    condition.left = Pattern2Constant(
-                        self.current_parent).visit(dom.pattern.pattern)
-                    if condition.left is None:
-                        self.error("Internal error: Unable to generate "
-                                   "constant from pattern.", node)
-                    condition.comparator = dast.InOp
-                    condition.right = dom.domain
-                    self.pop_state()
-                else:
-                    condition = dom
-            except MalformedStatementError:
+            condition = None
+            # try to treat it as domain spec first:
+            if self.test_domain_spec(arg):
+                try:
+                    dom = self.parse_domain_spec(arg)
+                    if len(dom.freevars) == 0:
+                        # no freevars, degenerate to membership test:
+                        condition = self.create_expr(dast.ComparisonExpr, arg)
+                        condition.left = Pattern2Constant(
+                            self.current_parent).visit(dom.pattern.pattern)
+                        if condition.left is None:
+                            self.error("internal error: unable to generate "
+                                       "constant from pattern.", node)
+                        condition.comparator = dast.InOp
+                        condition.right = dom.domain
+                        self.pop_state()
+                    else:
+                        condition = dom
+                except MalformedStatementError as node:
+                    self.error("malformed domain spec: " + e.reason, e.node)
+            else:
                 # if not, then it's just a boolean condition:
                 condition = self.visit(arg)
-            expr.conditions.append(condition)
+            if condition is not None:
+                expr.conditions.append(condition)
 
         if expr_type is dast.DictCompExpr:
             if not (isinstance(first_arg, Tuple) and
@@ -1693,66 +1732,66 @@ class Parser(NodeVisitor):
         return res
 
     def visit_Call(self, node):
-        if self.call_check(Quantifiers, 1, None, node):
-            try:
+        try:
+            if self.expr_check(Quantifiers, 1, None, node,
+                               optional_keywords={KW_SUCH_THAT}):
                 return self.parse_quantified_expr(node)
-            except MalformedStatementError as e:
-                self.error("Malformed quantification expression: " + str(e),
-                           node)
-                return dast.SimpleExpr(self.current_parent, node)
 
-        if self.call_check(ComprehensionTypes, 2, None, node):
-            try:
+            if self.expr_check(ComprehensionTypes, 2, None, node):
                 return self.parse_comprehension(node)
-            except MalformedStatementError as e:
-                self.error("Malformed comprehension expression: " + str(e),
-                           node)
-                return dast.SimpleExpr(self.current_parent, node)
 
-        if (self.current_process is not None and
-                self.call_check({KW_RECV_QUERY, KW_SENT_QUERY}, 1, 1, node)):
-            if isinstance(self.current_context, IterRead):
-                if node.func.id == KW_RECV_QUERY:
-                    expr = self.create_expr(dast.ReceivedExpr, node)
-                else:
-                    expr = self.create_expr(dast.SentExpr, node)
-                expr.context = self.current_context.type
-                expr.event = self.parse_event_expr(
-                    node, literal=(not self.get_option(
-                        'enable_iterator_pattern', default=False)))
-                self.pop_state()
-                if expr.event is not None:
-                    expr.event.record_history = True
-                return expr
-            else:
-                outer = self.create_expr(dast.ComparisonExpr, node)
-                outer.comparator = dast.InOp
-                if node.func.id == KW_RECV_QUERY:
-                    expr = self.create_expr(dast.ReceivedExpr, node)
-                else:
-                    expr = self.create_expr(dast.SentExpr, node)
-                if self.current_context is not None:
+            if self.current_process is not None and \
+               self.expr_check({KW_RECV_QUERY, KW_SENT_QUERY}, 1, 1, node,
+                               optional_keywords=EventKeywords):
+                if isinstance(self.current_context, IterRead):
+                    if node.func.id == KW_RECV_QUERY:
+                        expr = self.create_expr(dast.ReceivedExpr, node)
+                    else:
+                        expr = self.create_expr(dast.SentExpr, node)
                     expr.context = self.current_context.type
-                event = self.parse_event_expr(
-                    node, literal=(not self.get_option(
-                        'enable_membertest_pattern', default=False)))
-                self.pop_state()
-                expr.event = event
-                outer.right = expr
-                if event is not None:
-                    outer.left = self.pattern_from_event(
-                        event, literal=(not self.get_option(
+                    expr.event = self.parse_event_expr(
+                        node, literal=(not self.get_option(
+                            'enable_iterator_pattern', default=False)))
+                    self.pop_state()
+                    if expr.event is not None:
+                        expr.event.record_history = True
+                    return expr
+                else:
+                    outer = self.create_expr(dast.ComparisonExpr, node)
+                    outer.comparator = dast.InOp
+                    if node.func.id == KW_RECV_QUERY:
+                        expr = self.create_expr(dast.ReceivedExpr, node)
+                    else:
+                        expr = self.create_expr(dast.SentExpr, node)
+                    if self.current_context is not None:
+                        expr.context = self.current_context.type
+                    event = self.parse_event_expr(
+                        node, literal=(not self.get_option(
                             'enable_membertest_pattern', default=False)))
-                    event.record_history = True
-                self.pop_state()
-                return outer
+                    self.pop_state()
+                    expr.event = event
+                    outer.right = expr
+                    if event is not None:
+                        outer.left = self.pattern_from_event(
+                            event, literal=(not self.get_option(
+                                'enable_membertest_pattern', default=False)))
+                        event.record_history = True
+                    self.pop_state()
+                    return outer
+        except MalformedStatementError as e:
+            self.error("malformed {name} expression: {reason}".format(
+                name=e.name if e.name is not None else "",
+                reason=e.reason), e.node)
+            return dast.SimpleExpr(self.current_parent)
 
         expr = None
-        if self.call_check(ApiMethods, None, None, node):
+        if self.expr_check(ApiMethods, None, None, node,
+                           keywords=None, optional_keywords=None):
             self.debug("Api method call: " + node.func.id, node)
             expr = self.create_expr(dast.ApiCallExpr, node)
             expr.func = node.func.id
-        elif self.call_check(BuiltinMethods, None, None, node):
+        elif self.expr_check(BuiltinMethods, None, None, node,
+                             keywords=None, optional_keywords=None):
             self.debug("Builtin method call: " + node.func.id, node)
             expr = self.create_expr(dast.BuiltinCallExpr, node)
             expr.func = node.func.id
@@ -2042,10 +2081,13 @@ class Parser(NodeVisitor):
         self.current_context = Read(expr)
         self.enter_query()
         for g in node.generators:
-            expr.unlock()
-            expr.conditions.append(self.parse_domain_spec(g))
-            expr.lock()
-            expr.conditions.extend([self.visit(i) for i in g.ifs])
+            try:
+                expr.unlock()
+                expr.conditions.append(self.parse_domain_spec(g))
+                expr.lock()
+                expr.conditions.extend([self.visit(i) for i in g.ifs])
+            except MalformedStatementError as e:
+                self.error(e.reason, e.node)
         if isinstance(node, DictComp):
             kv = dast.KeyValue(expr)
             kv.key = self.visit(node.key)
