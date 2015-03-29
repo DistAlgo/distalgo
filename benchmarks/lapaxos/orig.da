@@ -5,7 +5,7 @@ TIMEOUT = 1
 
 class Proposer(process, controller.Controllee):
     def setup(ctl, acceptors:set):
-        super().setup(ctl) 
+        super().setup(ctl)
         self.n = None              # proposal number
         self.majority = acceptors  # majority of acceptors; all in other papers
 
@@ -15,7 +15,7 @@ class Proposer(process, controller.Controllee):
 
         if await(len(setof(a, received(('respond', _n, _), from_ =a)))
                  > len(acceptors)/2):
-            v = anyof(setof(v, received(('respond', _n, (n2, v))), has=
+            v = anyof(setof(v, received(('respond', _n, (n2, v))),
                             n2==max(setof(n3, received(('respond', _n, (n3, v))))))
                       or {randint(1,100)})  # any value, pick in 1..100
             responded = setof(a, received(('respond', _n, _), from_ =a))
@@ -39,7 +39,7 @@ class Acceptor(process, controller.Controllee):
 
     def receive(msg= ('prepare', n), from_= p):
         if each(sent(('respond', n2, _)), has= n > n2):
-            prop = anyof(setof((n, v), sent(('accepted', n, v)), has=
+            prop = anyof(setof((n, v), sent(('accepted', n, v)),
                                n==max(setof((n, v), sent(('accepted', n, v))))))
             send(('respond', n, prop), to =p)
 
