@@ -1263,6 +1263,11 @@ class QuantifiedExpr(BooleanExpr, QueryExpr):
                             if d is not None]))
 
     @property
+    def ordered_local_freevars(self):
+        return list(chain(*[d.ordered_freevars
+                            for d in self.domains if d is not None]))
+
+    @property
     def name(self):
         return self.operator.__name__ + ("Expr_%d" % self.index)
 
