@@ -1213,6 +1213,10 @@ class QueryExpr(Expression):
         super().__init__(parent, ast)
 
     @property
+    def ordered_local_freevars(self):
+        return []
+
+    @property
     def top_level_query(self):
         top = self
         p = self._parent
@@ -1330,6 +1334,12 @@ class ComprehensionExpr(QueryExpr, LockableNameScope):
     def ordered_boundvars(self):
         return list(chain(*[e.ordered_boundvars
                             for e in self.conditions if e is not None]))
+
+    @property
+    def ordered_local_freevars(self):
+        return list(chain(*[d.ordered_freevars
+                            for d in self.conditions
+                            if isinstance(d, DomainSpec)]))
 
     def __str__(self):
         s = [type(self).__name__, "(", str(self.elem), ": "]

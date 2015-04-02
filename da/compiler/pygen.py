@@ -631,15 +631,15 @@ class PythonGenerator(NodeVisitor):
         else:
             funcbody.append(Return(pyFalse()))
 
-        # names that should be unified with a containing comprehension
-        # need to be explicitly passed in
-        params = set(nobj for nobj in chain(node.freevars,
-                                            node.boundvars,
-                                            node.predicate.nameobjs)
-                     if isinstance(nobj.scope, dast.ComprehensionExpr)
-                     if node.is_child_of(nobj.scope)
-                     if (len(nobj.assignments) > 0 and
-                         (not nobj.assignments[0][0].is_child_of(node))))
+        # names that should be unified with a containing query need to be
+        # explicitly passed in:
+        curnode = node
+        params = set()
+        while curnode is not node.top_level_query:
+            curnode = curnode.parent
+            if isinstance(curnode, dast.QueryExpr):
+                params |= set(curnode.ordered_local_freevars)
+        params &= node.nameobjs
         ast = pyCall(func=pyName(node.name),
                      keywords=[(v.name, self.visit(v)) for v in params])
         funast = pyFunctionDef(name=node.name,
