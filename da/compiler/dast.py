@@ -569,7 +569,15 @@ class NamedVar(DistNode):
             # Missing information
             return False
 
-        if ((isinstance(ctx, SimpleExpr) and ctx.value is typenode) or
+        if ((typename == "set" and
+             (isinstance(ctx, SetCompExpr) or isinstance(ctx, SetExpr))) or
+            (typename == "dict" and
+             (isinstance(ctx, DictCompExpr) or isinstance(ctx, DictExpr))) or
+            (typename == "tuple" and
+             (isinstance(ctx, TupleCompExpr) or isinstance(ctx, TupleExpr))) or
+            (typename == "list" and
+             (isinstance(ctx, ListCompExpr) or isinstance(ctx, ListExpr))) or
+            (isinstance(ctx, SimpleExpr) and ctx.value is typenode) or
             (isinstance(ctx, CallExpr) and
              isinstance(ctx.func, SimpleExpr) and
              ctx.func.value is typenode) or

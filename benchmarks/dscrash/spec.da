@@ -4,9 +4,9 @@ import sys
 controller = import_da('controller')
 
 class P(process, controller.Controllee):
-   def setup(ctl, ps:set, V:set, maxfail):
+   def setup(ctl, ps:set, v:int, maxfail):
        super().setup(ctl)
-       # V is set of values to agree on, initially own value
+       self.V = {v} # V is set of values to agree on, initially own value
 
    @controller.run
    def run():
@@ -31,5 +31,5 @@ def main():
 
       ps = new(P, num= n)
       for i, p in enumerate(list(ps)):
-            setup({p}, (ctl, ps, {i}, f))
+            setup({p}, (ctl, ps, i, f))
       start(ps)
