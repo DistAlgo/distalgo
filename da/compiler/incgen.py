@@ -192,12 +192,20 @@ def mangle_name(nameobj):
 PREAMBLE = """
 import da
 {jbstyle_import}
+{additional_directives}
 ReceivedEvent = da.pat.ReceivedEvent
 SentEvent = da.pat.SentEvent
 {self_name} = None
 {witness_var} = None
 JbStyle = {is_jbstyle}
 """
+
+# Additional directives needed by jbstyle:
+JBSTYLE_DIRECTIVES = """
+{0}.OPTIONS(
+    deadcode_keepvars = ['JbStyle', '{1}']
+)
+""".format(JB_STYLE_MODULE, GLOBAL_WITNESS_VAR)
 
 GLOBAL_READ = "globals()['{0}']"
 GLOBAL_WRITE = "globals()['{0}'] = {1}"
@@ -675,6 +683,8 @@ def generate_header(state):
                         witness_var=GLOBAL_WITNESS_VAR,
                         jbstyle_import=("import " + JB_STYLE_MODULE
                                         if Options.jb_style else ""),
+                        additional_directives=(JBSTYLE_DIRECTIVES
+                                               if Options.jb_style else ""),
                         is_jbstyle=str(Options.jb_style)))
     state.module = module
 
