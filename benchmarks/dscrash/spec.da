@@ -1,5 +1,3 @@
-# Changes:
-# - made setup() take V instead of v, so set annotation could be used.
 import sys
 controller = import_da('controller')
 

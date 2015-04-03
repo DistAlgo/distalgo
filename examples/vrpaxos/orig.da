@@ -90,7 +90,7 @@ class Commander(process):
             send(('preempted', b1), to= leader)
 
 class Scout(process):
-    def setup(leader, acceptors, b):
+    def setup(leader, acceptors:set, b):
         self.pvalues = set()
 
     def run():
