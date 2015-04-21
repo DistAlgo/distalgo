@@ -12,7 +12,7 @@ class P(process, controller.Controllee):
         await(each(received(('request', c2, p)),
                    has= some(received(('release', c3, p)), has= c3 > c2)
                         or (c, self.id) < (c2, p))
-              and each(p in s, has= received(('ack', c, p))))
+              and each(p in s, has= some(received(('ack', c, p)))))
         -- critical_section
         task()
         -- release
