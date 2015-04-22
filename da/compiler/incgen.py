@@ -374,7 +374,12 @@ def generate_update_stub(updnode, state):
     astval = IncInterfaceGenerator(params).visit(updnode)
     # the body depends on the syntactic type of update we're handling:
     if isinstance(updnode, dast.Expression):
-        body = [Return(astval)]
+        if Options.jb_style and type(updnode.parent) is dast.SimpleStmt:
+            # jbstyle doesn't like updates as expressions, so just don't
+            # return anything and hope for the best:
+            body = [Expr(astval)]
+        else:
+            body = [Return(astval)]
     elif isinstance(updnode, dast.AssignmentStmt):
         body = astval
     elif isinstance(updnode, dast.DeleteStmt):
