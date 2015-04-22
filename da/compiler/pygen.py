@@ -258,6 +258,8 @@ class PythonGenerator(NodeVisitor):
         self.pattern_generator = None
         self.cmdline_args = options
         self.module_args = None
+        # Used by incgen to avoid expanding 'pre/postbody' in the inc module:
+        self.disable_body_expansion = False
 
         self.current_node = None
 
@@ -296,7 +298,7 @@ class PythonGenerator(NodeVisitor):
         else:
             res = super().visit(node)
 
-        if isinstance(res, list):
+        if isinstance(res, list) and not self.disable_body_expansion:
             # This is a statement, expand pre and post bodies:
             return concat_bodies([node], res)
         else:
@@ -569,6 +571,16 @@ class PythonGenerator(NodeVisitor):
                      [self.visit(a) for a in node.args])
         return propagate_attributes(ast.args, ast)
 
+    def visit_AggregateExpr(self, node):
+        ast = pyCall(AggregateMap[type(node)],
+                     [self.visit(a) for a in node.args])
+        return propagate_attributes(ast.args, ast)
+
+    visit_MaxExpr = visit_AggregateExpr
+    visit_MinExpr = visit_AggregateExpr
+    visit_SumExpr = visit_AggregateExpr
+    visit_SizeExpr = visit_AggregateExpr
+
     def visit_LogicalExpr(self, node):
         if node.operator is dast.NotOp:
             ast = UnaryOp(Not(), self.visit(node.left))
@@ -724,9 +736,6 @@ class PythonGenerator(NodeVisitor):
                         ast = pyCall("tuple", args=[GeneratorExp(elem, generators)])
                     elif isinstance(node, dast.GeneratorExpr):
                         ast = GeneratorExp(elem, generators)
-                    elif isinstance(node, dast.AggregateExpr):
-                        ast = pyCall(AggregateMap[type(node)],
-                                     [ListComp(elem, generators)])
                     else:
                         self.error("Unknown expression", node)
                         return None
@@ -768,10 +777,6 @@ class PythonGenerator(NodeVisitor):
     visit_ListCompExpr = visit_ComprehensionExpr
     visit_DictCompExpr = visit_ComprehensionExpr
     visit_TupleCompExpr = visit_ComprehensionExpr
-    visit_MaxExpr = visit_ComprehensionExpr
-    visit_MinExpr = visit_ComprehensionExpr
-    visit_SumExpr = visit_ComprehensionExpr
-    visit_SizeExpr = visit_ComprehensionExpr
 
     def visit_ComparisonExpr(self, node):
         left = self.visit(node.left)

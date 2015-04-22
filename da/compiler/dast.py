@@ -1357,7 +1357,7 @@ class ListCompExpr(ComprehensionExpr): pass
 class TupleCompExpr(ComprehensionExpr): pass
 class DictCompExpr(ComprehensionExpr): pass
 
-class AggregateExpr(ComprehensionExpr): pass
+class AggregateExpr(CallExpr, QueryExpr): pass
 class MaxExpr(AggregateExpr): pass
 class MinExpr(AggregateExpr): pass
 class SizeExpr(AggregateExpr): pass

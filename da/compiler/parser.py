@@ -47,10 +47,10 @@ KW_EVENT_LABEL = "at"
 KW_DECORATOR_LABEL = "labels"
 KW_EXISTENTIAL_QUANT = "some"
 KW_UNIVERSAL_QUANT = "each"
-KW_AGGREGATE_SIZE = "lenof"
-KW_AGGREGATE_MIN = "minof"
-KW_AGGREGATE_MAX = "maxof"
-KW_AGGREGATE_SUM = "sumof"
+KW_AGGREGATE_SIZE = "len"
+KW_AGGREGATE_MIN = "min"
+KW_AGGREGATE_MAX = "max"
+KW_AGGREGATE_SUM = "sum"
 KW_COMP_SET = "setof"
 KW_COMP_TUPLE = "tupleof"
 KW_COMP_LIST = "listof"
@@ -147,9 +147,13 @@ ApiMethods.add('import_da')     # 'import_da' is a special method
 BuiltinMethods = set(common.builtin_registry.keys())
 PythonBuiltins = dir(builtins)
 
+AggregateMap = {
+    KW_AGGREGATE_MAX  : dast.MaxExpr,
+    KW_AGGREGATE_MIN  : dast.MinExpr,
+    KW_AGGREGATE_SIZE : dast.SizeExpr,
+    KW_AGGREGATE_SUM  : dast.SumExpr
+}
 ComprehensionTypes = {KW_COMP_SET, KW_COMP_TUPLE, KW_COMP_DICT, KW_COMP_LIST}
-AggregateKeywords = {KW_AGGREGATE_MAX, KW_AGGREGATE_MIN,
-                     KW_AGGREGATE_SIZE, KW_AGGREGATE_SUM}
 EventKeywords = {KW_EVENT_DESTINATION, KW_EVENT_SOURCE, KW_EVENT_LABEL,
                  KW_EVENT_TIMESTAMP}
 Quantifiers = {KW_UNIVERSAL_QUANT, KW_EXISTENTIAL_QUANT}
@@ -965,7 +969,8 @@ class Parser(NodeVisitor):
                    keywords={}, optional_keywords={}):
         if not (isinstance(node, Call) and
                 isinstance(node.func, Name) and
-                ((isinstance(names, set) and node.func.id in names) or
+                (((isinstance(names, set) or isinstance(names, dict)) and
+                  node.func.id in names) or
                  node.func.id == names)):
             return False
 
@@ -1795,6 +1800,10 @@ class Parser(NodeVisitor):
             self.debug("Builtin method call: " + node.func.id, node)
             expr = self.create_expr(dast.BuiltinCallExpr, node)
             expr.func = node.func.id
+        elif self.expr_check(AggregateMap, 1, None, node,
+                             keywords={}, optional_keywords={}):
+            self.debug("Aggregate: " + node.func.id, node)
+            expr = self.create_expr(AggregateMap[node.func.id], node)
         else:
             if isinstance(node.func, Name):
                 self.debug("Method call: " + str(node.func.id), node)

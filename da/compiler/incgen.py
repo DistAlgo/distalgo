@@ -834,6 +834,10 @@ class QueryExtractor(NodeVisitor):
     visit_TupleCompExpr = visit_ComplexExpr
     visit_ReceivedExpr = visit_ComplexExpr
     visit_SentExpr = visit_ComplexExpr
+    visit_MaxExpr = visit_ComplexExpr
+    visit_MinExpr = visit_ComplexExpr
+    visit_SumExpr = visit_ComplexExpr
+    visit_SizeExpr = visit_ComplexExpr
 
 
 class IncInterfaceGenerator(PatternComprehensionGenerator):
@@ -843,6 +847,7 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
 
     def __init__(self, mangle_names=None, last_freevars=None):
         super().__init__()
+        self.disable_body_expansion = True
         self.mangle_names = mangle_names if mangle_names is not None else set()
         # Set of free vars seen so far in this pattern.
         # This is needed so free vars with the same name in the pattern can be
@@ -997,10 +1002,6 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
     visit_ListCompExpr = visit_ComprehensionExpr
     visit_DictCompExpr = visit_ComprehensionExpr
     visit_TupleCompExpr = visit_ComprehensionExpr
-    visit_MaxExpr = visit_ComprehensionExpr
-    visit_MinExpr = visit_ComprehensionExpr
-    visit_SumExpr = visit_ComprehensionExpr
-    visit_SizeExpr = visit_ComprehensionExpr
 
     def visit_QuantifiedExpr(self, node):
         assert node.predicate is not None
