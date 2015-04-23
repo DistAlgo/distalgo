@@ -813,7 +813,8 @@ class EventExtractor(NodeVisitor):
 class QueryExtractor(NodeVisitor):
     """Extracts expensive queries.
 
-    'Expensive' queries are quantified expressions and comprehensions.
+    'Expensive' queries are quantifications, comprehensions, aggregates, and
+    history queries.
 
     """
 
@@ -824,12 +825,9 @@ class QueryExtractor(NodeVisitor):
     def visit_ComplexExpr(self, node):
         if node.first_parent_of_type(dast.Process) is None:
             return
-        # We try to find the largest node that contains the query:
-        par = node.last_parent_of_type(dast.QueryExpr)
-        if par is None:
-            par = node
-        if par not in self.queries:
-            self.queries.append(par)
+
+        if node not in self.queries:
+            self.queries.append(node)
 
     visit_QuantifiedExpr = visit_ComplexExpr
     visit_GeneratorExpr = visit_ComplexExpr
@@ -837,12 +835,24 @@ class QueryExtractor(NodeVisitor):
     visit_ListCompExpr = visit_ComplexExpr
     visit_DictCompExpr = visit_ComplexExpr
     visit_TupleCompExpr = visit_ComplexExpr
-    visit_ReceivedExpr = visit_ComplexExpr
-    visit_SentExpr = visit_ComplexExpr
     visit_MaxExpr = visit_ComplexExpr
     visit_MinExpr = visit_ComplexExpr
     visit_SumExpr = visit_ComplexExpr
     visit_SizeExpr = visit_ComplexExpr
+
+    def visit_HistoryExpr(self, node):
+        if node.first_parent_of_type(dast.Process) is None:
+            return
+
+        par = node.parent
+        if (isinstance(par, dast.ComparisonExpr) and
+                par.comparator is dast.InOp):
+            node = par
+        if node not in self.queries:
+            self.queries.append(node)
+
+    visit_ReceivedExpr = visit_HistoryExpr
+    visit_SentExpr = visit_HistoryExpr
 
 
 class IncInterfaceGenerator(PatternComprehensionGenerator):
