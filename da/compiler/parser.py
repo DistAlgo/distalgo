@@ -1008,7 +1008,8 @@ class Parser(NodeVisitor):
         return True
 
     def parse_message(self, node):
-        if type(node) is Call:
+        if type(node) is Call and self.get_option('enable_object_pattern',
+                                                  default=False):
             assert type(node.func) is Name
             expr = dast.TupleExpr(self.current_parent, node)
             elem = dast.ConstantExpr(self.current_parent, node.func)
