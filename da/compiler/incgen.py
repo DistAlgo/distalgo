@@ -42,7 +42,7 @@ LOCAL_WITNESS_SET = "__witness_set__"
 LOCAL_RESULT_VAR = "__result__"
 GLOBAL_WITNESS_VAR = "Witness"
 SELF_ID_NAME = "SELF_ID"
-JB_STYLE_MODULE = "invinc.runtime"
+JB_STYLE_MODULE = "incoq.runtime"
 JB_STYLE_SET = JB_STYLE_MODULE + ".Set"
 JB_STYLE_MAP = JB_STYLE_MODULE + ".Map"
 

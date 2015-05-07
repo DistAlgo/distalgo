@@ -34,7 +34,7 @@ from functools import wraps
 
 GlobalOptions = None
 CurrentProcess = None
-InvIncBaseType = None           # invinc.runtime.Type, if using invinc
+IncOQBaseType = None           # incoq.runtime.Type, if using incoq
 
 log = logging.getLogger(__name__)
 formatter = logging.Formatter(
@@ -104,13 +104,13 @@ def setup_root_logger():
         rootlog.addHandler(logging.NullHandler())
 
 def load_modules():
-    global InvIncBaseType
+    global IncOQBaseType
     if not GlobalOptions.load_inc_module:
         return
     main = sys.modules[GlobalOptions.this_module_name]
     inc = importlib.import_module(GlobalOptions.inc_module_name)
     if inc.JbStyle:
-        InvIncBaseType = importlib.import_module("invinc.runtime").Type
+        IncOQBaseType = importlib.import_module("incoq.runtime").Type
     if GlobalOptions.control_module_name is not None:
         ctrl = importlib.import_module(GlobalOptions.control_module_name)
         main.IncModule = ModuleIntrument(ctrl, inc)
@@ -296,8 +296,8 @@ class frozendict(dict):
         return "frozendict(%s)" % dict.__repr__(self)
 
 def freeze(obj):
-    if InvIncBaseType is not None:
-        if isinstance(obj, InvIncBaseType):
+    if IncOQBaseType is not None:
+        if isinstance(obj, IncOQBaseType):
             return copy.deepcopy(obj)
 
     if isinstance(obj, list):
