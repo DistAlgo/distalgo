@@ -20,7 +20,7 @@ class Proposer(process, controller.Controllee):
                                      received(('Promise', _propNum, n, v, _)),
                                      len(setof(a,
                                                received(('Promise',
-                                                         _propNum, n, v, a)))) > f) |
+                                                         _propNum, _n, _v, a)))) > f) |
                                {((-1, self.id), propVal)})
 
                 send(('OneC', propNum, voted, self.id), to=acceptors)
@@ -69,7 +69,7 @@ class Acceptor(process, controller.Controllee):
 
     def islegal(n, v):
         voted = setof((vn, vv), received(('Promise', _n, vn, vv, _)),
-                      len(setof(a, received(('Promise', _n, vn, vv, a)))) > f)
+                      len(setof(a, received(('Promise', _n, _vn, _vv, a)))) > f)
         if voted and (max(voted)[1] is not None):
             return v == max(voted)[1]
         else:
