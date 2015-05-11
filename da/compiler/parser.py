@@ -870,10 +870,10 @@ class Parser(NodeVisitor):
                 h.notlabels = None
             for evt in events:
                 evt.handlers.append(h)
-            for v in evt.freevars:
-                if v is not None:
-                    self.debug("adding event argument %s" % v)
-                    h.args.add_arg(v.name)
+                for v in evt.ordered_freevars:
+                    if v is not None:
+                        self.debug("adding event argument %s" % v)
+                        h.args.add_arg(v.name)
             self.current_block = h.body
             self.body(node.body)
             self.pop_state()
