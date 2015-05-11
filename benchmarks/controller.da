@@ -74,8 +74,13 @@ To adapt a DistAlgo program to use this, make the following changes.
     passed-in arguments.
 """
 
+import sys
 import time
+import resource
 import json
+from collections import namedtuple
+
+ResourceData = namedtuple("ResourceData", "ru_utime, ru_stime, ru_maxrss")
 
 class Controller(process):
     
@@ -87,7 +92,11 @@ class Controller(process):
         self.dones = 0
         
         # Total of all processes' cputime.
-        self.cputime = 0
+        self.ru_cputime = 0
+        # Total of all processes' user time.
+        self.ru_utime = 0
+        # Total of all processes' max memory footprint.
+        self.ru_maxrss = 0
         
         self.ctl_verbose = True
     
@@ -101,10 +110,12 @@ class Controller(process):
         readys += 1
         verboutput('Got Ready from {} ({}/{})'.format(source, readys, nprocs))
     
-    def receive(msg=('CTL_Done', time), from_=source):
+    def receive(msg=('CTL_Done', rudata), from_=source):
         # Count dones.
         dones += 1
-        cputime += time
+        ru_utime += rudata.ru_utime
+        ru_cputime += rudata.ru_utime + rudata.ru_stime
+        ru_maxrss += rudata.ru_maxrss
         verboutput('Got Done from {} ({}/{})'.format(source, dones, nprocs))
     
     def run():
@@ -119,13 +130,16 @@ class Controller(process):
         await(dones == nprocs)
         t2 = time.perf_counter()
         verboutput("Everyone done")
-        
-        jsondata = {'Wall time': t2 - t1,
-                    'Total process time': cputime}
-        jsonoutput = json.dumps(jsondata)
-        print("OUTPUT: " + jsonoutput)
-        
         bcast(('CTL_Terminate',), to=ps)
+        
+        jsondata = {'Wallclock_time': t2 - t1,
+                    'Total_processes': dones,
+                    'Total_process_time': ru_cputime,
+                    'Total_user_time': ru_utime,
+                    'Total_memory': ru_maxrss}
+        jsonoutput = json.dumps(jsondata)
+        print("###OUTPUT: " + jsonoutput)
+        
         time.sleep(1)
 
 class Controllee(process):
@@ -133,6 +147,7 @@ class Controllee(process):
     def setup(ctl):
         self.ctl_starttime = 0
         self.ctl_endtime = 0
+        self.rudata_start = None
         self.ctl_verbose = True
     
     def verboutput(s):
@@ -143,14 +158,28 @@ class Controllee(process):
         # Tell controller we're initialized, then wait for the signal.
         send(('CTL_Ready',), to=ctl)
         await(received(('CTL_Start',)))
-        
-        ctl_starttime = time.process_time()
+
+        if sys.platform == "win32":
+            ctl_starttime = time.process_time()
+        else:
+            rudata_start = resource.getrusage(resource.RUSAGE_SELF)
     
     def ctl_end():
-        ctl_endtime = time.process_time()
+        if sys.platform == "win32":
+            ctl_endtime = time.process_time()
+            rudata = ResourceData(
+                ru_utime=ctl_endtime - ctl_starttime,
+                ru_stime=ctl_endtime - ctl_starttime,
+                ru_maxrss=0)
+        else:
+            rudata_end = resource.getrusage(resource.RUSAGE_SELF)
+            rudata = ResourceData(
+                ru_utime=rudata_end.ru_utime - rudata_start.ru_utime,
+                ru_stime=rudata_end.ru_stime - rudata_start.ru_stime,
+                ru_maxrss=rudata_end.ru_maxrss)
         
         # Tell controller we're done, wait for signal.
-        send(('CTL_Done', ctl_endtime - ctl_starttime), to=ctl)
+        send(('CTL_Done', rudata), to=ctl)
         await(received(('CTL_Terminate',)))
         verboutput("Terminating...")
     
