@@ -363,8 +363,9 @@ class Arguments(DistNode):
     def add_arg(self, name, annotation=None):
         assert isinstance(name, str)
         e = self.parent.add_name(name)
-        e.add_assignment(self, annotation)
-        self.args.append(e)
+        if e not in self.args:
+            e.add_assignment(self, annotation)
+            self.args.append(e)
 
     def add_defaultarg(self, name, value, annotation=None):
         assert isinstance(name, str) and isinstance(value, DistNode)
@@ -400,13 +401,17 @@ class Arguments(DistNode):
         self.kwarg = e
 
     @property
-    def names(self):
-        res = {name.name for name in chain(self.args, self.kwonlyargs)}
+    def ordered_names(self):
+        res = [name.name for name in chain(self.args, self.kwonlyargs)]
         if self.vararg is not None:
-            res.add(self.vararg.name)
+            res.append(self.vararg.name)
         if self.kwarg is not None:
-            res.add(self.kwarg.name)
+            res.append(self.kwarg.name)
         return res
+
+    @property
+    def names(self):
+        return set(self.ordered_names)
 
 
 class ArgumentsContainer(NameScope):
@@ -424,6 +429,10 @@ class ArgumentsContainer(NameScope):
         node = super().clone()
         node.args = self.args.clone()
         return node
+
+    @property
+    def ordered_names(self):
+        return self.args.ordered_names
 
     @property
     def names(self):

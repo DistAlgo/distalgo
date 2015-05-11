@@ -25,6 +25,7 @@
 import sys
 
 from ast import *
+from collections import OrderedDict
 from . import dast
 from .pygen import *
 from .parser import Pattern2Constant
@@ -135,6 +136,20 @@ def optimize_tuple(elt):
         elt = elt.elts[0]
     return elt
 
+def append_unique(alist, newelts):
+    """Append unique new elements from 'newelts' to 'alist'.
+
+    Order is preserved.
+    """
+    for elt in newelts:
+        if elt not in alist:
+            alist.append(elt)
+
+def uniquify(alist):
+    res = []
+    append_unique(res, alist)
+    return res
+
 def ast_eq(left, right):
     """Structural equality of AST nodes."""
 
@@ -215,25 +230,25 @@ def extract_all_queries(distalgo_ast):
 
     quex = QueryExtractor()
     quex.visit(distalgo_ast)
-    return quex.queries
+    return uniquify(quex.queries)
 
 def extract_query_parameters(query):
-    """Return set of parameters of 'query'."""
+    """Return list of parameters of 'query'."""
 
-    return set(nobj for nobj in query.ordered_nameobjs
-               if query.is_child_of(nobj.scope)
-               # NOTE: this assumes a name can not both be a parameter
-               # and assigned to inside the query, which is not true
-               # for Python in general, but is true for DistAlgo
-               # queries that we can handle:
-               if not nobj.is_assigned_in(query))
+    return uniquify(nobj for nobj in query.ordered_nameobjs
+                    if query.is_child_of(nobj.scope)
+                    # NOTE: this assumes a name can not both be a parameter
+                    # and assigned to inside the query, which is not true
+                    # for Python in general, but is true for DistAlgo
+                    # queries that we can handle:
+                    if not nobj.is_assigned_in(query))
 
 def extract_query_events(query):
     """Return set of events used in 'query'."""
 
     ev = EventExtractor()
     ev.visit(query)
-    return ev.events
+    return uniquify(ev.events)
 
 def process_query(query, state):
     """Generates stub and hook for 'query'."""
@@ -243,10 +258,10 @@ def process_query(query, state):
     iprintd("Processing %r" % query)
     qname = QUERY_STUB_FORMAT % state.counter
     state.counter += 1
-    params = list(extract_query_parameters(query))
-    events = list(extract_query_events(query))
-    state.parameters.update(params)
-    state.events.update(events)
+    params = extract_query_parameters(query)
+    events = extract_query_events(query)
+    append_unique(state.parameters, params)
+    append_unique(state.events, events)
     iig = IncInterfaceGenerator(params)
     incqu = iig.visit(query)
     if iig.witness_set is None:
@@ -369,8 +384,8 @@ def generate_update_stub(updnode, state):
     """Generate update stub and hook for 'updnode'."""
 
     uname = gen_update_stub_name_for_node(updnode, state)
-    params = [nobj for nobj in updnode.nameobjs
-              if updnode.is_contained_in(nobj.scope)]
+    params = uniquify(nobj for nobj in updnode.ordered_nameobjs
+                      if updnode.is_contained_in(nobj.scope))
     astval = IncInterfaceGenerator(params).visit(updnode)
     # the body depends on the syntactic type of update we're handling:
     if isinstance(updnode, dast.Expression):
@@ -413,8 +428,8 @@ def process_updates(state):
     for vobj in state.parameters:
         for node, _, _ in vobj.updates:
             if state.updates.get(node) is None:
-                state.updates[node] = set()
-            state.updates[node].add(vobj)
+                state.updates[node] = list()
+            state.updates[node].append(vobj)
 
     for node in state.updates:
         for query in state.queries:
@@ -554,7 +569,7 @@ def process_assignments_and_deletions(state):
                             first.prebody = []
                         first.prebody.append(hook)
                         has_assign = True
-            state.assignments.add(node)
+            state.assignments.append(node)
 
         if has_assign:
             state.module.body.append(stub)
@@ -669,11 +684,11 @@ class CompilerState:
     def __init__(self, input):
         self.counter = 0        # For unique names
         self.input_ast = input
-        self.queries = set()
-        self.parameters = set()
-        self.events = set()
-        self.assignments = set()
-        self.updates = dict()
+        self.queries = []
+        self.parameters = []
+        self.events = []
+        self.assignments = []
+        self.updates = OrderedDict()
         self.module = None
 
 class StubfileGenerationException(Exception): pass
@@ -805,10 +820,10 @@ class EventExtractor(NodeVisitor):
     """
 
     def __init__(self):
-        self.events = set()
+        self.events = []
 
     def visit_Event(self, node):
-        self.events.add(node)
+        self.events.append(node)
 
 class QueryExtractor(NodeVisitor):
     """Extracts expensive queries.
@@ -1064,7 +1079,7 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
         cond = self.visit(node.predicate)
         for dom in reversed(node.domains):
             elt = optimize_tuple(pyTuple([self.visit(name)
-                                          for name in dom.freevars]))
+                                          for name in dom.ordered_freevars]))
             domast = self.visit(dom)
             primary = SetComp(elt, [domast])
             left = pySize(primary)

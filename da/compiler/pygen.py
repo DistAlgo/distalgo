@@ -448,7 +448,7 @@ class PythonGenerator(NodeVisitor):
                 fd.args = self.visit(node.parent.args)
                 fd.body = ([Assign(targets=[pyAttr("self", name, Store())],
                                    value=pyName(name))
-                            for name in node.parent.names] + fd.body)
+                            for name in node.parent.ordered_names] + fd.body)
             fd.args.args.insert(0, arg("self", None))
         fd.decorator_list = [self.visit(d) for d in node.decorators]
         fd.returns = None
