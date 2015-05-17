@@ -1,0 +1,235 @@
+import sys
+import random
+
+# Enums for roles:
+class Role: pass
+class Follower(Role): pass
+class Candidate(Role): pass
+class Leader(Role): pass
+
+class LogEntry:
+    """Fictional log entries."""
+    def __init__(self, term, client, command):
+        self.term = term
+        self.client = client
+        self.command = command
+
+    def __str__(self):
+        sl = ['LogEntry', str(self.term), str(self.client), str(self.command)]
+        return ':'.join(sl)
+
+class Server(process):
+    def setup(peers, maxTimeout):
+        self.currentRole = Follower # Tracks server state
+        # Persistent states:
+        self.currentTerm = 0
+        self.votedFor = None
+        self.log = [LogEntry(term=0, client=None, command=None)]
+        # Volatile states:
+        self.commitIndex = 0
+        self.lastApplied = 0
+        # Leader states:
+        self.nextIndex = dict((p, 1) for p in peers)
+        self.matchIndex = dict((p, 0) for p in peers)
+
+        self.last_seen_leader = None # Shortcut for informing clients
+        self._dispatch_table = {Follower  : self.follower_term,
+                                Candidate : self.candidate_term,
+                                Leader    : self.leader_term}
+
+    def run():
+        while True:
+            if commitIndex > lastApplied:
+                lastApplied += 1
+                commit_to_state_machine()
+
+            # Choose randomized timeout value for this term:
+            termTimeout = random.randint(int(maxTimeout/2), maxTimeout) / 1000
+
+            # Dispatch based on current server role:
+            _dispatch_table[currentRole](termTimeout)
+
+    def follower_term(termTimeout):
+        if await(some(received(('AppendEntries', term, _, _, _, _, _)),
+                      has= term >= currentTerm)):
+            reset("Received")
+        elif timeout(termTimeout):
+            output("Heartbeat timeout, transitioning to Candidate state.")
+            currentRole = Candidate
+
+    def candidate_term(termTimeout):
+        --start_election
+        currentTerm += 1
+        RequestVoteRPC(target=peers,
+                       term=currentTerm,
+                       candidateId=self.id,
+                       lastLogIndex=len(log)-1,
+                       lastLogTerm=log[-1].term)
+        if await(len(setof(p, received(('RequestVoteReply', _currentTerm, True),
+                                       from_=p))) > len(peers)/2):
+            output("Transitioning to Leader.")
+            currentRole = Leader
+            # Reinitialize volatile Leader states:
+            nextIndex = dict((p, len(log)) for p in peers)
+            matchIndex = dict((p, 0) for p in peers)
+        elif some(received(('AppendEntries', term, leader, _, _, _, _)),
+                  has= term >= currentTerm):
+            output("Elected leader:", leader, "Reverting to Follower.")
+            currentTerm = term
+            currentRole = Follower
+        elif timeout(termTimeout):
+            output("Election term", currentTerm, "timeout, restarting.")
+
+    def leader_term(termTimeout):
+        for server, index in nextIndex.items():
+            AppendEntriesRPC(target=server,
+                             term=currentTerm,
+                             leaderId=self.id,
+                             prevLogIndex=index-1,
+                             prevLogTerm=log[index-1].term,
+                             entries=log[index:],
+                             leaderCommit=commitIndex)
+
+        if await(currentRole is not Leader):
+            return
+        # Idle timeout is half of normal term timeout:
+        elif timeout(termTimeout/2):
+            if some(n in range(len(log) - 1),
+                    has= (n > commitIndex and
+                          len(setof(i, i in matchIndex, matchIndex[i] >= n)) >
+                          len(peers) / 2 and
+                          log[n].term == currentTerm)):
+                commitIndex = n
+
+    def receive(msg= ('RequestVote', term, candidateId,
+                      lastLogIndex, lastLogTerm)):
+        update_term(term)
+        if term < currentTerm:
+            RequestVoteReply(target=candidateId,
+                             term=currentTerm, voteGranted=False)
+        elif ((votedFor is None or votedFor == candidateId) and
+              is_up_to_date(lastLogIndex, lastLogTerm)):
+            votedFor = candidateId
+            RequestVoteReply(target=candidateId,
+                             term=currentTerm, voteGranted=True)
+        else:
+            RequestVoteReply(target=candidateId,
+                             term=currentTerm, voteGranted=False)
+
+    def receive(msg= ('RequestVoteReply', term, False)):
+        update_term(term)
+
+    def receive(msg= ('AppendEntries', term, leaderId, prevLogIndex, prevLogTerm,
+                      entries, leaderCommit)):
+        update_term(term)
+        if term < currentTerm:
+            AppendEntriesReply(target=leaderId,
+                               term=currentTerm, success=False)
+        elif not (len(log) > prevLogIndex and
+                  log[prevLogIndex].term == prevLogTerm):
+            AppendEntriesReply(target=leaderId,
+                               term=currentTerm, success=False)
+        else:
+            last_seen_leader = leaderId
+            for idx, entry in enumerate(entries):
+                idx += prevLogIndex + 1
+                if len(log) <= idx:
+                    log.append(entry)
+                elif log[idx].term != entry.term:
+                    del log[idx:]
+            last_new_index = prevLogIndex + len(entries)
+            if leaderCommit > commitIndex:
+                commitIndex = min(leaderCommit, last_new_index)
+            AppendEntriesReply(target=leaderId,
+                               term=currentTerm, success=True,
+                               updatedIndex=last_new_index)
+
+    def receive(msg= ('AppendEntriesReply', term, success, updatedIndex),
+                from_=server):
+        update_term(term)
+        # Further action is only needed if we are still leader:
+        if currentRole is Leader:
+            if success:
+                nextIndex[server] = updatedIndex + 1
+                matchIndex[server] = updatedIndex
+            else:
+                # Failed because of log inconsistency:
+                nextIndex[server] -= 1
+
+    def receive(msg= ('ClientRequest', serial), from_=client):
+        if currentRole is not Leader:
+            send(('NotLeader', serial, last_seen_leader), to=client)
+        else:
+            log.append(LogEntry(currentTerm, client, serial))
+
+    def update_term(term):
+        if currentTerm < term:
+            currentTerm = term
+            votedFor = None
+            currentRole = Follower
+
+    def is_up_to_date(lastLogIndex, lastLogTerm):
+        return (lastLogTerm, lastLogIndex) >= (log[-1].term, len(log)-1)
+
+    def commit_to_state_machine():
+        entry = log[lastApplied]
+        output("Log entry", entry, " at index", lastApplied,
+               "applied to state machine.")
+        if currentRole is Leader:
+            send(('Reply', entry.command, self.id), to=entry.client)
+
+    def AppendEntriesRPC(target, term, leaderId, prevLogIndex, prevLogTerm,
+                         entries, leaderCommit):
+        send(('AppendEntries', term, leaderId, prevLogIndex, prevLogTerm,
+              entries, leaderCommit), to=target)
+
+    def AppendEntriesReply(target, term, success, updatedIndex=None):
+        # FIXME: 'updatedIndex' is not in original algorithm!
+        # We need this additional information to pair the reply with the
+        # original RPC request
+        send(('AppendEntriesReply', term, success, updatedIndex), to=target)
+
+    def RequestVoteRPC(target, term, candidateId, lastLogIndex, lastLogTerm):
+        send(('RequestVote', term, candidateId, lastLogIndex, lastLogTerm),
+             to=target)
+
+    def RequestVoteReply(target, term, voteGranted):
+        send(('RequestVoteReply', term, voteGranted), to=target)
+
+    def receive(msg= ('Done', )):
+        exit()
+
+class Client(process):
+    def setup(servers, nrequests, timeout): pass
+
+    def run():
+        target = random.choice(servers)
+        req = 0
+        while req < nrequests:
+            send(('ClientRequest', req), to=target)
+            if await(some(received(('NotLeader', _req, leader)),
+                          has= leader is not None)):
+                output("Wrong server, changing to", leader)
+                target = leader
+                reset("Received")
+            elif some(received(('Reply', _req, _))):
+                output("Request", req, "complete.")
+                req += 1
+            elif timeout(timeout/1000):
+                output("Timeout, new random.")
+                target = random.choice(servers)
+
+        send(('Done',), to=servers)
+
+def main():
+    nservers = int(sys.argv[1]) if len(sys.argv) > 1 else 5
+    nrequests = int(sys.argv[2]) if len(sys.argv) > 2 else 3
+    maxtimeout = int(sys.argv[3]) if len(sys.argv) > 3 else 3000
+    send_failrate = float(sys.argv[4]) if len(sys.argv) > 4 else 0.0
+
+    servers = new(Server, num= nservers, send= send_failrate)
+    setup(servers, (servers, maxtimeout))
+    clients = new(Client, num= 1)
+    setup(clients, (list(servers), nrequests, maxtimeout))
+    start(servers)
+    start(clients)
