@@ -24,6 +24,7 @@
 
 import ast
 import sys
+import time
 import argparse
 
 from da.tools.unparse import Unparser
@@ -40,6 +41,10 @@ DA_SUFFIX = "da"
 stdout = sys.stdout
 stderr = sys.stderr
 
+# Benchmark stats:
+WallclockStart = 0
+InputSize = 0
+OutputSize = 0
 
 def daast_from_file(filename, args=None):
     """Generates DistAlgo AST from source file.
@@ -51,7 +56,10 @@ def daast_from_file(filename, args=None):
     """
     try:
         with open(filename, 'r') as infd:
-            return daast_from_str(infd.read(), filename, args)
+            global InputSize
+            src = infd.read()
+            InputSize = len(src)
+            return daast_from_str(src, filename, args)
     except Exception as e:
         print(type(e).__name__, ':', str(e), file=stderr)
         raise e
@@ -189,7 +197,8 @@ def dafile_to_pyfile(args):
         if outname is None:
             outname = purename + ".py"
         with open(outname, "w") as outfd:
-            Unparser(pyast, outfd)
+            global OutputSize
+            OutputSize += Unparser(pyast, outfd).counter
             stderr.write("Written compiled file %s.\n"% outname)
         return 0
     else:
@@ -240,12 +249,13 @@ def dafile_to_incfiles(args):
     if incname is None:
         incname = purename + "_inc.py" 
     if daast is not None:
+        global OutputSize
         inc, ast = gen_inc_module(daast, args, filename=incname)
         with open(outname, "w") as outfd:
-            Unparser(ast, outfd)
+            OutputSize += Unparser(ast, outfd).counter
             stderr.write("Written compiled file %s.\n"% outname)
         with open(incname, "w") as outfd:
-            Unparser(inc, outfd)
+            OutputSize += Unparser(inc, outfd).counter
             stderr.write("Written interface file %s.\n" % incname)
         return 0
     else:
@@ -324,6 +334,9 @@ def main(argv=None):
     ap.add_argument('-I', '--interactive',
                     help="Launch interactive shell.",
                     action='store_true', default=False)
+    ap.add_argument('-B', '--benchmark',
+                    help="Print the elapsed wallclock time of the compile session.",
+                    action='store_true', default=False)
     # ap.add_argument('-p', help="Generate pseudo code instead of Python code.",
     #                 action='store_true', dest="genpsd")
     # ap.add_argument('--psdfile', help="Name of output pseudo code file.",
@@ -334,6 +347,10 @@ def main(argv=None):
     if argv is None:
         argv = sys.argv[1:]
     args = ap.parse_args(argv)
+
+    if args.benchmark:
+        global WallclockStart
+        WallclockStart = time.perf_counter()
 
     if args.interactive:
         import code
@@ -356,5 +373,13 @@ def main(argv=None):
         res = dafile_to_incfiles(args)
     else:
         res = dafile_to_pyfile(args)
+
+    if args.benchmark:
+        import json
+        walltime = time.perf_counter() - WallclockStart
+        jsondata = {'Wallclock_time' : walltime,
+                    "Input_size" : InputSize,
+                    "Output_size" : OutputSize}
+        print("###OUTPUT: " + json.dumps(jsondata))
 
     return res

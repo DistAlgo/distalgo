@@ -84,6 +84,7 @@ class Unparser:
         """Unparser(tree, file=sys.stdout) -> None.
          Print the source for tree to file."""
         self.f = file
+        self.counter = 0
         self._indent = 0
         self.dispatch(tree)
         print("", file=self.f)
@@ -91,11 +92,14 @@ class Unparser:
 
     def fill(self, text = ""):
         "Indent a piece of text, according to the current indentation level"
-        self.f.write("\n"+"    "*self._indent + text)
+        text = ("\n"+"    "*self._indent + text)
+        self.f.write(text)
+        self.counter += len(text)
 
     def write(self, text):
         "Append a piece of text to the current line."
         self.f.write(text)
+        self.counter += len(text)
 
     def enter(self):
         "Print ':', and increase the indentation."
