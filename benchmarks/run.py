@@ -20,6 +20,24 @@ class TestProfile(namedtuple("TestProfile", 'target, args, repeat')):
     def data_key(self):
         return self.run_profile
 
+class CompileProfile(TestProfile):
+    @property
+    def run_profile(self):
+        return ['dac', '-B', self.target]
+
+    @property
+    def data_file(self):
+        return 'dac'
+
+class CompileIncProfile(TestProfile):
+    @property
+    def run_profile(self):
+        return ['dac', '-B', '-i', self.target]
+
+    @property
+    def data_file(self):
+        return 'dac_i'
+
 class CProfile(TestProfile): pass
 
 class PyProfile(TestProfile):
@@ -42,6 +60,11 @@ class DAProfile(TestProfile):
     def data_file(self):
         dafile, _ = self.target
         return dafile
+
+class DALoopProfile(TestProfile):
+    @property
+    def run_profile(self):
+        return ['dar', self.target] + list(self.args)
 
 class ErlProfile(TestProfile):
     @property
@@ -132,6 +155,15 @@ targets = [
     PyProfile(
         target='lamutex/Python/lamutex.py',
         args=(range(25, 150+1, 25), '5'),
+        repeat=10),
+    # ==================================================
+    DALoopProfile(
+        target='lamutex/orig2.da',
+        args=(range(25, 150+1, 25), '5'),
+        repeat=10),
+    DALoopProfile(
+        target='lamutex/orig2.da',
+        args=('5', range(100, 1000+1, 100)),
         repeat=10),
     # --------------------------------------------------
     DAProfile(
@@ -268,7 +300,7 @@ def run_all_tests(resultsdir):
                 if isinstance(results, list):
                     print("Found existing results.")
                 else:
-                    print("ERROR: results corrupted!")
+                    print("ERROR: results corrupted!", file=sys.stderr)
                     exit(1)
         except Exception as e:
             results = []
@@ -306,6 +338,18 @@ def main():
     if not os.path.isdir(output_dir):
         sys.stderr.write("Error: %s is not a directory!" % output_dir)
         exit(1)
+    if os.path.isfile('compile_targets'):
+        global targets
+        with open('compile_targets', 'r') as fd:
+            compile_targets = []
+            for line in fd:
+                line = line.strip('\n')
+                compile_targets.append(CompileProfile(target=line, args=None,
+                                                      repeat=10))
+                compile_targets.append(CompileIncProfile(target=line,
+                                                         args=None,
+                                                         repeat=10))
+            targets = compile_targets + targets
     run_all_tests(output_dir)
 
 if __name__ == "__main__":
