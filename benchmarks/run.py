@@ -243,6 +243,27 @@ targets = [
     #     args=('5', '10', range(5, 20+1, 2)),
     #     repeat=10),
 ]
+compile_targets = [
+    "../examples/vrpaxos/orig.da",
+    "../examples/crleader/orig.da",
+    "../examples/dscrash/orig.da",
+    "../examples/dscrash/spec.da",
+    "../examples/ratoken/spec.da",
+    "../examples/raft/orig.da",
+    "../examples/lamutex/orig.da",
+    "../examples/lamutex/spec.da",
+    "../examples/pingpong/ping.da",
+    "../examples/hsleader/orig.da",
+    "../examples/ramutex/orig.da",
+    "../examples/sktoken/orig.da",
+    "../examples/clpaxos/spec.da",
+    "../examples/lapaxos/orig.da",
+    "../examples/2pcommit/orig.da",
+]
+for ct in compile_targets:
+    targets.append(CompileProfile(target=ct, args=None, repeat=10))
+    targets.append(CompileIncProfile(target=ct, args=None, repeat=10))
+
 
 class DistAlgoError(subprocess.CalledProcessError):
     
@@ -338,18 +359,6 @@ def main():
     if not os.path.isdir(output_dir):
         sys.stderr.write("Error: %s is not a directory!" % output_dir)
         exit(1)
-    if os.path.isfile('compile_targets'):
-        global targets
-        with open('compile_targets', 'r') as fd:
-            compile_targets = []
-            for line in fd:
-                line = line.strip('\n')
-                compile_targets.append(CompileProfile(target=line, args=None,
-                                                      repeat=10))
-                compile_targets.append(CompileIncProfile(target=line,
-                                                         args=None,
-                                                         repeat=10))
-            targets = compile_targets + targets
     run_all_tests(output_dir)
 
 if __name__ == "__main__":
