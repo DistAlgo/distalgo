@@ -1,6 +1,6 @@
 
 CC=gcc
-CFLAGS=-O2 -std=c99 -fms-extensions
+CFLAGS=-O3 -std=c99 -fms-extensions
 LDFLAGS=-lrt
 
 all : lamport
