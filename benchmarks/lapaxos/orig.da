@@ -20,10 +20,11 @@ class Proposer(process, controller.Controllee):
                       or {randint(1,100)})  # any value, pick in 1..100
             responded = setof(a, received(('respond', _n, _), from_ =a))
             send(('accept', n, v), to= responded)
-            output('### chose', n, v)
+            #output('### chose', n, v)
 
         elif timeout(TIMEOUT):
-            output('failed proposal number', n)
+            #output('failed proposal number', n)
+            pass
 
     @controller.run
     def run():
@@ -49,14 +50,14 @@ class Acceptor(process, controller.Controllee):
 
     @controller.run
     def run():
-        await(received(('done',)))
+        return 0
 
     def anyof(s):
         """return any element of set s if s is not empty or 'None' otherwise"""
         return next(iter(s)) if s else None
 
 class Learner(process, controller.Controllee):
-    def setup(ctl, acceptors:set):
+    def setup(ctl, acceptors:set, proposer:Proposer):
         super().setup(ctl)
 
     def learn():
@@ -71,25 +72,22 @@ class Learner(process, controller.Controllee):
     @controller.run
     def run():
         learn()
+        send(('done',), to= proposer)
 
 def main():
     nacceptors = int(sys.argv[1]) if len(sys.argv) > 1 else 3
     nproposers = int(sys.argv[2]) if len(sys.argv) > 2 else 3
-    nlearners = int(sys.argv[3]) if len(sys.argv) > 3 else 3
 
     ctl = new(controller.Controller, num= 1)
-    setup(ctl, (nacceptors + nproposers + nlearners,))
+    setup(ctl, (nacceptors + nproposers * 2, ))
     start(ctl)
 
     acceptors = new(Acceptor, num= nacceptors)
     proposers = new(Proposer, (ctl, acceptors,), num= nproposers)
-    learners = new(Learner, (ctl, acceptors,), num= nlearners)
-    for p in acceptors: setup(p, (ctl, learners,))
+    learners = new(Learner, num= nproposers)
+    for a in acceptors: setup(a, (ctl, learners,))
+    for p, l in zip(proposers, learners): setup(l, (ctl, acceptors, p))
     start(acceptors | proposers | learners)
-
-    for p in learners: p.join()
-    print('done')
-    da.send(('done',), to= (acceptors|proposers))  # da.send not in da-lang
 
 # This is an executable specification of the algorithm described in
 # Lamport, L. (2001).  Paxos Made Simple.  ACM SIGACT News 
