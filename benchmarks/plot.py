@@ -187,7 +187,7 @@ CompileTargets = [
     ("../examples/sktoken/orig.da"  , 'SK Token'),
     ("../examples/vrpaxos/orig.da"  , 'VR Paxos'),
 ]
-Arg_lamutex_vary_rounds = ('5', range(100, 1000+1, 100))
+Arg_lamutex_vary_rounds = ('10', range(100, 1000+1, 100))
 Arg_lamutex_vary_rounds_low = ('5', range(10, 100+1, 10))
 Arg_lamutex_vary_procs_low = (range(5, 20+1, 2), '5')
 Arg_lamutex_vary_procs_high = (range(15, 150+1, 20), '5')
@@ -197,6 +197,8 @@ Arg_clpaxos_vary_procs_oopsla = (10, range(25, 150+1, 25))
 Arg_lamutex_vary_procs_all = ([15, 25, 35, 50, 55, 75, 95, 100, 115, 125,
                                135, 150], '5')
 Arg_tpcommit_vary_procs_low = (range(5, 20+1, 2), '0')
+Arg_tpcommit_vary_procs = (range(25, 150+1, 25), '0')
+Arg_lapaxos_vary_procs = ('5', range(25, 150+1, 25))
 DataSet_compile = CompilerDataSet(
     target=[fn for fn, _ in CompileTargets])
 DataSet_compile_inc = CompilerIncDataSet(
@@ -318,13 +320,35 @@ DataSet_tpcommit_spec_inc_vary_procs_low = DADataSet(
     program="2pcommit/spec.da",
     inc_module="tpcommit_inc_inc",
     args=Arg_tpcommit_vary_procs_low)
+DataSet_tpcommit_spec_vary_procs = DADataSet(
+    program="2pcommit/spec.da",
+    inc_module=None,
+    args=Arg_tpcommit_vary_procs)
+DataSet_tpcommit_spec_inc_vary_procs = DADataSet(
+    program="2pcommit/spec.da",
+    inc_module="tpcommit_inc_inc",
+    args=Arg_tpcommit_vary_procs)
+DataSet_tpcommit_loop_vary_procs = DALoopDataSet(
+    target="2pcommit/spec2.da",
+    args=Arg_tpcommit_vary_procs)
+DataSet_lapaxos_spec_vary_procs = DADataSet(
+    program="lapaxos/orig.da",
+    inc_module=None,
+    args=Arg_lapaxos_vary_procs)
+DataSet_lapaxos_spec_inc_vary_procs = DADataSet(
+    program="lapaxos/orig.da",
+    inc_module="lapaxos_inc_inc",
+    args=Arg_lapaxos_vary_procs)
+DataSet_lapaxos_loop_vary_procs = DALoopDataSet(
+    target="lapaxos/orig2.da",
+    args=Arg_lapaxos_vary_procs)
 
 Graph_lamutex_orig_running_time_vary_rounds = \
     GraphInfo(
-        title="La Mutex CPU time fix 5 procs vary rounds",
+        title="La Mutex 10 processes CPU time vary rounds",
         xlabel="Number of times entered CS",
         ylabel="CPU time (in seconds)",
-        ylim=(0, 10),
+        ylim=(0, 25),
         lines=(
             GraphLine(
                 dataset=DataSet_lamutex_orig_vary_rounds,
@@ -333,7 +357,7 @@ Graph_lamutex_orig_running_time_vary_rounds = \
                 color='y',
                 marker='s',
                 fit_degree=2,
-                label='DistAlgo original',
+                label='Orig w/Query',
                 avg_over_procs=True),
             GraphLine(
                 dataset=DataSet_lamutex_orig_loop_vary_rounds,
@@ -342,7 +366,7 @@ Graph_lamutex_orig_running_time_vary_rounds = \
                 color='k',
                 marker='*',
                 fit_degree=2,
-                label='DistAlgo loop',
+                label='Orig w/Loop',
                 avg_over_procs=True),
             GraphLine(
                 dataset=DataSet_lamutex_orig_inc_vary_rounds,
@@ -350,7 +374,7 @@ Graph_lamutex_orig_running_time_vary_rounds = \
                 linestyle='--',
                 color='m',
                 marker='p',
-                label="DistAlgo IncOQ",
+                label="IncOQ",
                 avg_over_procs=True),
             GraphLine(
                 dataset=DataSet_lamutex_orig_invts_vary_rounds,
@@ -359,7 +383,7 @@ Graph_lamutex_orig_running_time_vary_rounds = \
                 color='y',
                 marker='x',
                 markeredgewidth=1,
-                label="DistAlgo InvTS",
+                label="InvTS",
                 avg_over_procs=True),
             GraphLine(
                 dataset=DataSet_lamutex_python_vary_rounds,
@@ -388,7 +412,7 @@ Graph_lamutex_orig_running_time_vary_rounds = \
         ))
 Graph_lamutex_orig_running_time_vary_procs = \
     GraphInfo(
-        title="Lamutex_orig running time vary procs",
+        title="La Mutex CPU time vary procs",
         xlabel="Number of processes",
         ylabel="CPU time (in seconds)",
         xlim=(25, 150),
@@ -404,7 +428,7 @@ Graph_lamutex_orig_running_time_vary_procs = \
                 markeredgewidth=1,
                 fit_degree=2,
                 avg_factor=5,
-                label='DistAlgo original',
+                label='Orig w/Query',
                 avg_over_procs=True),
             GraphLine(
                 dataset=DataSet_lamutex_orig_loop_vary_procs,
@@ -415,7 +439,7 @@ Graph_lamutex_orig_running_time_vary_procs = \
                 markeredgewidth=1,
                 fit_degree=2,
                 avg_factor=5,
-                label='DistAlgo loop',
+                label='Orig w/Loop',
                 avg_over_procs=True),
             GraphLine(
                 dataset=DataSet_lamutex_orig_inc_vary_procs,
@@ -424,7 +448,7 @@ Graph_lamutex_orig_running_time_vary_procs = \
                 color='m',
                 marker='p',
                 avg_factor=5,
-                label="DistAlgo IncOQ",
+                label="IncOQ",
                 avg_over_procs=True),
             GraphLine(
                 dataset=DataSet_lamutex_orig_invts_vary_procs,
@@ -433,7 +457,7 @@ Graph_lamutex_orig_running_time_vary_procs = \
                 color='g',
                 marker='^',
                 avg_factor=5,
-                label="DistAlgo InvTS",
+                label="InvTS",
                 avg_over_procs=True),
             GraphLine(
                 dataset=DataSet_lamutex_python_vary_procs_oopsla,
@@ -465,7 +489,7 @@ Graph_lamutex_orig_running_time_vary_procs = \
         ))
 Graph_lamutex_orig_memory_vary_procs = \
     GraphInfo(
-        title="Lamutex_orig memory vary procs",
+        title="La Mutex memory vary procs",
         xlabel="Number of processes",
         ylabel="Avg. Process Peak RSS (in kB)",
         xlim=(25, 150),
@@ -480,7 +504,7 @@ Graph_lamutex_orig_memory_vary_procs = \
                 linestyle='-',
                 color='y',
                 marker='s',
-                label='DistAlgo\n(original)',
+                label='Orig\n(w/Query)',
                 avg_over_procs=True),
             GraphLine(
                 dataset=DataSet_lamutex_orig_loop_vary_procs,
@@ -488,7 +512,7 @@ Graph_lamutex_orig_memory_vary_procs = \
                 linestyle='-.',
                 color='k',
                 marker='o',
-                label='DistAlgo\n(loop)',
+                label='Orig\n(w/Loop)',
                 avg_over_procs=True),
             GraphLine(
                 dataset=DataSet_lamutex_python_vary_procs_oopsla,
@@ -534,7 +558,7 @@ Graph_lamutex_orig_memory_vary_procs = \
         ))
 Graph_lamutex_orig_memory_vary_rounds = \
     GraphInfo(
-        title="Lamutex memory fix 5 procs vary rounds",
+        title="La Mutex 10 processes memory vary rounds",
         xlabel="Number of times entered cs",
         ylabel="Avg. Process Peak RSS (in kB)",
         legend_position='outside',
@@ -546,7 +570,7 @@ Graph_lamutex_orig_memory_vary_rounds = \
                 color='y',
                 markeredgewidth=1,
                 marker='x',
-                label='DistAlgo\n(original)',
+                label='Orig\n(w/Query)',
                 avg_over_procs=True),
             GraphLine(
                 dataset=DataSet_lamutex_orig_loop_vary_rounds,
@@ -555,7 +579,7 @@ Graph_lamutex_orig_memory_vary_rounds = \
                 color='k',
                 markeredgewidth=1,
                 marker='*',
-                label='DistAlgo\n(loop)',
+                label='Orig\n(w/Loop)',
                 avg_over_procs=True),
             GraphLine(
                 dataset=DataSet_lamutex_orig_inc_vary_rounds,
@@ -678,198 +702,261 @@ Graph_clpaxos_oopsla_running_time_vary_processes = \
                 marker='p',
                 label="incremental (total process time)",
                 avg_over_procs=True)))
-Graph_tpcommit_running_time_vary_processes_low = \
+Graph_tpcommit_wallclock_time_vary_processes = \
     GraphInfo(
-        title="2pcommit running time vary processes (low)",
+        title="2pcommit running time (wall-clock) vary processes",
         xlabel="Number of processes",
         ylabel="Running time (in seconds)",
+        xlim=(25, 150+1),
+        xticks=np.arange(25, 150+1, 25),
         lines=(
             GraphLine(
-                dataset=DataSet_tpcommit_spec_vary_procs_low,
+                dataset=DataSet_tpcommit_spec_vary_procs,
                 key='Wallclock_time',
                 aggregate=min,
                 linestyle='-',
                 color='b',
                 marker='o',
-                label='original (wall-clock time)',
+                label='w/Query (wall-clock time)',
                 fit_degree=2,
                 avg_over_procs=False),
             GraphLine(
-                dataset=DataSet_tpcommit_spec_inc_vary_procs_low,
+                dataset=DataSet_tpcommit_spec_inc_vary_procs,
                 key='Wallclock_time',
                 aggregate=min,
                 linestyle='--',
                 color='g',
                 marker='v',
-                label="incremental (wall-clock time)",
+                label="IncOQ (wall-clock time)",
                 avg_over_procs=False),
             GraphLine(
-                dataset=DataSet_tpcommit_spec_vary_procs_low,
+                dataset=DataSet_tpcommit_loop_vary_procs,
+                key='Wallclock_time',
+                aggregate=min,
+                linestyle='-.',
+                color='k',
+                marker='o',
+                label='w/Loop (wall-clock time)',
+                fit_degree=2,
+                avg_over_procs=False)))
+Graph_tpcommit_CPU_time_vary_processes = \
+    GraphInfo(
+        title="2pcommit Coordinator CPU time vary Cohorts",
+        xlabel="Number of Cohorts",
+        ylabel="Running time (in seconds)",
+        xlim=(25, 150+1),
+        xticks=np.arange(25, 150+1, 25),
+        lines=(
+            GraphLine(
+                dataset=DataSet_tpcommit_spec_vary_procs,
                 key='Total_process_time',
                 linestyle='-',
                 color='y',
                 marker='s',
                 fit_degree=2,
-                label='original (total process time)',
+                label='w/Query (CPU time)',
                 avg_over_procs=False),
             GraphLine(
-                dataset=DataSet_tpcommit_spec_inc_vary_procs_low,
+                dataset=DataSet_tpcommit_loop_vary_procs,
+                key='Total_process_time',
+                linestyle='-.',
+                color='k',
+                marker='s',
+                fit_degree=2,
+                label='w/Loop (CPU time)',
+                avg_over_procs=False),
+            GraphLine(
+                dataset=DataSet_tpcommit_spec_inc_vary_procs,
                 key='Total_process_time',
                 linestyle='--',
                 color='m',
                 marker='p',
-                label="incremental (total process time)",
+                label="IncOQ (CPU time)",
                 avg_over_procs=False)))
-Graph_tpcommit_memory_vary_processes_low = \
+Graph_tpcommit_memory_vary_processes = \
     GraphInfo(
-        title="2pcommit memory vary processes (low)",
-        xlabel="Number of processes",
-        ylabel="Total memory (in bytes)",
+        title="2pcommit Coordinator memory vary Cohorts",
+        xlabel="Number of Cohorts",
+        ylabel="Total memory (in kB)",
+        ylim=(11000, 16000+1),
+        xlim=(25, 150+1),
+        xticks=np.arange(25, 150+1, 25),
         lines=(
             GraphLine(
-                dataset=DataSet_tpcommit_spec_vary_procs_low,
+                dataset=DataSet_tpcommit_spec_vary_procs,
                 key='Total_memory',
                 linestyle='-',
-                color='b',
-                marker='o',
-                label='original (total memory)',
+                color='y',
+                marker='s',
+                label='w/Query (Memory)',
                 avg_over_procs=False),
             GraphLine(
-                dataset=DataSet_tpcommit_spec_inc_vary_procs_low,
+                dataset=DataSet_tpcommit_loop_vary_procs,
+                key='Total_memory',
+                linestyle='-.',
+                color='k',
+                marker='s',
+                label='w/Loop (Memory)',
+                avg_over_procs=False),
+            GraphLine(
+                dataset=DataSet_tpcommit_spec_inc_vary_procs,
                 key='Total_memory',
                 linestyle='--',
-                color='g',
-                marker='v',
-                label="incremental (total memory)",
+                color='m',
+                marker='p',
+                label="IncOQ (Memory)",
                 avg_over_procs=False)))
-Graph_lamutex_spec_running_time_vary_processes_low = \
+Graph_lapaxos_CPU_time_vary_processes = \
     GraphInfo(
-        title="Lamutex_spec running time vary processes (low)",
+        title="La Paxos CPU time vary processes",
         xlabel="Number of processes",
         ylabel="Running time (in seconds)",
+        xlim=(25, 150+1),
+        xticks=np.arange(25, 150+1, 25),
         lines=(
             GraphLine(
-                dataset=DataSet_lamutex_spec_vary_procs_low,
-                key='Wallclock_time',
-                linestyle='-',
-                color='b',
-                marker='o',
-                label='original (wall-clock time)',
-                fit_degree=2,
-                avg_over_procs=False),
-            GraphLine(
-                dataset=DataSet_lamutex_spec_inc_vary_procs_low,
-                key='Wallclock_time',
-                linestyle='--',
-                color='g',
-                marker='v',
-                fit_degree=2,
-                label="incremental (wall-clock time)",
-                avg_over_procs=False),
-            GraphLine(
-                dataset=DataSet_lamutex_spec_vary_procs_low,
+                dataset=DataSet_lapaxos_spec_vary_procs,
                 key='Total_process_time',
                 linestyle='-',
                 color='y',
                 marker='s',
                 fit_degree=2,
-                label='original (total process time)',
+                label='w/Query (CPU time)',
                 avg_over_procs=False),
             GraphLine(
-                dataset=DataSet_lamutex_spec_inc_vary_procs_low,
+                dataset=DataSet_lapaxos_loop_vary_procs,
+                key='Total_process_time',
+                linestyle='-.',
+                color='k',
+                marker='s',
+                label='w/Loop (CPU time)',
+                avg_over_procs=False),
+            GraphLine(
+                dataset=DataSet_lapaxos_spec_inc_vary_procs,
                 key='Total_process_time',
                 linestyle='--',
                 color='m',
                 marker='p',
-                fit_degree=2,
-                label="incremental (total process time)",
+                label="IncOQ (CPU time)",
                 avg_over_procs=False)))
-Graph_lamutex_spec_running_time_vary_processes_high = \
+Graph_lapaxos_memory_vary_processes = \
     GraphInfo(
-        title="Lamutex_spec running time vary processes (high)",
+        title="La Paxos memory vary processes",
         xlabel="Number of processes",
-        ylabel="Running time (in seconds)",
+        ylabel="Total memory (in kB)",
+        xlim=(25, 150+1),
+        xticks=np.arange(25, 150+1, 25),
         lines=(
             GraphLine(
-                dataset=DataSet_lamutex_spec_vary_procs_high,
-                key='Wallclock_time',
-                linestyle='-',
-                color='b',
-                marker='o',
-                label='original (wall-clock time)',
-                fit_degree=2,
-                avg_over_procs=False),
-            GraphLine(
-                dataset=DataSet_lamutex_spec_inc_vary_procs_high,
-                key='Wallclock_time',
-                linestyle='--',
-                color='g',
-                marker='v',
-                fit_degree=1,
-                label="incremental (wall-clock time)",
-                avg_over_procs=False),
-            GraphLine(
-                dataset=DataSet_lamutex_spec_vary_procs_high,
-                key='Total_process_time',
+                dataset=DataSet_lapaxos_spec_vary_procs,
+                key='Total_memory',
                 linestyle='-',
                 color='y',
                 marker='s',
-                fit_degree=4,
-                label='original (total process time)',
+                label='w/Query (Memory)',
                 avg_over_procs=False),
             GraphLine(
-                dataset=DataSet_lamutex_spec_inc_vary_procs_high,
-                key='Total_process_time',
+                dataset=DataSet_lapaxos_loop_vary_procs,
+                key='Total_memory',
+                linestyle='-.',
+                color='k',
+                marker='s',
+                label='w/Loop (Memory)',
+                avg_over_procs=False),
+            GraphLine(
+                dataset=DataSet_lapaxos_spec_inc_vary_procs,
+                key='Total_memory',
                 linestyle='--',
                 color='m',
                 marker='p',
-                fit_degree=1,
-                label="incremental (total process time)",
+                label="IncOQ (Memory)",
                 avg_over_procs=False)))
-Graph_lamutex_spec_memory_vary_processes_low = \
-    GraphInfo(
-        title="Lamutex_spec memory vary processes (low)",
-        xlabel="Number of processes",
-        ylabel="Total memory (in bytes)",
-        lines=(
-            GraphLine(
-                dataset=DataSet_lamutex_spec_vary_procs_low,
-                key='Total_memory',
-                linestyle='-',
-                color='b',
-                marker='o',
-                label='original (total memory)',
-                avg_over_procs=False),
-            GraphLine(
-                dataset=DataSet_lamutex_spec_inc_vary_procs_low,
-                key='Total_memory',
-                linestyle='--',
-                color='g',
-                marker='v',
-                label="incremental (total memory)",
-                avg_over_procs=False)))
-Graph_lamutex_spec_memory_vary_processes_high = \
-    GraphInfo(
-        title="Lamutex_spec memory vary processes (high)",
-        xlabel="Number of processes",
-        ylabel="Total memory (in bytes)",
-        lines=(
-            GraphLine(
-                dataset=DataSet_lamutex_spec_vary_procs_high,
-                key='Total_memory',
-                linestyle='-',
-                color='b',
-                marker='o',
-                label='original (total memory)',
-                avg_over_procs=False),
-            GraphLine(
-                dataset=DataSet_lamutex_spec_inc_vary_procs_high,
-                key='Total_memory',
-                linestyle='--',
-                color='g',
-                marker='v',
-                label="incremental (total memory)",
-                avg_over_procs=False)))
+# Graph_lamutex_spec_running_time_vary_processes_high = \
+#     GraphInfo(
+#         title="Lamutex_spec running time vary processes (high)",
+#         xlabel="Number of processes",
+#         ylabel="Running time (in seconds)",
+#         lines=(
+#             GraphLine(
+#                 dataset=DataSet_lamutex_spec_vary_procs_high,
+#                 key='Wallclock_time',
+#                 linestyle='-',
+#                 color='b',
+#                 marker='o',
+#                 label='original (wall-clock time)',
+#                 fit_degree=2,
+#                 avg_over_procs=False),
+#             GraphLine(
+#                 dataset=DataSet_lamutex_spec_inc_vary_procs_high,
+#                 key='Wallclock_time',
+#                 linestyle='--',
+#                 color='g',
+#                 marker='v',
+#                 fit_degree=1,
+#                 label="incremental (wall-clock time)",
+#                 avg_over_procs=False),
+#             GraphLine(
+#                 dataset=DataSet_lamutex_spec_vary_procs_high,
+#                 key='Total_process_time',
+#                 linestyle='-',
+#                 color='y',
+#                 marker='s',
+#                 fit_degree=4,
+#                 label='original (total process time)',
+#                 avg_over_procs=False),
+#             GraphLine(
+#                 dataset=DataSet_lamutex_spec_inc_vary_procs_high,
+#                 key='Total_process_time',
+#                 linestyle='--',
+#                 color='m',
+#                 marker='p',
+#                 fit_degree=1,
+#                 label="incremental (total process time)",
+#                 avg_over_procs=False)))
+# Graph_lamutex_spec_memory_vary_processes_low = \
+#     GraphInfo(
+#         title="Lamutex_spec memory vary processes (low)",
+#         xlabel="Number of processes",
+#         ylabel="Total memory (in bytes)",
+#         lines=(
+#             GraphLine(
+#                 dataset=DataSet_lamutex_spec_vary_procs_low,
+#                 key='Total_memory',
+#                 linestyle='-',
+#                 color='b',
+#                 marker='o',
+#                 label='original (total memory)',
+#                 avg_over_procs=False),
+#             GraphLine(
+#                 dataset=DataSet_lamutex_spec_inc_vary_procs_low,
+#                 key='Total_memory',
+#                 linestyle='--',
+#                 color='g',
+#                 marker='v',
+#                 label="incremental (total memory)",
+#                 avg_over_procs=False)))
+# Graph_lamutex_spec_memory_vary_processes_high = \
+#     GraphInfo(
+#         title="Lamutex_spec memory vary processes (high)",
+#         xlabel="Number of processes",
+#         ylabel="Total memory (in bytes)",
+#         lines=(
+#             GraphLine(
+#                 dataset=DataSet_lamutex_spec_vary_procs_high,
+#                 key='Total_memory',
+#                 linestyle='-',
+#                 color='b',
+#                 marker='o',
+#                 label='original (total memory)',
+#                 avg_over_procs=False),
+#             GraphLine(
+#                 dataset=DataSet_lamutex_spec_inc_vary_procs_high,
+#                 key='Total_memory',
+#                 linestyle='--',
+#                 color='g',
+#                 marker='v',
+#                 label="incremental (total memory)",
+#                 avg_over_procs=False)))
 Graph_clpaxos_spec_memory_vary_processes_low = \
     GraphInfo(
         title="Clpaxos_spec memory vary processes (low)",
@@ -914,158 +1001,7 @@ Graph_clpaxos_oopsla_memory_vary_processes = \
                 marker='v',
                 label="incremental (total memory)",
                 avg_over_procs=True)))
-Graph_lamutex_spec_vs_python_running_time_vary_processes_low = \
-    GraphInfo(
-        title="Lamutex spec vs Python running time vary processes (low)",
-        xlabel="Number of processes",
-        ylabel="Running time (in seconds)",
-        lines=(
-            GraphLine(
-                dataset=DataSet_lamutex_python_vary_procs_low,
-                key='Wallclock_time',
-                linestyle='-',
-                color='b',
-                marker='o',
-                label='Python (wall-clock time)',
-                fit_degree=2,
-                avg_over_procs=False),
-            GraphLine(
-                dataset=DataSet_lamutex_spec_inc_vary_procs_low,
-                key='Wallclock_time',
-                linestyle='--',
-                color='g',
-                marker='v',
-                fit_degree=4,
-                label="incremental (wall-clock time)",
-                avg_over_procs=False),
-            GraphLine(
-                dataset=DataSet_lamutex_python_vary_procs_low,
-                key='Total_process_time',
-                linestyle='-',
-                color='y',
-                marker='s',
-                fit_degree=1,
-                label='Python (average process time)',
-                avg_over_procs=True),
-            GraphLine(
-                dataset=DataSet_lamutex_spec_inc_vary_procs_low,
-                key='Total_process_time',
-                linestyle='--',
-                color='m',
-                marker='p',
-                fit_degree=1,
-                label="incremental (average process time)",
-                avg_over_procs=True)))
-Graph_lamutex_spec_vs_python_running_time_vary_rounds = \
-    GraphInfo(
-        title="Lamutex spec vs Python running time vary rounds",
-        xlabel="Number of rounds",
-        ylabel="Running time (in seconds)",
-        lines=(
-            GraphLine(
-                dataset=DataSet_lamutex_python_vary_rounds,
-                key='Wallclock_time',
-                linestyle='-',
-                color='b',
-                marker='o',
-                label='Python (wall-clock time)',
-                fit_degree=1,
-                avg_over_procs=False),
-            GraphLine(
-                dataset=DataSet_lamutex_spec_inc_vary_rounds,
-                key='Wallclock_time',
-                linestyle='--',
-                color='g',
-                marker='v',
-                fit_degree=2,
-                label="incremental (wall-clock time)",
-                avg_over_procs=False),
-            GraphLine(
-                dataset=DataSet_lamutex_python_vary_rounds,
-                key='Total_process_time',
-                linestyle='-',
-                color='y',
-                marker='s',
-                fit_degree=1,
-                label='Python (average process time)',
-                avg_over_procs=True),
-            GraphLine(
-                dataset=DataSet_lamutex_spec_inc_vary_rounds,
-                key='Total_process_time',
-                linestyle='--',
-                color='m',
-                marker='p',
-                fit_degree=2,
-                label="incremental (average process time)",
-                avg_over_procs=True)))
-Graph_lamutex_spec_vs_python_memory_vary_processes_oopsla = \
-    GraphInfo(
-        title="Lamutex spec vs Python memory vary processes",
-        xlabel="Number of processes",
-        ylabel="Total memory (in bytes)",
-        lines=(
-            GraphLine(
-                dataset=DataSet_lamutex_python_vary_procs_oopsla,
-                key='Total_memory',
-                linestyle='-',
-                color='b',
-                marker='o',
-                label='Python (total memory)',
-                avg_over_procs=False),
-            GraphLine(
-                dataset=DataSet_lamutex_spec_inc_vary_procs_oopsla,
-                key='Total_memory',
-                linestyle='--',
-                color='g',
-                marker='v',
-                label="incremental (total memory)",
-                avg_over_procs=False)))
-Graph_lamutex_spec_vs_python_running_time_vary_processes_oopsla = \
-    GraphInfo(
-        title="Lamutex spec vs Python running time vary processes (oopsla)",
-        xlabel="Number of processes",
-        ylabel="Running time (in seconds)",
-        lines=(
-            # GraphLine(
-            #     dataset=DataSet_lamutex_python_vary_procs_oopsla,
-            #     key='Wallclock_time',
-            #     linestyle='-',
-            #     color='b',
-            #     marker='o',
-            #     label='Python (wall-clock time)',
-            #     fit_degree=2,
-            #     avg_over_procs=False),
-            # GraphLine(
-            #     dataset=DataSet_lamutex_spec_inc_vary_procs_oopsla,
-            #     key='Wallclock_time',
-            #     linestyle='--',
-            #     color='g',
-            #     marker='v',
-            #     fit_degree=2,
-            #     label="incremental (wall-clock time)",
-            #     avg_over_procs=False),
-            GraphLine(
-                dataset=DataSet_lamutex_python_vary_procs_oopsla,
-                key='Total_process_time',
-                linestyle='-',
-                color='y',
-                marker='x',
-                markeredgewidth=1,
-                fit_degree=1,
-                label='Python (average process time)',
-                avg_over_procs=True),
-            GraphLine(
-                dataset=DataSet_lamutex_spec_inc_vary_procs_oopsla,
-                key='Total_process_time',
-                linestyle='--',
-                color='m',
-                marker='*',
-                markeredgewidth=1,
-                markerfacecolor='none',
-                markeredgecolor='m',
-                fit_degree=1,
-                label="incremental (average process time)",
-                avg_over_procs=True)))
+
 BarWidth=0.35
 Graph_compile = \
     GraphInfo(

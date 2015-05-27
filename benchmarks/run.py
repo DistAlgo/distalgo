@@ -82,7 +82,7 @@ targets = [
         repeat=10),
     ErlProfile(
         target='lamutex/Erlang/lamutex',
-        args=('5', range(100, 1000+1, 100)),
+        args=('10', range(100, 1000+1, 100)),
         repeat=10),
 
     DAProfile(
@@ -108,15 +108,15 @@ targets = [
 
     DAProfile(
         target=('lamutex/orig.da', None),
-        args=('5', range(100, 1000+1, 100)),
+        args=('10', range(100, 1000+1, 100)),
         repeat=5),
     DAProfile(
         target=('lamutex/orig.da', "lamutex_orig_inc_inc"),
-        args=('5', range(100, 1000+1, 100)),
+        args=('10', range(100, 1000+1, 100)),
         repeat=5),
     DAProfile(
         target=('lamutex/orig.da', "orig_inc_invts"),
-        args=('5', range(100, 1000+1, 100)),
+        args=('10', range(100, 1000+1, 100)),
         repeat=5),
 
     DAProfile(
@@ -134,11 +134,11 @@ targets = [
         repeat=10),
     CProfile(
         target='lamutex/C/lamport',
-        args=('5', range(100, 1000+1, 100)),
+        args=('10', range(100, 1000+1, 100)),
         repeat=10),
     PyProfile(
         target='lamutex/Python/lamutex.py',
-        args=('5', range(100, 1000+1, 100)),
+        args=('10', range(100, 1000+1, 100)),
         repeat=5),
     PyProfile(
         target='lamutex/Python/lamutex.py',
@@ -163,7 +163,7 @@ targets = [
         repeat=10),
     DALoopProfile(
         target='lamutex/orig2.da',
-        args=('5', range(100, 1000+1, 100)),
+        args=('10', range(100, 1000+1, 100)),
         repeat=10),
     # --------------------------------------------------
     DAProfile(
@@ -202,14 +202,28 @@ targets = [
         target=('lamutex/spec.da', "spec_inc_inc"),
         args=('5', range(100, 1000+1, 100)),
         repeat=5),
+    # ==================================================
+    # DAProfile(
+    #     target=('2pcommit/spec.da', None),
+    #     args=(range(5, 20+1, 2), '0'),
+    #     repeat=10),
+    # DAProfile(
+    #     target=('2pcommit/spec.da', "tpcommit_inc_inc"),
+    #     args=(range(5, 20+1, 2), '0'),
+    #     repeat=10),
     DAProfile(
         target=('2pcommit/spec.da', None),
-        args=(range(5, 20+1, 2), '0'),
+        args=(range(25, 150+1, 25), '0'),
         repeat=10),
     DAProfile(
         target=('2pcommit/spec.da', "tpcommit_inc_inc"),
-        args=(range(5, 20+1, 2), '0'),
+        args=(range(25, 150+1, 25), '0'),
         repeat=10),
+    DALoopProfile(
+        target='2pcommit/spec2.da',
+        args=(range(25, 150+1, 25), '0'),
+        repeat=10),
+    # ==================================================
     DAProfile(
         target=('clpaxos/spec.da', None),
         args=(range(5, 20+1, 2), '5'),
@@ -218,6 +232,23 @@ targets = [
         target=('clpaxos/spec.da', "clpaxos_inc_inc"),
         args=(range(5, 20+1, 2), '5'),
         repeat=10),
+    # ==================================================
+    DAProfile(
+        target=('lapaxos/orig.da', None),
+        args=('5', range(25, 150+1, 25)),
+        repeat=10),
+    DAProfile(
+        target=('lapaxos/orig.da', "lapaxos_inc_inc"),
+        args=('5', range(25, 150+1, 25)),
+        repeat=10),
+    DAProfile(
+        target=('lapaxos/orig.da', "lapaxos_inc_dem"),
+        args=('5', range(25, 150+1, 25)),
+        repeat=10),
+    DALoopProfile(
+        target='lapaxos/orig2.da',
+        args=('5', range(25, 150+1, 25)),
+        repeat=10)
     # DAProfile(
     #     target=('clpaxos/spec.da', None),
     #     args=('10', range(25, 150+1, 25)),
