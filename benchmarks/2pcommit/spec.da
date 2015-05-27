@@ -27,6 +27,7 @@ class Coordinator(process, controller.Controllee):
 
         send(('done',), to= cohorts)
 
+@controller.excluded
 class Cohort(process, controller.Controllee):
     def setup(ctl, failure_rate):
         super().setup(ctl)

@@ -81,6 +81,7 @@ import json
 from collections import namedtuple
 
 ResourceData = namedtuple("ResourceData", "ru_utime, ru_stime, ru_maxrss")
+ExcludedProcs = set()
 
 class Controller(process):
     
@@ -90,7 +91,8 @@ class Controller(process):
         self.ps = set()
         self.readys = 0
         self.dones = 0
-        
+
+        self.collected = 0
         # Total of all processes' cputime.
         self.ru_cputime = 0
         # Total of all processes' user time.
@@ -113,9 +115,11 @@ class Controller(process):
     def receive(msg=('CTL_Done', rudata), from_=source):
         # Count dones.
         dones += 1
-        ru_utime += rudata.ru_utime
-        ru_cputime += rudata.ru_utime + rudata.ru_stime
-        ru_maxrss += rudata.ru_maxrss
+        if source._proctype not in ExcludedProcs:
+            ru_utime += rudata.ru_utime
+            ru_cputime += rudata.ru_utime + rudata.ru_stime
+            ru_maxrss += rudata.ru_maxrss
+            collected += 1
         verboutput('Got Done from {} ({}/{})'.format(source, dones, nprocs))
     
     def run():
@@ -133,7 +137,7 @@ class Controller(process):
         bcast(('CTL_Terminate',), to=ps)
         
         jsondata = {'Wallclock_time': t2 - t1,
-                    'Total_processes': dones,
+                    'Total_processes': collected,
                     'Total_process_time': ru_cputime,
                     'Total_user_time': ru_utime,
                     'Total_memory': ru_maxrss}
@@ -193,3 +197,7 @@ def run(func):
         func(self)
         self.ctl_end()
     return ctl_run
+
+def excluded(proc):
+    ExcludedProcs.add(proc)
+    return proc
