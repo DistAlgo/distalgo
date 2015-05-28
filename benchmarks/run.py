@@ -9,13 +9,13 @@ from collections import namedtuple
 
 class TestProfile(namedtuple("TestProfile", 'target, args, repeat')):
     @property
+    def setup(self): return None
+    @property
     def run_profile(self):
         return [self.target] + list(self.args)
-
     @property
     def data_file(self):
         return self.target
-
     @property
     def data_key(self):
         return self.run_profile
@@ -24,7 +24,6 @@ class CompileProfile(TestProfile):
     @property
     def run_profile(self):
         return ['dac', '-B', self.target]
-
     @property
     def data_file(self):
         return 'dac'
@@ -33,7 +32,6 @@ class CompileIncProfile(TestProfile):
     @property
     def run_profile(self):
         return ['dac', '-B', '-i', self.target]
-
     @property
     def data_file(self):
         return 'dac_i'
@@ -46,6 +44,10 @@ class PyProfile(TestProfile):
         return ['python3', self.target] + list(self.args)
 
 class DAProfile(TestProfile):
+    @property
+    def setup(self):
+        dafile, _ = self.target
+        return ['dac', '-i', dafile]
     @property
     def run_profile(self):
         dafile, incfile = self.target
@@ -62,6 +64,9 @@ class DAProfile(TestProfile):
         return dafile
 
 class DALoopProfile(TestProfile):
+    @property
+    def setup(self):
+        return ['dac', self.target]
     @property
     def run_profile(self):
         return ['dar', self.target] + list(self.args)
@@ -158,11 +163,11 @@ targets = [
         repeat=10),
     # ==================================================
     DALoopProfile(
-        target='lamutex/orig2.da',
+        target='lamutex/orig.da',
         args=(range(25, 150+1, 25), '5'),
         repeat=10),
     DALoopProfile(
-        target='lamutex/orig2.da',
+        target='lamutex/orig.da',
         args=('10', range(100, 1000+1, 100)),
         repeat=10),
     # --------------------------------------------------
@@ -220,7 +225,7 @@ targets = [
         args=(range(25, 150+1, 25), '0'),
         repeat=10),
     DALoopProfile(
-        target='2pcommit/spec2.da',
+        target='2pcommit/spec.da',
         args=(range(25, 150+1, 25), '0'),
         repeat=10),
     # ==================================================
@@ -246,7 +251,7 @@ targets = [
         args=('5', range(25, 150+1, 25)),
         repeat=10),
     DALoopProfile(
-        target='lapaxos/orig2.da',
+        target='lapaxos/orig.da',
         args=('5', range(25, 150+1, 25)),
         repeat=10)
     # DAProfile(
@@ -371,11 +376,15 @@ def run_all_tests(resultsdir):
                 expanded.append(list(arglist))
         else:
             expanded.append(config.run_profile)
+        need_setup = config.setup
         for item in expanded:
             existing = len([(config, res, ts)
                             for config, res, ts in results if config == item])
             if existing > 0:
                 print("** Found %d results for %r" % (existing, item))
+            if config.repeat > existing and need_setup:
+                launch(need_setup)
+                need_setup = None
             for i in range(existing, config.repeat):
                 print("> Running iteration %d for %r" % (i, item))
                 results.append((item, launch(item), time.time()))
