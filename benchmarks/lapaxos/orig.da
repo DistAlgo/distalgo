@@ -42,7 +42,7 @@ class Acceptor(process, controller.Controllee):
     def receive(msg= ('prepare', n), from_= p):
         if each(sent(('respond', n2, _)), has= n > n2):
             prop = anyof(setof((n, v), sent(('accepted', n, v)),
-                               n==max(setof((n, v), sent(('accepted', n, v))))))
+                               n==max(setof(n, sent(('accepted', n, v))))))
             send(('respond', n, prop), to =p)
 
     def receive(msg= ('accept', n, v)):
