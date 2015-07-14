@@ -1,6 +1,6 @@
-# Copyright (c) 2014 Jon Brandvein, Bo Lin, Yanhong Annie Liu
-# Copyright (c) 2014 Stony Brook University
-# Copyright (c) 2014 The Research Foundation of SUNY
+# Copyright (c) 2015 Jon Brandvein, Bo Lin, Yanhong Annie Liu
+# Copyright (c) 2015 Stony Brook University
+# Copyright (c) 2015 The Research Foundation of SUNY
 #
 # Permission is hereby granted, free of charge, to any person
 # obtaining a copy of this software and associated documentation files
@@ -33,21 +33,18 @@ controllees to expect, and does the following steps:
 
     1. Wait for nprocs many ('CTL_Ready',) messages.
     2. Broadcast ('CTL_Start',) to everyone.
-    3. Wait for nprocs many ('CTL_Done', cputime) messages.
+    3. Wait for nprocs many ('CTL_Done', rudata) messages.
     4. Send ('CTL_Terminate',) to everyone.
 
-It then outputs two metrics:
-
-    1) The wall-clock time, as measured by the controller, between
-       the beginning of step (2) and the end of step (3);
-    
-    2) The total sum of the process times, as measured by the
-       controllees between receiving CTL_Start and sending CTL_Done. 
-
-Note in particular that these two measurements exclude the time needed
+It then outputs platform-dependent metrics of performance.
+Wall-clock time is measured by the controller between the beginning
+of step (2) and the end of step (3). Process time is measured by
+each controllee between receiving CTL_Start and sending CTL_Done;
+these are summed together and reported by the controller. Note in
+particular that these time measurements exclude the time needed
 to create and destroy the DistAlgo processes.
 
-This data is printed on stdout in the form of a line "OUTPUT: <data>"
+This data is printed on stdout in the form of a line "###OUTPUT: <data>"
 where data is a simple JSON-encoded object.
 
 To adapt a DistAlgo program to use this, make the following changes.
@@ -74,14 +71,72 @@ To adapt a DistAlgo program to use this, make the following changes.
     passed-in arguments.
 """
 
+
 import sys
 import time
-import resource
 import json
-from collections import namedtuple
 
-ResourceData = namedtuple("ResourceData", "ru_utime, ru_stime, ru_maxrss")
+
+# Resource usage data tracking. Reports several measurements
+# of time between start and end, and memory usage at end.
+
+class WinResourceUsageData:
+    
+    """Tracks process time only."""
+    
+    def start(self):
+        self.start_cputime = time.process_time()
+    
+    def end(self):
+        self.end_cputime = time.process_time()
+        
+        self.results = {
+            'Total_process_time': self.end_cputime - self.start_cputime,
+        }
+    
+    @classmethod
+    def aggregate(cls, rudata_points):
+        return {'Total_process_time': sum(p.results['Total_process_time']
+                                          for p in rudata_points)}
+
+class PosixResourceUsageData:
+    
+    """Tracks utime, stime, and maxrss."""
+    
+    def start(self):
+        self.start_data = resource.getrusage(resource.RUSAGE_SELF)
+    
+    def end(self):
+        self.end_data = resource.getrusage(resource.RUSAGE_SELF)
+        
+        def diff(attr):
+            return (getattr(self.end_data, attr) -
+                    getattr(self.start_data, attr))
+        
+        self.results = {
+            'Total_user_time': diff('ru_utime'),
+            'Total_system_time': diff('ru_stime'),
+            'Total_process_time': diff('ru_utime') + diff('ru_stime'),
+            'Total_memory': self.end_data.ru_maxrss,
+        }
+    
+    @classmethod
+    def aggregate(cls, rudata_points):
+        def sumof(attr):
+            return sum(p.results[attr] for p in rudata_points)
+        return {k: sumof(k) for k in [
+                'Total_user_time', 'Total_system_time',
+                'Total_process_time', 'Total_memory']}
+
+if sys.platform == "win32":
+    ResourceUsageData = WinResourceUsageData
+else:
+    import resource
+    ResourceUsageData = PosixResourceUsageData
+
+
 ExcludedProcs = set()
+
 
 class Controller(process):
     
@@ -91,14 +146,9 @@ class Controller(process):
         self.ps = set()
         self.readys = 0
         self.dones = 0
-
+        
         self.collected = 0
-        # Total of all processes' cputime.
-        self.ru_cputime = 0
-        # Total of all processes' user time.
-        self.ru_utime = 0
-        # Total of all processes' max memory footprint.
-        self.ru_maxrss = 0
+        self.rudata_points = []
         
         self.ctl_verbose = True
     
@@ -116,9 +166,7 @@ class Controller(process):
         # Count dones.
         dones += 1
         if source._proctype not in ExcludedProcs:
-            ru_utime += rudata.ru_utime
-            ru_cputime += rudata.ru_utime + rudata.ru_stime
-            ru_maxrss += rudata.ru_maxrss
+            rudata_points.append(rudata)
             collected += 1
         verboutput('Got Done from {} ({}/{})'.format(source, dones, nprocs))
     
@@ -136,11 +184,9 @@ class Controller(process):
         verboutput("Everyone done")
         bcast(('CTL_Terminate',), to=ps)
         
-        jsondata = {'Wallclock_time': t2 - t1,
-                    'Total_processes': collected,
-                    'Total_process_time': ru_cputime,
-                    'Total_user_time': ru_utime,
-                    'Total_memory': ru_maxrss}
+        jsondata = ResourceUsageData.aggregate(rudata_points)
+        jsondata['Wallclock_time'] = t2 - t1
+        jsondata['Total_processes'] = collected
         jsonoutput = json.dumps(jsondata)
         print("###OUTPUT: " + jsonoutput)
         
@@ -151,7 +197,7 @@ class Controllee(process):
     def setup(ctl):
         self.ctl_starttime = 0
         self.ctl_endtime = 0
-        self.rudata_start = None
+        self.rudata = ResourceUsageData()
         self.ctl_verbose = True
     
     def verboutput(s):
@@ -162,28 +208,12 @@ class Controllee(process):
         # Tell controller we're initialized, then wait for the signal.
         send(('CTL_Ready',), to=ctl)
         await(received(('CTL_Start',)))
-
-        if sys.platform == "win32":
-            ctl_starttime = time.process_time()
-        else:
-            rudata_start = resource.getrusage(resource.RUSAGE_SELF)
+        self.rudata.start()
     
     def ctl_end():
-        if sys.platform == "win32":
-            ctl_endtime = time.process_time()
-            rudata = ResourceData(
-                ru_utime=ctl_endtime - ctl_starttime,
-                ru_stime=ctl_endtime - ctl_starttime,
-                ru_maxrss=0)
-        else:
-            rudata_end = resource.getrusage(resource.RUSAGE_SELF)
-            rudata = ResourceData(
-                ru_utime=rudata_end.ru_utime - rudata_start.ru_utime,
-                ru_stime=rudata_end.ru_stime - rudata_start.ru_stime,
-                ru_maxrss=rudata_end.ru_maxrss)
-        
+        self.rudata.end()
         # Tell controller we're done, wait for signal.
-        send(('CTL_Done', rudata), to=ctl)
+        send(('CTL_Done', self.rudata), to=ctl)
         await(received(('CTL_Terminate',)))
         verboutput("Terminating...")
     
