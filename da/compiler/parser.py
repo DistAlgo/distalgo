@@ -949,10 +949,6 @@ class Parser(NodeVisitor):
         self.pop_state()
 
     def visit_ImportFrom(self, node):
-        if type(self.current_parent) is not dast.Program:
-            self.error("'import' statement is only allowed at the top level.",
-                       node)
-            return
         stmtobj = self.create_stmt(dast.PythonStmt, node)
         for alias in node.names:
             if alias.asname is not None:
