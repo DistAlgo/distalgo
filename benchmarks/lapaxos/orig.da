@@ -3,7 +3,6 @@ from random import randint
 controller = import_da('controller')
 TIMEOUT = 1
 
-@controller.excluded
 class Proposer(process, controller.Controllee):
     def setup(ctl, acceptors:set):
         super().setup(ctl)
@@ -35,6 +34,7 @@ class Proposer(process, controller.Controllee):
     def anyof(s):
         return next(iter(s)) if s else None
 
+@controller.rugroup('bo_measured')
 class Acceptor(process, controller.Controllee):
     def setup(ctl, learners:set):
         super().setup(ctl)
@@ -57,7 +57,6 @@ class Acceptor(process, controller.Controllee):
         """return any element of set s if s is not empty or 'None' otherwise"""
         return next(iter(s)) if s else None
 
-@controller.excluded
 class Learner(process, controller.Controllee):
     def setup(ctl, acceptors:set, proposer:Proposer):
         super().setup(ctl)

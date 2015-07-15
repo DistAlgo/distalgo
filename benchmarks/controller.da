@@ -29,23 +29,38 @@ and lives for the duration of the benchmark.
 A single controller process is created to coordinate when the
 other processes ("controllees") begin and end, and to collect
 their results. The controller is initialized with the number of
-controllees to expect, and does the following steps:
+controllees (nprocs) to expect, and does the following steps:
 
     1. Wait for nprocs many ('CTL_Ready',) messages.
     2. Broadcast ('CTL_Start',) to everyone.
-    3. Wait for nprocs many ('CTL_Done', rudata) messages.
+    3. Wait for nprocs many ('CTL_Done', rudata, rugroup_id) messages.
     4. Send ('CTL_Terminate',) to everyone.
 
-It then outputs platform-dependent metrics of performance.
-Wall-clock time is measured by the controller between the beginning
-of step (2) and the end of step (3). Process time is measured by
-each controllee between receiving CTL_Start and sending CTL_Done;
-these are summed together and reported by the controller. Note in
-particular that these time measurements exclude the time needed
-to create and destroy the DistAlgo processes.
+The controllees will send CTL_Ready as soon as they have started up,
+and they will wait for CTL_Terminate before destroying themselves.
+This lets everyone measure the time between the beginning of step (2)
+and the end of step (3), excluding the time needed by the system for
+creating and destroying processes.
 
-This data is printed on stdout in the form of a line "###OUTPUT: <data>"
-where data is a simple JSON-encoded object.
+Depending on the platform, controllees will report their process time
+and memory usage, while the controller will measure wall-clock time.
+The controller will dump all statistics out in the form of a line
+
+    ###OUTPUT: <data>
+
+where <data> is a JSON-encoded object with the following form:
+
+    {'Wallclock_time': <time value>
+     'All': <metrics>
+     <group 1>: <metrics>
+     ...
+     <group n>: <metrics>
+    }
+
+Each <metrics> is a JSON object with time/memory usage info. Metrics
+for all processes managed by the controller are aggregated under the
+'All' key. In addition, if a process's class uses the rugroup decorator,
+its results will be separately aggregated under a group key.
 
 To adapt a DistAlgo program to use this, make the following changes.
 
@@ -59,6 +74,9 @@ To adapt a DistAlgo program to use this, make the following changes.
       - add a process field and setup() parameter "ctl"
       - in the body of setup(), add the line "super().setup(ctl)"
       - above the definition of run(), add the decorator "@controller.run"
+      - optionally, add the decorator @controller.rugroup(<id>) to the class,
+        to make this class's processes group their result metrics under
+        the key <id>
     
     In main(), first create a Controller process using the code
     
@@ -75,6 +93,7 @@ To adapt a DistAlgo program to use this, make the following changes.
 import sys
 import time
 import json
+from itertools import chain
 
 
 # Resource usage data tracking. Reports several measurements
@@ -96,8 +115,11 @@ class WinResourceUsageData:
     
     @classmethod
     def aggregate(cls, rudata_points):
-        return {'Total_process_time': sum(p.results['Total_process_time']
-                                          for p in rudata_points)}
+        return {
+            'Total_process_time': sum(p.results['Total_process_time']
+                                      for p in rudata_points),
+            'Total_processes': len(rudata_points),
+        }
 
 class PosixResourceUsageData:
     
@@ -124,18 +146,17 @@ class PosixResourceUsageData:
     def aggregate(cls, rudata_points):
         def sumof(attr):
             return sum(p.results[attr] for p in rudata_points)
-        return {k: sumof(k) for k in [
-                'Total_user_time', 'Total_system_time',
-                'Total_process_time', 'Total_memory']}
+        aggr_results = {k: sumof(k) for k in [
+            'Total_user_time', 'Total_system_time',
+            'Total_process_time', 'Total_memory']}
+        aggr_results['Total_processes'] = len(rudata_points)
+        return aggr_results
 
 if sys.platform == "win32":
     ResourceUsageData = WinResourceUsageData
 else:
     import resource
     ResourceUsageData = PosixResourceUsageData
-
-
-ExcludedProcs = set()
 
 
 class Controller(process):
@@ -147,8 +168,9 @@ class Controller(process):
         self.readys = 0
         self.dones = 0
         
-        self.collected = 0
-        self.rudata_points = []
+        # Dictionary from resource usage group identifier
+        # to lists of rudata points for processes in that group.
+        self.rudata_points = {}
         
         self.ctl_verbose = True
     
@@ -162,12 +184,10 @@ class Controller(process):
         readys += 1
         verboutput('Got Ready from {} ({}/{})'.format(source, readys, nprocs))
     
-    def receive(msg=('CTL_Done', rudata), from_=source):
-        # Count dones.
+    def receive(msg=('CTL_Done', rudata, rugroup_id), from_=source):
+        # Count dones, record metrics.
         dones += 1
-        if source._proctype not in ExcludedProcs:
-            rudata_points.append(rudata)
-            collected += 1
+        rudata_points.setdefault(rugroup_id, []).append(rudata)
         verboutput('Got Done from {} ({}/{})'.format(source, dones, nprocs))
     
     def run():
@@ -184,9 +204,14 @@ class Controller(process):
         verboutput("Everyone done")
         bcast(('CTL_Terminate',), to=ps)
         
-        jsondata = ResourceUsageData.aggregate(rudata_points)
+        jsondata = {}
+        for rugroup_id, points in rudata_points.items():
+            if rugroup_id is None:
+                continue
+            jsondata[rugroup_id] = ResourceUsageData.aggregate(points)
+        allpoints = list(chain(*rudata_points.values()))
+        jsondata['All'] = ResourceUsageData.aggregate(allpoints)
         jsondata['Wallclock_time'] = t2 - t1
-        jsondata['Total_processes'] = collected
         jsonoutput = json.dumps(jsondata)
         print("###OUTPUT: " + jsonoutput)
         
@@ -195,8 +220,6 @@ class Controller(process):
 class Controllee(process):
     
     def setup(ctl):
-        self.ctl_starttime = 0
-        self.ctl_endtime = 0
         self.rudata = ResourceUsageData()
         self.ctl_verbose = True
     
@@ -205,15 +228,18 @@ class Controllee(process):
             output(s)
     
     def ctl_begin():
-        # Tell controller we're initialized, then wait for the signal.
+        # Tell controller we're initialized, then wait for the signal
+        # before starting. Start recording metrics.
         send(('CTL_Ready',), to=ctl)
         await(received(('CTL_Start',)))
         self.rudata.start()
     
     def ctl_end():
+        # Stop recording metrics. Tell controller we're done,
+        # then wait for the signal before terminating.
         self.rudata.end()
-        # Tell controller we're done, wait for signal.
-        send(('CTL_Done', self.rudata), to=ctl)
+        rugroup_id = getattr(self, 'ctl_rugroup_id', None)
+        send(('CTL_Done', self.rudata, rugroup_id), to=ctl)
         await(received(('CTL_Terminate',)))
         verboutput("Terminating...")
     
@@ -222,12 +248,19 @@ class Controllee(process):
         pass
 
 def run(func):
+    """Decorator for Process.run() to call controllee hooks."""
     def ctl_run(self):
         self.ctl_begin()
         func(self)
         self.ctl_end()
     return ctl_run
 
-def excluded(proc):
-    ExcludedProcs.add(proc)
-    return proc
+def rugroup(rugroup_id):
+    """Decorator for annotating a process controllee subclass
+    with a resource usage group identifier. Results for processes
+    in the same group will be aggregated reported together.
+    """
+    def f(proc):
+        proc.ctl_rugroup_id = rugroup_id
+        return proc
+    return f
