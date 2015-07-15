@@ -584,7 +584,8 @@ class Parser(NodeVisitor):
         notlabels = set()
         decorators = []
         for exp in node.decorator_list:
-            if isinstance(exp, Call) and exp.func.id == KW_DECORATOR_LABEL:
+            if isinstance(exp, Call) and isinstance(exp.func, Name) and \
+               exp.func.id == KW_DECORATOR_LABEL:
                 for arg in exp.args:
                     l, negated = self.parse_label_spec(arg)
                     if negated:
