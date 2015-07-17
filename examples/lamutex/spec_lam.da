@@ -1,0 +1,50 @@
+import sys
+
+class P(process):
+    def setup(s, nrequests): pass  # s is set of all other processes
+
+    def mutex(task):
+        -- request
+        c = logical_clock()
+        send(('request', c, self.id), to= s)
+        await(each(received(('request', c2, p)),
+                   has= received(('release', c2, p)) or (c, self.id) < (c2, p))
+              and each(p in s, has= some(received(('ack', c2, _p)), has= c2 > c)))
+        -- critical_section
+        task()
+        -- release
+        send(('release', c, self.id), to= s)
+
+    def receive(msg= ('request', _, p)):
+        send(('ack', logical_clock(), self.id), to= p)
+
+    def run():
+        def task(): output('in critical section')
+        for i in range(nrequests): mutex(task)
+
+        send(('done', self.id), to= s)
+        await(each(p in s, has= received(('done', p))))
+        output('terminating')
+
+def main():
+    nprocs = int(sys.argv[1]) if len(sys.argv) > 1 else 10
+    nrequests = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+
+    config(channel= 'fifo', clock= 'Lamport')
+
+    ps = new(P, num= nprocs)
+    for p in ps: setup(p, (ps-{p}, nrequests))
+    start(ps)
+
+# This is an executable specification that simplifies the algorithm in
+# Lamport, L. (1978). "Time, clocks, and the ordering of events in a
+# distributed system".  Communications of the ACM, 21(7):558-565.
+
+# The simplification is to remove an unnecessary queue and message handler;
+# release msgs use the request time, not unused timestamps, to replace queue.
+
+# This code includes setup and termination of a given number of processes
+# each serving a given number of requests.
+
+# All labels are not needed,
+# leaving 9 lines total for the algorithm body and message handler.
