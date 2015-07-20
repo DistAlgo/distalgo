@@ -1,10 +1,9 @@
 import sys
 from random import randint
 controller = import_da('controller')
-TIMEOUT = 1
 
 class Proposer(process, controller.Controllee):
-    def setup(ctl, acceptors:set):
+    def setup(ctl, acceptors:set, timeout):
         super().setup(ctl)
         self.n = None              # proposal number
         self.majority = acceptors  # majority of acceptors; all in other papers
@@ -22,7 +21,7 @@ class Proposer(process, controller.Controllee):
             send(('accept', n, v), to= responded)
             #output('### chose', n, v)
 
-        elif timeout(TIMEOUT):
+        elif timeout(timeout):
             #output('failed proposal number', n)
             pass
 
@@ -58,7 +57,7 @@ class Acceptor(process, controller.Controllee):
         return next(iter(s)) if s else None
 
 class Learner(process, controller.Controllee):
-    def setup(ctl, acceptors:set, proposer:Proposer):
+    def setup(ctl, acceptors:set, proposer:Proposer, timeout):
         super().setup(ctl)
 
     def learn():
@@ -67,7 +66,7 @@ class Learner(process, controller.Controllee):
                            > len(acceptors)/2)):
             output('learned', n, v)
 
-        elif timeout(TIMEOUT * 10):
+        elif timeout(timeout):
             output('failed learning anything')
 
     @controller.run
@@ -78,16 +77,17 @@ class Learner(process, controller.Controllee):
 def main():
     nacceptors = int(sys.argv[1]) if len(sys.argv) > 1 else 3
     nproposers = int(sys.argv[2]) if len(sys.argv) > 2 else 3
+    timeout = int(sys.argv[3]) if len(sys.argv) > 3 else 1
 
     ctl = new(controller.Controller, num= 1)
     setup(ctl, (nacceptors + nproposers * 2, ))
     start(ctl)
 
     acceptors = new(Acceptor, num= nacceptors)
-    proposers = new(Proposer, (ctl, acceptors,), num= nproposers)
+    proposers = new(Proposer, (ctl, acceptors, timeout), num= nproposers)
     learners = new(Learner, num= nproposers)
     for a in acceptors: setup(a, (ctl, learners,))
-    for p, l in zip(proposers, learners): setup(l, (ctl, acceptors, p))
+    for p, l in zip(proposers, learners): setup(l, (ctl, acceptors, p, timeout))
     start(acceptors | proposers | learners)
 
 # This is an executable specification of the algorithm described in
