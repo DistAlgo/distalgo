@@ -986,7 +986,7 @@ class Parser(NodeVisitor):
                             "unrecognized keyword: '%s'." % kw.arg)
                 if len(keywords) > 0:
                     raise MalformedStatementError(
-                        "missing required keywords: " + keywords)
+                        "missing required keywords: " + str(keywords))
         except MalformedStatementError as e:
             # Pre-format an error message for the common case:
             e.node = node
