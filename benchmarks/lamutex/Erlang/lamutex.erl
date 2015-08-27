@@ -1,7 +1,7 @@
-%% Copyright (c) 2010-2014 Bo Lin
-%% Copyright (c) 2010-2014 Yanhong Annie Liu
-%% Copyright (c) 2010-2014 Stony Brook University
-%% Copyright (c) 2010-2014 The Research Foundation of SUNY
+%% Copyright (c) 2010-2015 Bo Lin
+%% Copyright (c) 2010-2015 Yanhong Annie Liu
+%% Copyright (c) 2010-2015 Stony Brook University
+%% Copyright (c) 2010-2015 The Research Foundation of SUNY
 
 %% Permission is hereby granted, free of charge, to any person
 %% obtaining a copy of this software and associated documentation files
