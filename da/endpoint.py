@@ -42,7 +42,7 @@ class EndPoint:
 
     def __init__(self, name=None, proctype=None):
         if name is None:
-            self._name = socket.gethostname()
+            self._name = 'localhost'
         else:
             self._name = name
         self._proc = None
