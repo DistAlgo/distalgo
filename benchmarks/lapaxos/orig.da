@@ -15,7 +15,7 @@ class Proposer(process, controller.Controllee):
         if await(len(setof(a, received(('respond', _n, _), from_ =a)))
                  > len(acceptors)/2):
             v = anyof(setof(v, received(('respond', _n, (n2, v))),
-                            n2==max(setof(n3, received(('respond', _n, (n3, v))))))
+                            n2==max(setof(n2, received(('respond', _n, (n2, _))))))
                       or {randint(1,100)})  # any value, pick in 1..100
             responded = setof(a, received(('respond', _n, _), from_ =a))
             send(('accept', n, v), to= responded)
@@ -40,9 +40,9 @@ class Acceptor(process, controller.Controllee):
 
     def receive(msg= ('prepare', n), from_= p):
         if each(sent(('respond', n2, _)), has= n > n2):
-            prop = anyof(setof((n, v), sent(('accepted', n, v)),
-                               n==max(setof(n, sent(('accepted', n, v))))))
-            send(('respond', n, prop), to =p)
+            maxprop = anyof(setof((n, v), sent(('accepted', n, v)),
+                               n==max(setof(n, sent(('accepted', n, _))))))
+            send(('respond', n, maxprop), to =p)
 
     def receive(msg= ('accept', n, v)):
         if not some(sent(('respond', n2, _)), has= n2 > n):
