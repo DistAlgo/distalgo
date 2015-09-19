@@ -28,6 +28,7 @@ import random
 import select
 import socket
 import logging
+import os
 
 class EndPoint:
     """Represents a target for sending of messages.
@@ -42,7 +43,7 @@ class EndPoint:
 
     def __init__(self, name=None, proctype=None):
         if name is None:
-            self._name = 'localhost'
+            self._name = socket.gethostname()
         else:
             self._name = name
         self._proc = None
@@ -61,7 +62,7 @@ class EndPoint:
 
     def getlogname(self):
         if self._address is not None:
-            return "%s_%s" % (self._address[0], str(self._address[1]))
+            return "%s_%s" % (self._name, str(self._address[1]))
         else:
             return self._name
 
@@ -103,7 +104,7 @@ class EndPoint:
 
     def __str__(self):
         if self._address is not None:
-            return str(self._address)
+            return str((self._name, self._address[1]))
         else:
             return self._name
 
@@ -159,9 +160,13 @@ class TcpEndPoint(EndPoint):
         TcpEndPoint.senders = LRU(MAX_TCP_CONN)
 
         self._conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            address = socket.gethostbyname_ex(self._name)[2][0]
+        except socket.gaierror:
+            address = self._name
         if port is None:
             while True:
-                self._address = (self._name,
+                self._address = (address,
                                  random.randint(MIN_TCP_PORT, MAX_TCP_PORT))
                 try:
                     self._conn.bind(self._address)
@@ -169,7 +174,7 @@ class TcpEndPoint(EndPoint):
                 except socket.error:
                     pass
         else:
-            self._address = (self._name, port)
+            self._address = (address, port)
             self._conn.bind(self._address)
 
         self._conn.listen(10)
@@ -402,9 +407,14 @@ class UdpEndPoint(EndPoint):
         UdpEndPoint.sender = None
 
         self._conn = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            address = socket.gethostbyname_ex(self._name)[2][0]
+        except socket.gaierror:
+            address = self._name
+
         if port is None:
             while True:
-                self._address = (self._name,
+                self._address = (address,
                                  random.randint(MIN_UDP_PORT, MAX_UDP_PORT))
                 try:
                     self._conn.bind(self._address)
@@ -412,7 +422,7 @@ class UdpEndPoint(EndPoint):
                 except socket.error:
                     pass
         else:
-            self._address = (self._name, port)
+            self._address = (address, port)
             self._conn.bind(self._address)
 
         self._log = logging.getLogger("runtime.UdpEndPoint(%s)" %
