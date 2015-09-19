@@ -9,9 +9,9 @@ class P(process, controller.Controllee):
         --request
         ownc = logical_clock()
         send(('request', ownc, self.id), to=s)    # send request to all processes
+        --cs
         await(each(p in s,
                    has=some(received(('ack', c, _p)), has=(c > ownc))))
-        --cs
         task()                  # critical section
         --release
         send(('ack', logical_clock(), self.id),
@@ -20,7 +20,10 @@ class P(process, controller.Controllee):
                            has=((c, p) >= (ownc, self.id)))))
 
     def receive(msg=('request', c, p)):
-        ownc = max(setof(c, sent(('request', c, self.id))) | {-1})
+        ownc = max(setof(c, sent(('request', c, self.id)),
+                         not each(p in s, has=some(received(('ack', c2, _p)),
+                                                   has= c2 > c))) |
+                   {-1})
         if ownc == -1 or (c, p) < (ownc, self.id):
             send(('ack', logical_clock(), self.id), to=p)
 
