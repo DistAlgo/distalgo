@@ -1,24 +1,26 @@
 import sys
 class P(process):
     def setup(s:set, n:int):           # pass in set of all processes
-        self.ownc = 0
+        pass
 
     def cs(task):
         --request
         ownc = logical_clock()
         send(('request', ownc, self.id), to=s)    # send request to all processes
         await(each(p in s,
-                   has=some(received(('ack', c, p)), has=(c > ownc))))
+                   has=some(received(('ack', c, _p)), has=(c > ownc))))
         --cs
         task()                  # critical section
         --release
+        output("Release!")
         send(('ack', logical_clock(), self.id),
              to=setof(p, p in s,
-                      some(received(('request', c, p)),
+                      some(received(('request', c, _p)),
                            has=((c, p) >= (ownc, self.id)))))
 
     def receive(msg=('request', c, p)):
-        if each(received(('request', _c, self.id)), has=((c, p) < (ownc, self.id))):
+        ownc = max(setof(c, sent(('request', c, self.id))) | {-1})
+        if ownc == -1 or (c, p) < (ownc, self.id):
             send(('ack', logical_clock(), self.id), to=p)
 
     def run():
