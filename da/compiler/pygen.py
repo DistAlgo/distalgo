@@ -919,7 +919,7 @@ class PythonGenerator(NodeVisitor):
         DEDGRD = AugAssign(pyName(node.unique_label), Sub(), Num(1))
         conds = []
         body = [INCGRD]
-        labelname = node.unique_label if node.label is None else node.label
+        labelname = node.label
         label = pyLabel(labelname, block=True,
                         timeout=(self.visit(node.timeout) if node.timeout is
                                  not None else None))

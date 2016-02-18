@@ -1819,7 +1819,7 @@ class Statement(DistNode):
 
     def __init__(self, parent, ast=None):
         super().__init__(parent, ast)
-        self.label = None
+        self._label = None
         self.index = Statement._index
         Statement._index += 1
 
@@ -1828,6 +1828,14 @@ class Statement(DistNode):
         node.label = self.label
         node.index = self.index
         return node
+
+    @property
+    def label(self):
+        return self._label
+
+    @label.setter
+    def label(self, label):
+        self._label = label
 
     @property
     def ordered_nameobjs(self):
@@ -2126,6 +2134,17 @@ class AwaitStmt(CompoundStmt):
         self.branches = []
         self.orelse = []
         self.timeout = None
+
+    @property
+    def label(self):
+        if self._label is not None:
+            return self._label
+        else:
+            return self.unique_label
+
+    @label.setter
+    def label(self, label):
+        self._label = label
 
     @property
     def is_in_loop(self):
