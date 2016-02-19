@@ -183,6 +183,7 @@ def pyFunctionDef(name, args=[], body=[], decorator_list=[], returns=None):
 def propagate_attributes(from_nodes, to_node):
     if isinstance(to_node, AST):
         if not (isinstance(from_nodes, list) or
+                isinstance(from_nodes, tuple) or
                 isinstance(from_nodes, set)):
             from_nodes = [from_nodes]
         for fro in from_nodes:
