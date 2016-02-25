@@ -66,7 +66,7 @@ class DistProcess(multiprocessing.Process):
 
     - `setup`: A function that initializes the process-local variables.
 
-    - `main`: The entry point of the process. This function defines the
+    - `run`: The entry point of the process. This function defines the
       activities of the process.
 
     Users should not instantiate this class directly, process instances should
@@ -242,11 +242,6 @@ class DistProcess(multiprocessing.Process):
         self._parent.send(('totalusrtime', self._usrtime), self.id)
         self._parent.send(('totalsystime', self._systime), self.id)
         self._parent.send(('totaltime', self._waltime), self.id)
-
-    def report_mem(self):
-        import pympler.asizeof
-        memusage = pympler.asizeof.asizeof(self) / 1024
-        self._parent.send(('mem', memusage), self.id)
 
     @builtin
     def exit(self, code=0):
