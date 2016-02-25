@@ -125,13 +125,27 @@ def dafile_to_pyast(filename, args=None):
     else:
         return None
 
+def dafile_to_pystr(filename, args=None):
+    """Generates executable Python code from DistAlgo source string.
+
+    'filename' is the filename of DistAlgo source file. Optional argument 'args'
+    is a Namespace object containing the command line parameters for the
+    compiler. Returns the generated Python code as a string.
+
+    """
+    pyast = dafile_to_pyast(filename, args)
+    if pyast is not None:
+        return to_source(pyast)
+    else:
+        return None
+
 def dastr_to_pystr(src, filename='<str>', args=None):
     """Generates executable Python code from DistAlgo source string.
 
     'src' is the DistAlgo source string to parse. Optional argument 'filename'
     is the filename that appears in error messages. Optional argument 'args'
     is a Namespace object containing the command line parameters for the
-    compiler. Returns the generated Python AST.
+    compiler. Returns the generated Python code as a string.
 
     """
     pyast = dastr_to_pyast(src, filename, args)

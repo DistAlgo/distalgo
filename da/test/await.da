@@ -1,0 +1,47 @@
+
+
+class P(process):
+    def setup():
+        self.d = 1
+        self.x = 1
+
+    def receive(msg=('Y',)):
+        d = 0
+
+    def receive(msg=('Z',)):
+        x = 0
+
+    def run():
+        --l
+        while await:
+            if d == 1:
+                output("d is 1.")
+            elif x == 1:
+                output("x is 1.")
+        else:
+            output("neither d nor x is 1.")
+
+class Q(process):
+    def setup(ps):
+        pass
+
+    def run():
+        output("Sending 'X'.")
+        send(('X',), to=ps)
+        await(False, 2)
+        output("Sending 'X'.")
+        send(('X',), to=ps)
+        await(False, 2)
+        output("Sending 'Y'.")
+        send(('Y',), to=ps)
+        await(False, 2)
+        output("Sending 'Z'.")
+        send(('Z',), to=ps)
+        while False:
+            output("Fail!")
+
+def main():
+    ps = new(P, [], 1)
+    qs = new(Q, [ps], 1)
+    start(ps)
+    start(qs)
