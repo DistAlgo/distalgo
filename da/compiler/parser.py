@@ -508,6 +508,7 @@ class Parser(NodeVisitor):
         return None
 
     def visit_Module(self, node):
+        dast.DistNode.reset_index()
         self.parse_module_header(node)
         self.program = dast.Program(None, node)
         self.program._compiler_options = self.module_args
@@ -521,6 +522,7 @@ class Parser(NodeVisitor):
         self.pop_state()
 
     def visit_Interactive(self, node):
+        dast.DistNode.reset_index()
         self.program = dast.InteractiveProgram(None, node)
         # Populate global scope with Python builtins:
         for name in PythonBuiltins:

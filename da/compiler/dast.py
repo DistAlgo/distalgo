@@ -48,6 +48,7 @@ class DistNode(AST):
     """
 
     _fields = []
+    _index = 0
     _attributes = ['lineno', 'col_offset']
 
     def __init__(self, parent=None, ast=None):
@@ -64,8 +65,13 @@ class DistNode(AST):
         self._parent = parent
         self.lineno = 0
         self.col_offset = 0
+        DistNode._index += 1
         if ast is not None:
             self.copy_location(ast)
+
+    @classmethod
+    def reset_index(cls):
+        cls._index = 0
 
     def clone(self):
         nodecls = type(self)
@@ -1161,13 +1167,10 @@ class DomainSpec(Expression):
 
     """
 
-    _index = 0
-
     def __init__(self, parent, ast=None):
         super().__init__(parent, ast)
         self.subexprs = [None, None]
         self.index = DomainSpec._index
-        DomainSpec._index += 1
 
     def clone(self):
         node = super().clone()
@@ -1244,8 +1247,6 @@ class QuantifiedExpr(BooleanExpr, QueryExpr):
 
     _fields = ['domains', 'operator'] + BooleanExpr._fields
 
-    _index = 0
-
     def __init__(self, parent, ast=None, op=None):
         super().__init__(parent, ast)
         # List of DomainSpec:
@@ -1256,7 +1257,6 @@ class QuantifiedExpr(BooleanExpr, QueryExpr):
         self.subexprs = [None]
         # Index for unique name generation:
         self.index = QuantifiedExpr._index
-        QuantifiedExpr._index += 1
 
     def clone(self):
         node = super().clone()
@@ -1489,14 +1489,12 @@ class PatternElement(DistNode):
     """A tree-structure representing a sub-component of a pattern.
     """
 
-    _index = 0
     _fields = ['value']
 
     def __init__(self, parent=None, ast=None, value=None):
         super().__init__(parent, ast)
         self.value = value
-        self._index = PatternElement._index
-        PatternElement._index += 1
+        self.index = PatternElement._index
 
     def clone(self):
         node = super().clone()
@@ -1516,7 +1514,7 @@ class PatternElement(DistNode):
 
     @property
     def unique_name(self):
-        return "_" + type(self).__name__ + str(self._index) + "_"
+        return "_" + type(self).__name__ + str(self.index) + "_"
 
     @property
     def ordered_boundpatterns(self):
@@ -1702,13 +1700,10 @@ class ListPattern(PatternElement):
 
 class PatternExpr(Expression):
 
-    _index = 0
-
     def __init__(self, parent, ast=None, pattern=None):
         super().__init__(parent, ast)
         self.subexprs = [pattern]
         self.index = PatternExpr._index
-        PatternExpr._index += 1
 
     def clone(self):
         node = super().clone()
@@ -1813,7 +1808,6 @@ class Statement(DistNode):
     """Base class for statements.
     """
 
-    _index = 0
     _fields = []
     _attributes = ['label'] + DistNode._attributes
 
@@ -1821,7 +1815,6 @@ class Statement(DistNode):
         super().__init__(parent, ast)
         self._label = None
         self.index = Statement._index
-        Statement._index += 1
 
     def clone(self):
         node = super().clone()
@@ -2393,7 +2386,6 @@ class Event(DistNode):
 class EventHandler(Function):
 
     _attributes = ['labels', 'notlabels'] + Function._attributes
-    _index = 0
 
     def __init__(self, parent, ast=None, name=None, events=[],
                  labels=None, notlabels=None):
@@ -2402,7 +2394,6 @@ class EventHandler(Function):
         self.labels = labels
         self.notlabels = notlabels
         self.index = EventHandler._index
-        EventHandler._index += 1
 
     @property
     def name(self):
