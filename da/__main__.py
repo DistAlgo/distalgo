@@ -28,8 +28,8 @@ import argparse
 
 __version__ = "1.0.0b15"
 
-from .api import entrypoint
-from .common import set_global_options
+from da.api import entrypoint
+from da.common import set_global_options
 
 if hasattr(sys, '_real_argv'):
     sys.argv[0] = sys._real_argv

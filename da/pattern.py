@@ -1,4 +1,4 @@
-from .common import freeze
+from da.common import freeze
 SELF_ID = None
 
 def initialize(pid):

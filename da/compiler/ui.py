@@ -29,11 +29,11 @@ import argparse
 
 from da.tools.unparse import Unparser
 
-from .parser import Parser
-from .pygen import PythonGenerator
-from .pseudo import to_pseudo
-from .incgen import gen_inc_module
-from .utils import is_valid_debug_level, set_debug_level, to_source
+from da.compiler.parser import Parser
+from da.compiler.pygen import PythonGenerator
+from da.compiler.pseudo import to_pseudo
+from da.compiler.incgen import gen_inc_module
+from da.compiler.utils import is_valid_debug_level, set_debug_level, to_source
 
 # DistAlgo filename suffix
 DA_SUFFIX = "da"

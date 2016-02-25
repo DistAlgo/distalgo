@@ -1,8 +1,8 @@
 # runtime package
 
-from . import common, api, pattern as pat, compiler, sim
+from da import common, api, pattern as pat, compiler, sim
 
-from .__main__ import libmain, __version__
+from da.__main__ import libmain, __version__
 
 DistProcess = sim.DistProcess
 import_da = api.import_da

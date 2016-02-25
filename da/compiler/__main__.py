@@ -24,7 +24,7 @@
 
 # Main module entry point
 import sys
-from . import ui
+from da.compiler import ui
 
 if hasattr(sys, '_real_argv'):
     sys.argv[0] = sys._real_argv

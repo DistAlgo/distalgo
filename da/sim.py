@@ -36,7 +36,7 @@ import traceback
 import collections
 import multiprocessing
 
-from . import pattern, common, endpoint
+from da import pattern, common, endpoint
 
 builtin = common.builtin
 

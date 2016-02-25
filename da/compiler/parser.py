@@ -26,9 +26,9 @@ import builtins
 import sys
 from ast import *
 
-from .. import common, api
-from . import dast
-from .utils import printe, printw, printd, Namespace
+from da import common, api
+from da.compiler import dast
+from da.compiler.utils import printe, printw, printd, Namespace
 
 # DistAlgo keywords
 KW_ENTRY_POINT = "main"

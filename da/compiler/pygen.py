@@ -25,8 +25,8 @@
 import sys
 from ast import *
 from itertools import chain
-from . import dast
-from .utils import printd, printw, printe
+from da.compiler import dast
+from da.compiler.utils import printd, printw, printe
 
 OperatorMap = {
     dast.AddOp : Add,
