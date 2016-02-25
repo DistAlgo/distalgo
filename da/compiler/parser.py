@@ -997,10 +997,8 @@ class Parser(NodeVisitor):
 
         return True
 
-    def kw_check(self, node, names):
-        if not isinstance(node, Name):
-            return False
-        if node.id not in names:
+    def kw_check(self, names, node):
+        if not isinstance(node, Name) or node.id not in names:
             return False
         return True
 
@@ -1037,12 +1035,11 @@ class Parser(NodeVisitor):
                 stmtobj.branches.append(branch)
                 if len(e.args) == 2:
                     stmtobj.timeout = self.visit(e.args[1])
-                    if len(e.keywords) > 0:
-                        if stmtobj.timeout is not None:
-                            self.warn(
-                                "duplicate timeout value in await statement.",
-                                e)
-                            stmtobj.timeout = self.visit(kw.value)
+                if len(e.keywords) > 0:
+                    if stmtobj.timeout is not None:
+                        self.warn("duplicate timeout spec in await statement.",
+                                  e)
+                    stmtobj.timeout = self.visit(e.keywords[0].value)
 
             elif self.expr_check(KW_SEND, 1, 1, e, keywords={KW_SEND_TO}):
                 stmtobj = self.create_stmt(dast.SendStmt, node)
@@ -1109,6 +1106,58 @@ class Parser(NodeVisitor):
 
     # ~~~
 
+    def parse_branches_for_await(self, stmtobj, node):
+        """Parse all branches except the first in an await statement.
+
+        'stmtobj' is the DistNode instance of the await statement to be
+        populated; 'node' is the input Python AST node corresponding to the
+        outermost 'If' statement. This method is common code to parse the second
+        to last branches of AwaitStmt and LoopingAwaitStmt, since the first
+        branch has difference syntax for the two types of await ('if
+        await(cond)...' for normal branching await, and just plain 'if cond...'
+        for 'while await').
+
+        """
+        while True:
+            else_ = node.orelse
+            if len(else_) == 0:
+                break
+            elif len(else_) == 1 and isinstance(else_[0], If):
+                # This is an 'elif' branch:
+                node = else_[0]
+                if self.expr_check(KW_AWAIT_TIMEOUT, 1 ,1, node.test):
+                    stmtobj.timeout = self.visit(node.test.args[0])
+                    if len(stmtobj.orelse) > 0:
+                        self.warn("multiple timeout branches in await"
+                                  " statement, all but the last one will be  "
+                                  " ignored.", node)
+                    if stmtobj.timeout is None:
+                        self.warn("timeout branch in await statement without "
+                                  "a timeout value.", node)
+                        stmtobj.orelse = []
+                    self.current_block = stmtobj.orelse
+                    self.body(node.body)
+                else:
+                    branch = dast.Branch(stmtobj, node,
+                                         condition=self.visit(node.test))
+                    self.current_block = branch.body
+                    self.body(node.body)
+                    stmtobj.branches.append(branch)
+            else:
+                # This is a dangling 'else' branch, treat it as the timeout
+                # branch:
+                if stmtobj.timeout is None:
+                    self.warn("timeout branch in await statement without "
+                              "a timeout value.", node)
+                if len(stmtobj.orelse) > 0:
+                    self.warn("multiple timeout branches in await"
+                              " statement, all but the last one will be  "
+                              " ignored.", node)
+                    stmtobj.orelse = []
+                self.current_block = stmtobj.orelse
+                self.body(else_)
+                break
+
     def visit_If(self, node):
         stmtobj = None
         try:
@@ -1117,32 +1166,17 @@ class Parser(NodeVisitor):
                 self.current_context = Read(stmtobj)
                 branch = dast.Branch(stmtobj, node.test,
                                      condition=self.visit(node.test.args[0]))
+                if len(node.test.args) == 2:
+                    stmtobj.timeout = self.visit(node.test.args[1])
+                if len(node.test.keywords) > 0:
+                    if stmtobj.timeout is not None:
+                        self.warn("duplicate timeout spec in await statement.",
+                                  e)
+                    stmtobj.timeout = self.visit(e.keywords[0].value)
                 self.current_block = branch.body
                 self.body(node.body)
                 stmtobj.branches.append(branch)
-                while True:
-                    else_ = node.orelse
-                    if len(else_) == 1 and isinstance(else_[0], If):
-                        node = else_[0]
-                        if self.expr_check(KW_AWAIT_TIMEOUT, 1 ,1, node.test):
-                            stmtobj.timeout = self.visit(node.test.args[0])
-                            self.current_block = stmtobj.orelse
-                            self.body(node.body)
-                            if len(node.orelse) > 0:
-                                self.error("timeout branch must be the last"
-                                           " branch of await statement", node)
-                        else:
-                            branch = dast.Branch(stmtobj, node,
-                                                 condition=self.visit(node.test))
-                            self.current_block = branch.body
-                            self.body(node.body)
-                            stmtobj.branches.append(branch)
-                    elif len(else_) == 0:
-                        break
-                    else:
-                        self.current_block = stmtobj.orelse
-                        self.body(else_)
-                        break
+                self.parse_branches_for_await(stmtobj, node)
 
             else:
                 stmtobj = self.create_stmt(dast.IfStmt, node)
@@ -1178,21 +1212,29 @@ class Parser(NodeVisitor):
     def visit_While(self, node):
         s = None
         try:
-            if self.expr_check(KW_AWAIT, 1, 2, node.test,
-                               optional_keywords={KW_AWAIT_TIMEOUT}):
+            if self.kw_check({KW_AWAIT}, node.test):
+                whilenode = node
                 s = self.create_stmt(dast.LoopingAwaitStmt, node)
                 self.current_context = Read(s)
-                s.condition = self.visit(node.test.args[0])
-                if len(node.test.args) == 2:
-                    s.timeout = self.visit(node.test.args[1])
+                if len(node.body) != 1 or not isinstance(node.body[0], If):
+                    self.error("malformed 'while await' statement.", node)
+                if isinstance(node.body[0], If):
+                    node = node.body[0]
+                    branch = dast.Branch(s, node,
+                                         condition=self.visit(node.test))
+                    self.current_block = branch.body
+                    self.body(node.body)
+                    s.branches.append(branch)
+                    self.parse_branches_for_await(s, node)
+                self.current_block = s.orfail
+                self.body(whilenode.orelse)
 
             else:
                 s = self.create_stmt(dast.WhileStmt, node)
                 self.current_context = Read(s)
                 s.condition = self.visit(node.test)
-            self.current_block = s.body
-            self.body(node.body)
-            if hasattr(s, "elsebody"):
+                self.current_block = s.body
+                self.body(node.body)
                 self.current_block = s.elsebody
                 self.body(node.orelse)
 

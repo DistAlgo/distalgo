@@ -932,7 +932,7 @@ class PythonGenerator(NodeVisitor):
             brnode = If(cond, ifbody, [])
             last.append(brnode)
             last = brnode.orelse
-        if len(node.orelse) > 0:
+        if node.timeout is not None:
             cond = pyAttr("self", "_timer_expired")
             ifbody = self.body(node.orelse)
             ifbody.append(INCGRD)
@@ -957,41 +957,41 @@ class PythonGenerator(NodeVisitor):
                                    [Break()], []))
         return concat_bodies(conds, main)
 
-    def visit_BranchingAwaitStmt(self, node):
-        orlist = []
-        branches = ifbody = []
-        for branch in node.branches:
-            if branch.condition is None:
-                ifbody.extend(self.body(branch.body))
-            else:
-                test = self.visit(branch.condition)
-                orlist.append(test)
-                body = self.body(branch.body)
-                orelse = []
-                ifbody.append(If(test, body, orelse))
-                ifbody = orelse
-        cond = BoolOp(Or(), orlist)
-        test = UnaryOp(Not(), cond)
-        condfunc = pyFunctionDef(name="await_cond_%d" % hash(node),
-                                 body=[Return(test)])
-        awaitcall = pyCall(func=pyAttr(pyCall("super"), "_await_"),
-                           args=[pyName(condfunc.name)])
-        return concat_bodies(orlist, [condfunc, awaitcall, branches[0]])
-
     def visit_LoopingAwaitStmt(self, node):
-        cond = self.visit(node.condition)
-        test = UnaryOp(Not(), cond)
-        condfunc = pyFunctionDef(name="await_cond_%d" % hash(node),
-                                 body=[Return(test)])
-        awaitcall = pyCall(func=pyAttr(pyCall("super"), "_await"),
-                           args=[pyName(condfunc.name)])
-
-        mainbody = self.body(node.body)
-        orelse = [Break()]
-        ifcheck = If(cond, mainbody, orelse)
-        body = concat_bodies([cond], [condfunc, awaitcall, ifcheck])
-        ast = While(pyTrue(), body, [])
-        return [ast]
+        INCGRD = AugAssign(pyName(node.unique_label), Add(), Num(1))
+        labelname = node.label
+        body = [If(pyCompare(pyName(node.unique_label), Eq, Num(2)),
+                   [Break()],
+                   [(If(pyCompare(pyName(node.unique_label), Eq, Num(1)),
+                        [pyLabel(labelname, block=True,
+                                 timeout=(self.visit(node.timeout)
+                                          if node.timeout is not None
+                                          else None))], []))]),
+                Assign([pyName(node.unique_label)], Num(1))]
+        conds = []
+        last = body
+        for br in node.branches:
+            cond = self.visit(br.condition)
+            conds.append(cond)
+            ifbody = self.body(br.body)
+            brnode = If(cond, ifbody, [])
+            last.append(brnode)
+            last = brnode.orelse
+        if node.timeout is not None:
+            cond = pyAttr("self", "_timer_expired")
+            ifbody = self.body(node.orelse)
+            ifbody.append(INCGRD)
+            brnode = If(cond, ifbody, [])
+            last.append(brnode)
+            last = brnode.orelse
+        last.extend(self.body(node.orfail))
+        last.append(INCGRD)
+        whilenode = While(pyTrue(), body, [])
+        main = [Assign([pyName(node.unique_label)], Num(0))]
+        if node.timeout is not None:
+            main.append(Expr(pyCall(pyAttr("self", "_timer_start"))))
+        main.append(whilenode)
+        return concat_bodies(conds, main)
 
     def visit_ReturnStmt(self, node):
         if node.value is not None:

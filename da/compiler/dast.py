@@ -2162,15 +2162,13 @@ class AwaitStmt(CompoundStmt):
                             for l in chain(self.branches, self.orelse)
                             if l is not None]))
 
-class LoopingAwaitStmt(CompoundStmt):
+class LoopingAwaitStmt(AwaitStmt):
 
-    _fields = ['condition', 'timeout', 'body']
+    _fields = AwaitStmt._fields + ['orfail']
 
     def __init__(self, parent, ast=None):
         super().__init__(parent, ast)
-        self.condition = None
-        self.timeout = None
-        self.body = []
+        self.orfail = []
 
 class Branch(DistNode):
 
