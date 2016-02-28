@@ -2237,7 +2237,28 @@ class LoopCtrlStmt(SimpleStmt):
 class BreakStmt(LoopCtrlStmt): pass
 class ContinueStmt(LoopCtrlStmt): pass
 
-class PythonStmt(SimpleStmt): pass
+class ImportStmt(SimpleStmt):
+    _fields = ['items']
+
+    def __init__(self, parent, ast=None):
+        super().__init__(parent, ast)
+        self.items = []
+
+class ImportFromStmt(SimpleStmt):
+    _fields = ['module', 'items', 'level']
+
+    def __init__(self, parent, ast=None):
+        super().__init__(parent, ast)
+        self.module = None
+        self.items = []
+        self.level = 0
+
+class Alias(DistNode):
+    _fields = ['name', 'asname']
+    def __init__(self, parent, ast=None, name=None, asname=None):
+        super().__init__(parent, ast)
+        self.name = name
+        self.asname = asname
 
 class AssertStmt(SimpleStmt):
 

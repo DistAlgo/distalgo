@@ -1049,8 +1049,23 @@ class PythonGenerator(NodeVisitor):
     def visit_ContinueStmt(self, node):
         return [Continue()]
 
-    def visit_PythonStmt(self, node):
-        return [node.ast]
+    def visit_ImportStmt(self, node):
+        names = []
+        for item in node.items:
+            if item.asname is None:
+                names.append(alias(item.name.name, None))
+            else:
+                names.append(alias(item.name, item.asname.name))
+        return [Import(names)]
+
+    def visit_ImportFromStmt(self, node):
+        names = []
+        for item in node.items:
+            if item.asname is None:
+                names.append(alias(item.name.name, None))
+            else:
+                names.append(alias(item.name, item.asname.name))
+        return [ImportFrom(node.module, names, node.level)]
 
     def visit_AssertStmt(self, node):
         expr = self.visit(node.expr)

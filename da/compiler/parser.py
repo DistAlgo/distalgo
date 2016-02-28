@@ -952,14 +952,23 @@ class Parser(NodeVisitor):
         self.pop_state()
 
     def visit_ImportFrom(self, node):
-        stmtobj = self.create_stmt(dast.PythonStmt, node)
+        if hasattr(node, 'module'):
+            stmtobj = self.create_stmt(dast.ImportFromStmt, node)
+        else:
+            stmtobj = self.create_stmt(dast.ImportStmt, node)
         for alias in node.names:
             if alias.asname is not None:
-                name = alias.asname
+                nobj = self.current_scope.add_name(alias.asname)
+                nalias = dast.Alias(stmtobj, alias,
+                                    name=alias.name, asname=nobj)
             else:
-                name = alias.name
-            nobj = self.current_scope.add_name(name)
+                nobj = self.current_scope.add_name(alias.name)
+                nalias = dast.Alias(stmtobj, alias, name=nobj)
             nobj.add_assignment(stmtobj)
+            stmtobj.items.append(nalias)
+        if hasattr(node, 'module'):
+            stmtobj.module = node.module
+            stmtobj.level = node.level
         self.pop_state()
 
     visit_Import = visit_ImportFrom
