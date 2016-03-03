@@ -87,7 +87,7 @@ class DistNode(AST):
             self.col_offset = ast.col_offset
 
     def replace_child(self, oldnode, newnode):
-        """Replace all occurances of 'oldnode' with 'newnode' in the tree
+        """Replace all occurances of 'oldnode' with 'newnode' in the subtree
         rooted at this node.
 
         This is mainly used to implement Python 'global' and 'nonlocal'
@@ -95,8 +95,15 @@ class DistNode(AST):
         to NamedVar defined in outer scopes.
 
         """
-        pass
-
+        for fname, fvalue in iter_fields(self):
+            if isinstance(fvalue, list):
+                for idx, node in enumerate(fvalue):
+                    if node is oldnode:
+                        fvalue[idx] = newnode
+                    elif isinstance(node, DistNode):
+                        node.replace_child(oldnode, newnode)
+            elif fvalue is oldnode:
+                setattr(self, fname , newnode)
 
     def immediate_container_of_type(self, nodetype):
         node = self
@@ -295,8 +302,19 @@ class NameScope(DistNode):
         return set(self._names.keys())
 
     @property
+    def ordered_local_names(self):
+        return list(sorted(self._names.keys()))
+
+    @property
     def local_nameobjs(self):
         return set(self._names.values())
+
+    @property
+    def ordered_local_nameobjs(self):
+        res = []
+        for name in self.ordered_local_names:
+            res.append(self._names[name])
+        return res
 
 class LockableNameScope(NameScope):
     """A special type of NameScope that only accepts new names when it's
@@ -687,14 +705,6 @@ class Expression(DistNode):
             if isinstance(e, DistNode):
                 node.subexprs[i] = e.clone()
         return node
-
-    def replace_child(self, oldnode, newnode):
-        """Replace all occurances of 'oldnode' with 'newnode' in the tree
-        rooted at this node.
-        """
-        for idx, node in enumerate(self.subexprs):
-            if node is oldnode:
-                self.subexprs[idx] = newnode
 
     @property
     def scope(self):
@@ -1505,13 +1515,6 @@ class PatternElement(DistNode):
             node.value = self.value
         return node
 
-    def replace_child(self, oldnode, newnode):
-        """Replace all occurances of 'oldnode' with 'newnode' in the tree
-        rooted at this node.
-        """
-        if self.value is oldnode:
-            self.value = newnode
-
     @property
     def unique_name(self):
         return "_" + type(self).__name__ + str(self.index) + "_"
@@ -1642,6 +1645,10 @@ class TuplePattern(PatternElement):
         return node
 
     @property
+    def subexprs(self):
+        return self.value
+
+    @property
     def ordered_boundpatterns(self):
         return list(chain(*[v.ordered_boundpatterns for v in self.value]))
 
@@ -1675,6 +1682,10 @@ class ListPattern(PatternElement):
         node = super().clone()
         node.value = [v.clone() for v in self.value]
         return node
+
+    @property
+    def subexprs(self):
+        return self.value
 
     @property
     def ordered_boundpatterns(self):
@@ -1893,16 +1904,6 @@ class CompoundStmt(Statement):
         super().__init__(parent, ast)
         self.body = []
 
-    def replace_child(self, oldnode, newnode):
-        """Replace all occurances of 'oldnode' with 'newnode' in the tree
-        rooted at this node.
-        """
-        for idx, node in enumerate(self.body):
-            if node is oldnode:
-                self.body[idx] = newnode
-            elif node is not None:
-                node.replace_child(oldnode, newnode)
-
     @property
     def ordered_nameobjs(self):
         return list(chain(*[l.ordered_nameobjs for l in self.body
@@ -2108,15 +2109,6 @@ class ExceptHandler(DistNode):
     def ordered_nameobjs(self):
         return list(chain(*[l.ordered_nameobjs for l in self.body
                             if l is not None]))
-
-class TryFinallyStmt(CompoundStmt):
-
-    _fields = ['body', 'finalbody']
-
-    def __init__(self, parent, ast=None):
-        super().__init__(parent, ast)
-        self.body = []
-        self.finalbody = []
 
 class AwaitStmt(CompoundStmt):
 
@@ -2451,6 +2443,10 @@ class Process(CompoundStmt, ArgumentsContainer):
     @property
     def methodnames(self):
         return {f.name for f in self.functions}
+
+    @property
+    def event_handlers(self):
+        return list(chain(*[evt.handlers for evt in self.events]))
 
     def add_events(self, events):
         filtered = []
