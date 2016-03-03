@@ -840,9 +840,9 @@ class Parser(NodeVisitor):
                     self.current_process.setup = s
                 else:
                     self.current_process.methods.append(s)
-            elif (type(s.parent) is dast.Program and
+            elif (isinstance(s.parent, dast.Program) and
                   s.name == KW_ENTRY_POINT):
-                self.current_parent.entry_point = s
+                s.parent.entry_point = s
             # Ignore the label decorators:
             s.decorators, _, _ = self.parse_decorators(node)
             self.current_block = s.body
@@ -1091,6 +1091,12 @@ class Parser(NodeVisitor):
             elif (isinstance(self.current_parent, dast.Process) and
                   self.expr_check(KW_CONFIG, 0, 0, e, keywords=None)):
                 self.current_process.configurations.extend(
+                    self.parse_config_section(e))
+
+            elif (isinstance(self.current_parent, dast.Function) and
+                  isinstance(self.current_parent.parent, dast.Program) and
+                  self.expr_check(KW_CONFIG, 0, 0, e, keywords=None)):
+                self.current_parent.parent.configurations.extend(
                     self.parse_config_section(e))
 
             # 'yield' and 'yield from' should be statements, handle them here:
