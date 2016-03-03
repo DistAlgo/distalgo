@@ -31,7 +31,7 @@ from da.tools.unparse import Unparser
 
 from da.compiler.parser import Parser
 from da.compiler.pygen import PythonGenerator
-from da.compiler.pseudo import to_pseudo
+from da.compiler.pseudo import DastUnparser
 from da.compiler.incgen import gen_inc_module
 from da.compiler.utils import is_valid_debug_level, set_debug_level, to_source
 
@@ -174,12 +174,12 @@ def dafile_to_pseudofile(filename, outname=None):
                       (suffix, filename))
 
     daast = daast_from_file(filename)
-    psdstr = to_pseudo(daast)
-    if outname is None:
-        outname = purename + ".da"
-    with open(outname, "w") as outfd:
-        outfd.write(psdstr)
-        stderr.write("Written pseudo code file %s.\n"% outname)
+    if daast:
+        if outname is None:
+            outname = purename + ".dap"
+        with open(outname, "w") as outfd:
+            DastUnparser(daast, outfd)
+            stderr.write("Written pseudo code file %s.\n"% outname)
 
 def dafile_to_pyfile(args):
     """Compiles a DistAlgo source file to Python file.
@@ -351,10 +351,10 @@ def main(argv=None):
     ap.add_argument('-B', '--benchmark',
                     help="Print the elapsed wallclock time of the compile session.",
                     action='store_true', default=False)
-    # ap.add_argument('-p', help="Generate pseudo code instead of Python code.",
-    #                 action='store_true', dest="genpsd")
-    # ap.add_argument('--psdfile', help="Name of output pseudo code file.",
-    #                 dest="psdfile", default=None)
+    ap.add_argument('-p', help="Generate DistAlgo pseudo code.",
+                    action='store_true', dest="genpsd", default=False)
+    ap.add_argument('--psdfile', help="Name of DistAlgo pseudo code output file.",
+                    dest="psdfile", default=None)
     ap.add_argument('infile', metavar='SOURCEFILE', type=str,
                     help="DistAlgo input source file.")
 
@@ -381,8 +381,8 @@ def main(argv=None):
         except ValueError:
             stderr.write("Invalid debugging level %s.\n" % str(args.debug))
 
-    # if args.genpsd:
-    #     res =dafile_to_pseudofile(args.infile, args.psdfile)
+    if args.genpsd:
+        res =dafile_to_pseudofile(args.infile, args.psdfile)
     if args.geninc:
         res = dafile_to_incfiles(args)
     else:
