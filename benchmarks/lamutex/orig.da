@@ -2,7 +2,7 @@ import sys
 controller = import_da('controller')
 
 class P(process, controller.Controllee):
-    def setup(ctl, s:set, nrequests):  # s is set of all other processes
+    def setup(ctl, s:set, nrequests:int):  # s is set of all other processes
         super().setup(ctl)
         self.q = set()
 
@@ -13,7 +13,7 @@ class P(process, controller.Controllee):
         q.add(('request', c, self.id))
         await(each(('request', c2, p) in q,
                    has= (c2, p)==(c, self.id) or (c, self.id) < (c2, p)) and
-              each(p in s, has= some(received(('ack', c2, p)), has= c2 > c)))
+              each(p in s, has= some(received(('ack', c2, _p)), has= c2 > c)))
         -- critical_section
         task()
         -- release
