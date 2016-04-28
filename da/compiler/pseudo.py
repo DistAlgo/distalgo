@@ -81,6 +81,12 @@ EVENT_TYPES = {
 # We unparse those infinities to INFSTR.
 INFSTR = "1e" + repr(sys.float_info.max_10_exp + 1)
 
+def to_pseudo(tree):
+    import io
+    textbuf = io.StringIO(newline='')
+    DastUnparser(tree, textbuf)
+    return textbuf.getvalue()
+
 def interleave(inter, f, seq):
     """Call f on each item in seq, calling inter() in between.
     """

@@ -25,7 +25,6 @@
 import io
 import sys
 
-from da.compiler.pseudo import DastUnparser
 from da.tools.unparse import Unparser
 
 DB_ERROR = 0
@@ -38,11 +37,6 @@ Debug = DB_INFO
 def to_source(tree):
     textbuf = io.StringIO(newline='')
     Unparser(tree, textbuf)
-    return textbuf.getvalue()
-
-def to_pseudo(tree):
-    textbuf = io.StringIO(newline='')
-    DastUnparser(tree, textbuf)
     return textbuf.getvalue()
 
 def set_debug_level(level):

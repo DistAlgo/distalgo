@@ -89,6 +89,52 @@ def extract_label(node):
     else:
         return None
 
+##########################
+# Helper functions:
+##########################
+
+def daast_from_file(filename, args=None):
+    """Generates DistAlgo AST from source file.
+
+    'filename' is the filename of source file. Optional argument 'args' is a
+    Namespace object containing the command line parameters for the compiler.
+    Returns the generated DistAlgo AST.
+
+    """
+    try:
+        with open(filename, 'r') as infd:
+            global InputSize
+            src = infd.read()
+            InputSize = len(src)
+            return daast_from_str(src, filename, args)
+    except Exception as e:
+        print(type(e).__name__, ':', str(e), file=sys.stderr)
+        raise e
+    return None
+
+def daast_from_str(src, filename='<str>', args=None):
+    """Generates DistAlgo AST from source string.
+
+    'src' is the DistAlgo source string to parse. Optional argument 'filename'
+    specifies the filename that appears in error messages, defaults to
+    '<str>'. Optional argument 'args' is a Namespace object containing the
+    command line parameters for the compiler. Returns the generated DistAlgo
+    AST.
+
+    """
+    try:
+        dt = Parser(filename, args)
+        rawast = parse(src, filename)
+        dt.visit(rawast)
+        sys.stderr.write("%s compiled with %d errors and %d warnings.\n" %
+                     (filename, dt.errcnt, dt.warncnt))
+        if dt.errcnt == 0:
+            return dt.program
+    except SyntaxError as e:
+        sys.stderr.write("%s:%d:%d: SyntaxError: %s" % (e.filename, e.lineno,
+                                                    e.offset, e.text))
+    return None
+
 ##########
 # Operator mappings:
 ##########

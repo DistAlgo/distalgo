@@ -29,7 +29,7 @@ import argparse
 
 from da.tools.unparse import Unparser
 
-from da.compiler.parser import Parser
+from da.compiler.parser import Parser, daast_from_file
 from da.compiler.pygen import PythonGenerator
 from da.compiler.pseudo import DastUnparser
 from da.compiler.incgen import gen_inc_module
@@ -45,48 +45,6 @@ stderr = sys.stderr
 WallclockStart = 0
 InputSize = 0
 OutputSize = 0
-
-def daast_from_file(filename, args=None):
-    """Generates DistAlgo AST from source file.
-
-    'filename' is the filename of source file. Optional argument 'args' is a
-    Namespace object containing the command line parameters for the compiler.
-    Returns the generated DistAlgo AST.
-
-    """
-    try:
-        with open(filename, 'r') as infd:
-            global InputSize
-            src = infd.read()
-            InputSize = len(src)
-            return daast_from_str(src, filename, args)
-    except Exception as e:
-        print(type(e).__name__, ':', str(e), file=stderr)
-        raise e
-    return None
-
-def daast_from_str(src, filename='<str>', args=None):
-    """Generates DistAlgo AST from source string.
-
-    'src' is the DistAlgo source string to parse. Optional argument 'filename'
-    specifies the filename that appears in error messages, defaults to
-    '<str>'. Optional argument 'args' is a Namespace object containing the
-    command line parameters for the compiler. Returns the generated DistAlgo
-    AST.
-
-    """
-    try:
-        dt = Parser(filename, args)
-        rawast = ast.parse(src, filename)
-        dt.visit(rawast)
-        stderr.write("%s compiled with %d errors and %d warnings.\n" %
-                     (filename, dt.errcnt, dt.warncnt))
-        if dt.errcnt == 0:
-            return dt.program
-    except SyntaxError as e:
-        stderr.write("%s:%d:%d: SyntaxError: %s" % (e.filename, e.lineno,
-                                                    e.offset, e.text))
-    return None
 
 def dastr_to_pyast(src, filename='<str>', args=None):
     """Translates DistAlgo source string into executable Python AST.
