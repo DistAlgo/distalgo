@@ -2,7 +2,8 @@ import sys
 controller = import_da('controller')
 
 class Proposer(process, controller.Controllee):
-    def setup(ctl, acceptors:set, quorumsize, f, nrounds, timeout):
+    def setup(ctl, acceptors:set, quorumsize:int,
+              f:float, nrounds:int, timeout:float):
         super().setup(ctl)
         self.propNum = (0, self.id)          # Current proposal(ballot) number
         self.propVal = self.id          # Own value to propose
@@ -37,7 +38,7 @@ class Proposer(process, controller.Controllee):
         send(('Done',), to=acceptors)
 
 class Acceptor(process, controller.Controllee):
-    def setup(ctl, acceptors:set, proposers:set, quorumsize, f):
+    def setup(ctl, acceptors:set, proposers:set, quorumsize:int, f:float):
         super().setup(ctl)
         self.peers = acceptors | proposers
 
@@ -46,7 +47,7 @@ class Acceptor(process, controller.Controllee):
         while True:
             if await(some(
                     received(('TwoAv', n, v, _)),
-                    has=(len(setof(a, received(('TwoAv', n, v, a)))) >
+                    has=(len(setof(a, received(('TwoAv', _n, _v, a)))) >
                          quorumsize and
                          not sent(('TwoB', n, v))))):
                 send(('TwoB', n, v), to=peers)

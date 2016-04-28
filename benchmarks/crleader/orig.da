@@ -2,7 +2,7 @@ import sys
 controller = import_da('controller')
 
 class P(process, controller.Controllee):
-    def setup(ctl, left):
+    def setup(ctl, left:P):
         super().setup(ctl)
         self.leaderid = None
 

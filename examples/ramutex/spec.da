@@ -1,4 +1,5 @@
 import sys
+
 class P(process):
     def setup(s:set, n:int):           # pass in set of all processes
         pass
