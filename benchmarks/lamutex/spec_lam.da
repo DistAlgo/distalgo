@@ -44,12 +44,11 @@ def main():
 # Lamport, L. (1978). "Time, clocks, and the ordering of events in a
 # distributed system".  Communications of the ACM, 21(7):558-565.
 
-# The simplification is to remove an unnecessary q and message handler;
-# release and ack messages include the request time,
-# not timestamps unused or used for unnecessary expensive comparison.
+# The simplification is to remove an unnecessary queue and message handler;
+# release msgs use the request time, not unused timestamps, to replace queue.
 
-# This code includes setup and termination for serving a given number of
-# requests per process.
+# This code includes setup and termination of a given number of processes
+# each serving a given number of requests.
 
 # All labels are not needed,
-# leaving a total of 9 lines for the algorithm body and message handler.
+# leaving 9 lines total for the algorithm body and message handler.
