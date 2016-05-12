@@ -292,7 +292,10 @@ class PythonGenerator(NodeVisitor):
         code. Otherwise, call the normal visit method.
 
         """
-        assert node is None or isinstance(node, dast.DistNode)
+        if node is None:
+            return None
+
+        assert isinstance(node, dast.DistNode)
         self.current_node = node
         if hasattr(node, "ast_override"):
             res = node.ast_override
@@ -1034,6 +1037,10 @@ class PythonGenerator(NodeVisitor):
         body = self.body(node.body)
         ast = With(items, body)
         return concat_bodies([e.context_expr for e in items], [ast])
+
+    def visit_RaiseStmt(self, node):
+        ast = Raise(self.visit(node.expr), self.visit(node.cause))
+        return concat_bodies((node.expr, node.cause), [ast])
 
     def visit_SimpleStmt(self, node):
         value = self.visit(node.expr)
