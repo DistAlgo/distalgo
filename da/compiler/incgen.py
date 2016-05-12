@@ -1134,13 +1134,8 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
         generators = outer_generators + inner_generators
         bexp = self.visit(node)
 
-        # Extract witness set if there are free variables:
         primary = SetComp(elements, generators)
         left = pySize(primary)
-        if query_node is query_node.top_level_query and \
-           query_node.operator is dast.ExistentialOp and \
-           len(query_node.ordered_local_freevars) > 0:
-            self.witness_set = primary
 
         if inner_quantifier is None:
             # Non-alternating:
@@ -1151,6 +1146,10 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
             else:
                 generators[-1].ifs.append(bexp)
                 res = pyCompare(left, Gt, Num(0))
+                # Extract witness set if there are free variables:
+                if query_node is query_node.top_level_query and \
+                   len(query_node.ordered_local_freevars) > 0:
+                    self.witness_set = primary
 
         else:
             # One-level alternation:
@@ -1166,6 +1165,12 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
             else:
                 generators[-1].ifs.append(pyNot(bexp))
                 res = pyCompare(left, NotEq, right)
+                # Extract witness set if there are free variables:
+                if query_node is query_node.top_level_query and \
+                   len(query_node.ordered_local_freevars) > 0:
+                    self.witness_set = BinOp(SetComp(elements, outer_generators),
+                                             Sub(),
+                                             primary)
 
         return res
 
