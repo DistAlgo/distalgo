@@ -110,7 +110,8 @@ def load_modules():
     main = sys.modules[GlobalOptions.this_module_name]
     inc = importlib.import_module(GlobalOptions.inc_module_name)
     if inc.JbStyle:
-        IncOQBaseType = importlib.import_module("incoq.runtime").Type
+        IncOQBaseType = importlib.import_module("incoq.mars.runtime") \
+                        .IncOQType
     if GlobalOptions.control_module_name is not None:
         ctrl = importlib.import_module(GlobalOptions.control_module_name)
         main.IncModule = ModuleIntrument(ctrl, inc)
