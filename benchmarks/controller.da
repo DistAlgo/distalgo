@@ -1,6 +1,6 @@
-# Copyright (c) 2014-2015 Jon Brandvein, Bo Lin, Yanhong Annie Liu
-# Copyright (c) 2014-2015 Stony Brook University
-# Copyright (c) 2014-2015 The Research Foundation of SUNY
+# Copyright (c) 2014-2016 Jon Brandvein, Bo Lin, Yanhong Annie Liu
+# Copyright (c) 2014-2016 Stony Brook University
+# Copyright (c) 2014-2016 The Research Foundation of SUNY
 #
 # Permission is hereby granted, free of charge, to any person
 # obtaining a copy of this software and associated documentation files
@@ -31,16 +31,16 @@ other processes ("controllees") begin and end, and to collect
 their results. The controller is initialized with the number of
 controllees (nprocs) to expect, and does the following steps:
 
-    1. Wait for nprocs many ('CTL_Ready',) messages.
+    1. Wait until we've received a ('CTL_Ready',) message from everyone.
     2. Broadcast ('CTL_Start',) to everyone.
     3. Wait for nprocs many ('CTL_Done', rudata, rugroup_id) messages.
     4. Send ('CTL_Terminate',) to everyone.
 
-The controllees will send CTL_Ready as soon as they have started up,
-and they will wait for CTL_Terminate before destroying themselves.
-This lets everyone measure the time between the beginning of step (2)
-and the end of step (3), excluding the time needed by the system for
-creating and destroying processes.
+The controllees will send a ready message as soon as they have started
+up, and they will wait for a terminate message before destroying
+themselves. This lets everyone measure the time between the beginning of
+step (2) and the end of step (3), excluding the time needed by the system
+for creating and destroying processes.
 
 Depending on the platform, controllees will report their process time
 and memory usage, while the controller will measure wall-clock time.
@@ -87,6 +87,13 @@ To adapt a DistAlgo program to use this, make the following changes.
     where nprocs is the number of controllee processes. Then in each
     controllee's new() or setup() method, add ctl to the list of
     passed-in arguments.
+
+As an extension, we support having the controller listen for only
+threshold many done messages; after the threshold is reached, the
+controller will send a ('CTL_Stop',) message to all remaining
+controllees, which will prompt them to stop what they're doing, report
+their statistics in a done message, and wait for a terminate message
+before exiting.
 """
 
 
@@ -161,12 +168,22 @@ else:
 
 class Controller(process):
     
-    def setup(nprocs):
-        # Processes we are controlling, and number
-        # of processes that have sent ready/done messages.
+    def setup(nprocs, threshold=None):
+        # Number of done messages we should receive before sending
+        # stop messages to everyone else.
+        if threshold is None:
+            threshold = nprocs
+        
+        # Processes we are controlling (populated when we receive
+        # ready messages from them), and the subset of processes
+        # from which we have received done messages.
         self.ps = set()
+        self.done_ps = set()
+        # Number of processes that have sent ready/done messages.
         self.readys = 0
         self.dones = 0
+        # Whether we have sent the stop messages out.
+        self.sent_stop = False
         
         # Dictionary from resource usage group identifier
         # to lists of rudata points for processes in that group.
@@ -187,8 +204,16 @@ class Controller(process):
     def receive(msg=('CTL_Done', rudata, rugroup_id), from_=source):
         # Count dones, record metrics.
         dones += 1
+        done_ps.add(source)
         rudata_points.setdefault(rugroup_id, []).append(rudata)
         verboutput('Got Done from {} ({}/{})'.format(source, dones, nprocs))
+        
+        # If the threshold is reached, send stop to everyone else.
+        if dones >= threshold and not self.sent_stop:
+            rest_ps = ps - done_ps
+            verboutput("Controller stopping everyone")
+            bcast(('CTL_Stop',), to=rest_ps)
+            self.sent_stop = True
     
     def run():
         # Start 'em up.
@@ -222,6 +247,7 @@ class Controllee(process):
     def setup(ctl):
         self.rudata = ResourceUsageData()
         self.ctl_verbose = True
+        self.ctl_done = False
     
     def verboutput(s):
         if ctl_verbose:
@@ -237,11 +263,21 @@ class Controllee(process):
     def ctl_end():
         # Stop recording metrics. Tell controller we're done,
         # then wait for the signal before terminating.
+        self.ctl_done = True
         self.rudata.end()
         rugroup_id = getattr(self, 'ctl_rugroup_id', None)
         send(('CTL_Done', self.rudata, rugroup_id), to=ctl)
         await(received(('CTL_Terminate',)))
         verboutput("Terminating...")
+    
+    def receive(msg=('CTL_Stop',)):
+        # If we already sent the done message, i.e., we were in the
+        # process of finishing when we were stopped, ignore.
+        self.verboutput("Received stop")
+        if self.ctl_done:
+            return
+        ctl_end()
+        sys.exit()
     
     def run():
         # Stub to squelch warning.
