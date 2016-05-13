@@ -114,13 +114,13 @@ class Acceptor(process, controller.Controllee):
     def receive(msg=('2a', b, s, p), from_= leader):
         ballot = max((setof(b, received(('1a', b))) |
                       setof(b, received(('2a', b, _, _))))
-                     or {(-1-1)})
+                     or {(-1, -1)})
         send(('2b', ballot, s, p), to= leader)
 
     def pmax(pvals):
         #output('pmax', pvals)
         return setof((s, p), (b, s, p) in pvals,
-	                      each((b2, _s, _) in pvals, has= b2 <= b))
+                             each((b2, _s, _) in pvals, has= b2 <= b))
 
     @controller.run
     def run():
