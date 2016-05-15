@@ -43,9 +43,9 @@ LOCAL_WITNESS_SET = "__witness_set__"
 LOCAL_RESULT_VAR = "__result__"
 GLOBAL_WITNESS_VAR = "Witness"
 SELF_ID_NAME = "SELF_ID"
-JB_STYLE_MODULE = "incoq.runtime"
-JB_STYLE_SET = JB_STYLE_MODULE + ".Set"
-JB_STYLE_MAP = JB_STYLE_MODULE + ".Map"
+JB_STYLE_MODULE = "incoq.mars.runtime"
+JB_STYLE_SET = "Set"
+JB_STYLE_MAP = "Map"
 
 NegatedOperatorMap = {
     dast.EqOp : NotEq,
@@ -216,11 +216,7 @@ JbStyle = {is_jbstyle}
 """
 
 # Additional directives needed by jbstyle:
-JBSTYLE_DIRECTIVES = """
-{0}.OPTIONS(
-    deadcode_keepvars = ['JbStyle', '{1}']
-)
-""".format(JB_STYLE_MODULE, GLOBAL_WITNESS_VAR)
+JBSTYLE_DIRECTIVES = """""".format(JB_STYLE_MODULE, GLOBAL_WITNESS_VAR)
 
 GLOBAL_READ = "globals()['{0}']"
 GLOBAL_WRITE = "globals()['{0}'] = {1}"
@@ -453,17 +449,18 @@ def {1}(_{0}):
 """
 STUB_ASSIGN_JB = """
 def {1}(_{0}):
-    globals()['{0}'] = _{0}
+    global {0}
+    {0} = _{0}
     return {0}
 """
 STUB_ASSIGN_JB_SET = """
 def {1}(_{0}):
-    {0}.assign_update(_{0})
+    {0}.copy_update(_{0})
     return {0}
 """
 STUB_ASSIGN_JB_MAP = """
 def {1}(_{0}):
-    {0}.mapassign_update(_{0})
+    {0}.dictcopy_update(_{0})
     return {0}
 """
 STUB_DELETE = """
@@ -608,8 +605,9 @@ def process_events(state):
 
 STUB_INIT = """
 def {name}():
-    globals()['{var}'] = {type}()
-    return globals()['{var}']
+    global {var}
+    {var} = {type}()
+    return {var}
 """
 
 def generate_initializer_stub(varname, typename):
@@ -701,7 +699,7 @@ def generate_header(state):
     module = parse(
         PREAMBLE.format(self_name=SELF_ID_NAME,
                         witness_var=GLOBAL_WITNESS_VAR,
-                        jbstyle_import=("import " + JB_STYLE_MODULE
+                        jbstyle_import=("from " + JB_STYLE_MODULE + " import *"
                                         if Options.jb_style else ""),
                         additional_directives=(JBSTYLE_DIRECTIVES
                                                if Options.jb_style else ""),
