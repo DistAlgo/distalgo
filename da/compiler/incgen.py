@@ -43,7 +43,7 @@ LOCAL_WITNESS_SET = "__witness_set__"
 LOCAL_RESULT_VAR = "__result__"
 GLOBAL_WITNESS_VAR = "Witness"
 SELF_ID_NAME = "SELF_ID"
-JB_STYLE_MODULE = "incoq.mars.runtime"
+JB_STYLE_MODULE = "incoq.runtime"
 JB_STYLE_SET = "Set"
 JB_STYLE_MAP = "Map"
 
