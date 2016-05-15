@@ -74,7 +74,7 @@ class Leader(process, controller.Controllee):
 
         while True:
           if await(some(received(('propose', s, p)), has=
-                        not some(sent(('2a', _ballot, _s, _))))):
+                        not some(sent(('2a', _, _s, _))))):
             output('### leader 1.1  b={}, s={}, p={}'.format(ballot, s, p))
             send(('2a', ballot, s, p), to= acceptors)
           elif some(received(('2b', _ballot, s, p)), has=
