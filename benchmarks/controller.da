@@ -206,7 +206,12 @@ class Controller(process):
         dones += 1
         done_ps.add(source)
         rudata_points.setdefault(rugroup_id, []).append(rudata)
-        verboutput('Got Done from {} ({}/{})'.format(source, dones, nprocs))
+        if threshold == nprocs:
+            verboutput('Got Done from {} ({}/{})'.format(
+                       source, dones, nprocs))
+        else:
+            verboutput('Got Done from {} ({}/{}, need {} to stop)'.format(
+                       source, dones, nprocs, threshold))
         
         # If the threshold is reached, send stop to everyone else.
         if dones >= threshold and not self.sent_stop:
