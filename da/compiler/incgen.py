@@ -207,7 +207,9 @@ def mangle_name(nameobj):
 PREAMBLE = """
 import da
 {jbstyle_import}
-{additional_directives}
+"""
+# Inc directives goes between `PREAMBLE' and `DEFINITIONS'
+DEFINITIONS = """
 ReceivedEvent = da.pat.ReceivedEvent
 SentEvent = da.pat.SentEvent
 {self_name} = None
@@ -697,13 +699,13 @@ def flatten_opassignments(state):
 
 def generate_header(state):
     module = parse(
-        PREAMBLE.format(self_name=SELF_ID_NAME,
-                        witness_var=GLOBAL_WITNESS_VAR,
-                        jbstyle_import=("from " + JB_STYLE_MODULE + " import *"
-                                        if Options.jb_style else ""),
-                        additional_directives=(JBSTYLE_DIRECTIVES
-                                               if Options.jb_style else ""),
-                        is_jbstyle=str(Options.jb_style)))
+        PREAMBLE.format(jbstyle_import=("from " + JB_STYLE_MODULE + " import *"
+                                        if Options.jb_style else "")))
+    module.body.extend(state.input_ast.directives)
+    module.body.extend(parse(
+        DEFINITIONS.format(self_name=SELF_ID_NAME,
+                           witness_var=GLOBAL_WITNESS_VAR,
+                           is_jbstyle=str(Options.jb_style))).body)
     state.module = module
 
 def translate_with_stubs(state):

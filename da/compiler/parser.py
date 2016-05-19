@@ -69,6 +69,7 @@ KW_FALSE = "False"
 KW_NULL = "None"
 KW_SUCH_THAT = "has"
 KW_RESET = "reset"
+KW_INC_VERB = "_INC_"
 
 def is_setup_func(node):
     """Returns True if this node defines a function named 'setup'."""
@@ -1036,9 +1037,23 @@ class Parser(NodeVisitor):
         stmtobj = None
         try:
             e = node.value
-            if self.expr_check(KW_AWAIT, 1, 2, e,
-                               keywords={},
-                               optional_keywords={KW_AWAIT_TIMEOUT}):
+            if isinstance(self.current_parent, dast.Program) and \
+               self.expr_check({KW_INC_VERB}, 1, 1, e):
+                # Inc interface directive
+                if isinstance(e.args[0], Str):
+                    try:
+                        self.current_parent.directives.extend(
+                            parse(e.args[0].s).body)
+                    except SyntaxError as err:
+                        self.error("SyntaxError in %s directive: %s " %
+                                   (KW_INC_VERB, err.msg), e.args[0])
+                else:
+                    self.error("%s directive argument must be string." %
+                               KW_INC_VERB, e.args[0])
+
+            elif self.expr_check(KW_AWAIT, 1, 2, e,
+                                 keywords={},
+                                 optional_keywords={KW_AWAIT_TIMEOUT}):
                 stmtobj = self.create_stmt(dast.AwaitStmt, node)
                 self.current_context = Read(stmtobj)
                 branch = dast.Branch(stmtobj, node,
