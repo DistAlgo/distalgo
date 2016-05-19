@@ -1451,8 +1451,9 @@ class Parser(NodeVisitor):
         return True
 
     def parse_event_expr(self, node, literal=False):
-        if (node.starargs is not None or node.kwargs is not None):
-            self.warn("extraneous arguments in event expression.", node)
+        if sys.version_info < (3, 5):
+            if (node.starargs is not None or node.kwargs is not None):
+                self.warn("extraneous arguments in event expression.", node)
         pattern = self.parse_pattern_expr(node.args[0], literal)
         if node.func.id == KW_RECV_QUERY:
             event = dast.Event(self.current_process,
@@ -1866,10 +1867,12 @@ class Parser(NodeVisitor):
         expr.args = [self.visit(a) for a in node.args]
         expr.keywords = [(kw.arg, self.visit(kw.value))
                          for kw in node.keywords]
-        expr.starargs = self.visit(node.starargs) \
-                        if node.starargs is not None else None
-        expr.kwargs = self.visit(node.kwargs) \
-                      if node.kwargs is not None else None
+        # Python 3.5 got rid of `starargs' and `kwargs' on Call objects:
+        if sys.version_info < (3 ,5):
+            expr.starargs = self.visit(node.starargs) \
+                            if node.starargs is not None else None
+            expr.kwargs = self.visit(node.kwargs) \
+                          if node.kwargs is not None else None
         self.pop_state()
         return expr
 

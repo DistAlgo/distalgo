@@ -79,14 +79,22 @@ QUATIFIED_EXPR_NAME = "_QuantifiedExpr_%d"
 def call_noarg_ast(name):
     return Call(Name(name, Load()), [], [], None, None)
 
-def pyCall(func, args=[], keywords=[], starargs=None, kwargs=None):
-    if isinstance(func, str):
-        func = pyName(func)
-    return Call(func,
-                list(args),
-                [keyword(arg, val) for arg, val in keywords],
-                starargs,
-                kwargs)
+if sys.version_info < (3, 5):
+    def pyCall(func, args=[], keywords=[], starargs=None, kwargs=None):
+        if isinstance(func, str):
+            func = pyName(func)
+        return Call(func,
+                    list(args),
+                    [keyword(arg, val) for arg, val in keywords],
+                    starargs,
+                    kwargs)
+else:
+    def pyCall(func, args=[], keywords=[], starargs=None, kwargs=None):
+        if isinstance(func, str):
+            func = pyName(func)
+        return Call(func,
+                    list(args),
+                    [keyword(arg, val) for arg, val in keywords])
 
 def pyName(name, ctx=None):
     return Name(name, Load() if ctx is None else ctx)
@@ -155,15 +163,24 @@ def pyLabel(name, block=False, timeout=None):
                        args=[Str(name)],
                        keywords=kws))
 
-def pyClassDef(name, bases=[], keywords=[], starargs=None,
-               kwargs=None, body=[], decorator_list=[]):
-    return ClassDef(name,
-                    list(bases),
-                    [keyword(arg, val) for arg, val in keywords],
-                    starargs,
-                    kwargs,
-                    list(body),
-                    list(decorator_list))
+if sys.version_info < (3, 5):
+    def pyClassDef(name, bases=[], keywords=[], starargs=None,
+                   kwargs=None, body=[], decorator_list=[]):
+        return ClassDef(name,
+                        list(bases),
+                        [keyword(arg, val) for arg, val in keywords],
+                        starargs,
+                        kwargs,
+                        list(body),
+                        list(decorator_list))
+else:
+    def pyClassDef(name, bases=[], keywords=[], starargs=None,
+                   kwargs=None, body=[], decorator_list=[]):
+        return ClassDef(name,
+                        list(bases),
+                        [keyword(arg, val) for arg, val in keywords],
+                        list(body),
+                        list(decorator_list))
 
 def pyFunctionDef(name, args=[], body=[], decorator_list=[], returns=None):
     arglist = arguments(args=[arg(n, None) for n in args],
@@ -424,8 +441,9 @@ class PythonGenerator(NodeVisitor):
         # ########################################
         # TODO: just pass these through until we figure out a use for them:
         cd.keywords = node.ast.keywords
-        cd.starargs = node.ast.starargs
-        cd.kwargs = node.ast.kwargs
+        if sys.version_info < (3, 5):
+            cd.starargs = node.ast.starargs
+            cd.kwargs = node.ast.kwargs
         # ########################################
         cd.body = [self.generate_init(node)]
         if node.setup is not None:
@@ -465,8 +483,9 @@ class PythonGenerator(NodeVisitor):
         # ########################################
         # TODO: just pass these through until we figure out a use for them:
         cd.keywords = node.ast.keywords
-        cd.starargs = node.ast.starargs
-        cd.kwargs = node.ast.kwargs
+        if sys.version_info < (3, 5):
+            cd.starargs = node.ast.starargs
+            cd.kwargs = node.ast.kwargs
         # ########################################
         cd.decorator_list = [self.visit(d) for d in node.decorators]
         return [cd]
