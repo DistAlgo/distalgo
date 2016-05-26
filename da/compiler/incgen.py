@@ -1267,18 +1267,19 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
         left = {name for name in pred.left.nameobjs if name in node.freevars}
         right = {name for name in pred.right.nameobjs if name in node.freevars}
         if len(left) > 0 and len(right) == 0 and \
-           (isinstance(left, dast.SimpleExpr) or
-            isinstance(left, dast.TupleExpr)):
+           (isinstance(pred.left, dast.SimpleExpr) or
+            isinstance(pred.left, dast.TupleExpr)):
             x = pred.left
             y = pred.right
         elif len(left) == 0 and len(right) > 0 and \
-             (isinstance(right, dast.SimpleExpr) or
-              isinstance(right, dast.TupleExpr)):
+             (isinstance(pred.right, dast.SimpleExpr) or
+              isinstance(pred.right, dast.TupleExpr)):
             x = pred.right
             y = pred.left
         else:
-            iprintd("Table 3 can not be applied to %s: free var distribution." %
-                   node)
+            iprintd("Table 3 can not be applied to %s: free var distribution."
+                    "left %s : right %s" %
+                   (node, left, right))
             return None
 
         generators = [self.visit(dom) for dom in node.domains]
