@@ -1915,11 +1915,14 @@ class Program(CompoundStmt, NameScope):
 
     _fields = ['processes', 'entry_point'] + \
               CompoundStmt._fields
+    _attributes = ['configurations', 'directives'] + \
+                  CompoundStmt._attributes
 
     def __init__(self, parent=None, ast=None):
         super().__init__(parent, ast)
         self._compiler_options = None
         self.configurations = []
+        self.directives = []
         self.processes = []
         self.entry_point = None
         # The 'da' module is always available to all DistAlgo programs:

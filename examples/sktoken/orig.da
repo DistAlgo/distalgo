@@ -1,4 +1,5 @@
 import sys
+
 class P(process):
     def setup(ps:set, orig_token:bool,
               nrounds:int): # other procs, and whether self.id holds token

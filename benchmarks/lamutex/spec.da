@@ -2,7 +2,7 @@ import sys
 controller = import_da('controller')
 
 class P(process, controller.Controllee):
-    def setup(ctl, s:set, nrequests):  # s is set of all other processes
+    def setup(ctl, s:set, nrequests:int):  # s is set of all other processes
         super().setup(ctl)
 
     def mutex(task):
@@ -11,7 +11,7 @@ class P(process, controller.Controllee):
         send(('request', c, self.id), to= s)
         await(each(received(('request', c2, p)),
                    has= received(('release', c2, p)) or (c, self.id) < (c2, p))
-              and each(p in s, has= some(received(('ack', c, p)))))
+              and each(p in s, has= received(('ack', c, p))))
         -- critical_section
         task()
         -- release

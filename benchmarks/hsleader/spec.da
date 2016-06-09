@@ -3,7 +3,7 @@ import random
 controller = import_da('controller')
 
 class P(process, controller.Controllee):
-    def setup(ctl, left, right):
+    def setup(ctl, left:P, right:P):
         super().setup(ctl)
 
     @controller.run

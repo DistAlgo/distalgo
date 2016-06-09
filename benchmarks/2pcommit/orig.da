@@ -8,7 +8,7 @@ class Coordinator(process, controller.Controllee):
 
     def to_commit():
         send(('prepare'), to= cohorts)
-        await(each(c in cohorts, has= some(received(('vote', _), from_= c))))
+        await(each(c in cohorts, has= some(received(('vote', _), from_= _c))))
         if some(c in cohorts, has= received(('vote', 'aborting'), from_= c)):
             s = setof(c, c in cohorts, received(('vote','ready'), from_= c))
             send(('abort'), to= s)

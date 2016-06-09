@@ -44,8 +44,8 @@ LOCAL_RESULT_VAR = "__result__"
 GLOBAL_WITNESS_VAR = "Witness"
 SELF_ID_NAME = "SELF_ID"
 JB_STYLE_MODULE = "incoq.runtime"
-JB_STYLE_SET = JB_STYLE_MODULE + ".Set"
-JB_STYLE_MAP = JB_STYLE_MODULE + ".Map"
+JB_STYLE_SET = "Set"
+JB_STYLE_MAP = "Map"
 
 NegatedOperatorMap = {
     dast.EqOp : NotEq,
@@ -207,7 +207,9 @@ def mangle_name(nameobj):
 PREAMBLE = """
 import da
 {jbstyle_import}
-{additional_directives}
+"""
+# Inc directives goes between `PREAMBLE' and `DEFINITIONS'
+DEFINITIONS = """
 ReceivedEvent = da.pat.ReceivedEvent
 SentEvent = da.pat.SentEvent
 {self_name} = None
@@ -216,11 +218,7 @@ JbStyle = {is_jbstyle}
 """
 
 # Additional directives needed by jbstyle:
-JBSTYLE_DIRECTIVES = """
-{0}.OPTIONS(
-    deadcode_keepvars = ['JbStyle', '{1}']
-)
-""".format(JB_STYLE_MODULE, GLOBAL_WITNESS_VAR)
+JBSTYLE_DIRECTIVES = """""".format(JB_STYLE_MODULE, GLOBAL_WITNESS_VAR)
 
 GLOBAL_READ = "globals()['{0}']"
 GLOBAL_WRITE = "globals()['{0}'] = {1}"
@@ -453,17 +451,18 @@ def {1}(_{0}):
 """
 STUB_ASSIGN_JB = """
 def {1}(_{0}):
-    globals()['{0}'] = _{0}
+    global {0}
+    {0} = _{0}
     return {0}
 """
 STUB_ASSIGN_JB_SET = """
 def {1}(_{0}):
-    {0}.assign_update(_{0})
+    {0}.copy_update(_{0})
     return {0}
 """
 STUB_ASSIGN_JB_MAP = """
 def {1}(_{0}):
-    {0}.mapassign_update(_{0})
+    {0}.dictcopy_update(_{0})
     return {0}
 """
 STUB_DELETE = """
@@ -608,8 +607,9 @@ def process_events(state):
 
 STUB_INIT = """
 def {name}():
-    globals()['{var}'] = {type}()
-    return globals()['{var}']
+    global {var}
+    {var} = {type}()
+    return {var}
 """
 
 def generate_initializer_stub(varname, typename):
@@ -699,13 +699,13 @@ def flatten_opassignments(state):
 
 def generate_header(state):
     module = parse(
-        PREAMBLE.format(self_name=SELF_ID_NAME,
-                        witness_var=GLOBAL_WITNESS_VAR,
-                        jbstyle_import=("import " + JB_STYLE_MODULE
-                                        if Options.jb_style else ""),
-                        additional_directives=(JBSTYLE_DIRECTIVES
-                                               if Options.jb_style else ""),
-                        is_jbstyle=str(Options.jb_style)))
+        PREAMBLE.format(jbstyle_import=("from " + JB_STYLE_MODULE + " import *"
+                                        if Options.jb_style else "")))
+    module.body.extend(state.input_ast.directives)
+    module.body.extend(parse(
+        DEFINITIONS.format(self_name=SELF_ID_NAME,
+                           witness_var=GLOBAL_WITNESS_VAR,
+                           is_jbstyle=str(Options.jb_style))).body)
     state.module = module
 
 def translate_with_stubs(state):
@@ -1134,13 +1134,8 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
         generators = outer_generators + inner_generators
         bexp = self.visit(node)
 
-        # Extract witness set if there are free variables:
         primary = SetComp(elements, generators)
         left = pySize(primary)
-        if query_node is query_node.top_level_query and \
-           query_node.operator is dast.ExistentialOp and \
-           len(query_node.ordered_local_freevars) > 0:
-            self.witness_set = primary
 
         if inner_quantifier is None:
             # Non-alternating:
@@ -1151,6 +1146,10 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
             else:
                 generators[-1].ifs.append(bexp)
                 res = pyCompare(left, Gt, Num(0))
+                # Extract witness set if there are free variables:
+                if query_node is query_node.top_level_query and \
+                   len(query_node.ordered_local_freevars) > 0:
+                    self.witness_set = primary
 
         else:
             # One-level alternation:
@@ -1166,6 +1165,12 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
             else:
                 generators[-1].ifs.append(pyNot(bexp))
                 res = pyCompare(left, NotEq, right)
+                # Extract witness set if there are free variables:
+                if query_node is query_node.top_level_query and \
+                   len(query_node.ordered_local_freevars) > 0:
+                    self.witness_set = BinOp(SetComp(elements, outer_generators),
+                                             Sub(),
+                                             primary)
 
         return res
 
@@ -1262,18 +1267,19 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
         left = {name for name in pred.left.nameobjs if name in node.freevars}
         right = {name for name in pred.right.nameobjs if name in node.freevars}
         if len(left) > 0 and len(right) == 0 and \
-           (isinstance(left, dast.SimpleExpr) or
-            isinstance(left, dast.TupleExpr)):
+           (isinstance(pred.left, dast.SimpleExpr) or
+            isinstance(pred.left, dast.TupleExpr)):
             x = pred.left
             y = pred.right
         elif len(left) == 0 and len(right) > 0 and \
-             (isinstance(right, dast.SimpleExpr) or
-              isinstance(right, dast.TupleExpr)):
+             (isinstance(pred.right, dast.SimpleExpr) or
+              isinstance(pred.right, dast.TupleExpr)):
             x = pred.right
             y = pred.left
         else:
-            iprintd("Table 3 can not be applied to %s: free var distribution." %
-                   node)
+            iprintd("Table 3 can not be applied to %s: free var distribution."
+                    "left %s : right %s" %
+                   (node, left, right))
             return None
 
         generators = [self.visit(dom) for dom in node.domains]

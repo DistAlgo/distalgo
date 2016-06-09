@@ -268,16 +268,17 @@ class Unparser:
             if comma: self.write(", ")
             else: comma = True
             self.dispatch(e)
-        if t.starargs:
-            if comma: self.write(", ")
-            else: comma = True
-            self.write("*")
-            self.dispatch(t.starargs)
-        if t.kwargs:
-            if comma: self.write(", ")
-            else: comma = True
-            self.write("**")
-            self.dispatch(t.kwargs)
+        if sys.version_info < (3, 5):
+            if t.starargs:
+                if comma: self.write(", ")
+                else: comma = True
+                self.write("*")
+                self.dispatch(t.starargs)
+            if t.kwargs:
+                if comma: self.write(", ")
+                else: comma = True
+                self.write("**")
+                self.dispatch(t.kwargs)
         self.write(")")
 
         self.enter()
@@ -507,16 +508,17 @@ class Unparser:
             if comma: self.write(", ")
             else: comma = True
             self.dispatch(e)
-        if t.starargs:
-            if comma: self.write(", ")
-            else: comma = True
-            self.write("*")
-            self.dispatch(t.starargs)
-        if t.kwargs:
-            if comma: self.write(", ")
-            else: comma = True
-            self.write("**")
-            self.dispatch(t.kwargs)
+        if sys.version_info < (3 ,5):
+            if t.starargs:
+                if comma: self.write(", ")
+                else: comma = True
+                self.write("*")
+                self.dispatch(t.starargs)
+            if t.kwargs:
+                if comma: self.write(", ")
+                else: comma = True
+                self.write("**")
+                self.dispatch(t.kwargs)
         self.write(")")
 
     def _Subscript(self, t):

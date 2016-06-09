@@ -4,12 +4,12 @@ controller = import_da('controller')
 
 @controller.rugroup('bo_measured')
 class Coordinator(process, controller.Controllee):
-    def setup(ctl, tid, cohorts:set):
+    def setup(ctl, tid:str, cohorts:set):
         super().setup(ctl)
 
     def to_commit():
         send(('prepare', tid), to= cohorts)
-        await(each(c in cohorts, has= some(received(('vote', _, _tid), from_= c))))
+        await(each(c in cohorts, has= some(received(('vote', _, _tid), from_= _c))))
         if some(c in cohorts, has= received(('vote', 'abort', tid), from_= c)):
             s = setof(c, c in cohorts, received(('vote','ready', _tid), from_=c))
             send(('abort', tid), to= s)
@@ -29,7 +29,7 @@ class Coordinator(process, controller.Controllee):
         send(('done',), to= cohorts)
 
 class Cohort(process, controller.Controllee):
-    def setup(ctl, failure_rate):
+    def setup(ctl, failure_rate:float):
         super().setup(ctl)
 
     def receive(msg=('prepare', tid), from_= coord):

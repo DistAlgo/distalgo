@@ -2,7 +2,7 @@ import sys
 controller = import_da('controller')
 
 class P(process, controller.Controllee):
-    def setup(ctl, s:set, nrequests):  # s is set of all other processes
+    def setup(ctl, s:set, nrequests:int):  # s is set of all other processes
         super().setup(ctl)
 
     def mutex(task):
@@ -10,16 +10,15 @@ class P(process, controller.Controllee):
         c = logical_clock()
         send(('request', c, self.id), to= s)
         await(each(received(('request', c2, p)),
-                   has= some(received(('release', c3, p)), has= c3 > c2)
-                        or (c, self.id) < (c2, p))
-              and each(p in s, has= some(received(('ack', c, p)))))
+                   has= received(('release', c2, p)) or (c, self.id) < (c2, p))
+              and each(p in s, has= some(received(('ack', c2, _p)), has= c2 > c)))
         -- critical_section
         task()
         -- release
-        send(('release', logical_clock(), self.id), to= s)
+        send(('release', c, self.id), to= s)
 
-    def receive(msg= ('request', c, p)):
-        send(('ack', c, self.id), to= p)
+    def receive(msg= ('request', _, p)):
+        send(('ack', logical_clock(), self.id), to= p)
 
     @controller.run
     def run():
@@ -45,12 +44,11 @@ def main():
 # Lamport, L. (1978). "Time, clocks, and the ordering of events in a
 # distributed system".  Communications of the ACM, 21(7):558-565.
 
-# The simplification is to remove an unnecessary q and message handler;
-# release and ack messages include the request time,
-# not timestamps unused or used for unnecessary expensive comparison.
+# The simplification is to remove an unnecessary queue and message handler;
+# release msgs use the request time, not unused timestamps, to replace queue.
 
-# This code includes setup and termination for serving a given number of
-# requests per process.
+# This code includes setup and termination of a given number of processes
+# each serving a given number of requests.
 
 # All labels are not needed,
-# leaving a total of 9 lines for the algorithm body and message handler.
+# leaving 9 lines total for the algorithm body and message handler.
