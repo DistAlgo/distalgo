@@ -1149,16 +1149,24 @@ class Parser(NodeVisitor):
                                    "Valid arguments are: " +
                                    str(ValidResetTypes), node)
 
-            elif (isinstance(self.current_parent, dast.Process) and
-                  self.expr_check(KW_CONFIG, 0, 0, e, keywords=None)):
-                self.current_process.configurations.extend(
-                    self.parse_config_section(e))
-
-            elif (isinstance(self.current_parent, dast.Function) and
-                  isinstance(self.current_parent.parent, dast.Program) and
-                  self.expr_check(KW_CONFIG, 0, 0, e, keywords=None)):
-                self.current_parent.parent.configurations.extend(
-                    self.parse_config_section(e))
+            # Parse 'config' statements. These may appear at the module level,
+            # process level, or in the 'main' function (for backwards
+            # compatability):
+            elif self.expr_check(KW_CONFIG, 0, 0, e, keywords=None):
+                if isinstance(self.current_parent, dast.Process):
+                    self.current_process.configurations.extend(
+                        self.parse_config_section(e))
+                elif isinstance(self.current_parent, dast.Program):
+                    self.current_parent.configurations.extend(
+                        self.parse_config_section(e))
+                elif (isinstance(self.current_parent, dast.Function) and
+                      self.current_parent.name == KW_ENTRY_POINT and
+                      isinstance(self.current_parent.parent, dast.Program)):
+                    self.current_parent.parent.configurations.extend(
+                        self.parse_config_section(e))
+                else:
+                    self.error("Invalid context for '%s' statement." %
+                               KW_CONFIG, node)
 
             # 'yield' and 'yield from' should be statements, handle them here:
             elif type(e) is Yield:
@@ -1841,14 +1849,10 @@ class Parser(NodeVisitor):
             key = kw.arg
             vnode = kw.value
             value = None
-            if isinstance(vnode, Name):
-                value = vnode.id
-            elif isinstance(vnode, Num):
-                value = vnode.n
-            elif isinstance(vnode, Str) or isinstance(vnode, Bytes):
-                value = vnode.s
-            elif isinstance(vnode, NameConstant):
-                value = vnode.value
+            if isinstance(vnode, Name) or isinstance(vnode, Num) \
+               or isinstance(vnode, Str) or isinstance(vnode, Bytes) \
+               or isinstance(vnode, NameConstant):
+                value = self.visit(vnode)
             else:
                 self.error("Invalid configuration value.", vnode)
             if value is not None:

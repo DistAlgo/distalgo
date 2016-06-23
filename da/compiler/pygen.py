@@ -73,6 +73,7 @@ if sys.version_info > (3, 5):
 
 PATTERN_EXPR_NAME = "_PatternExpr_%d"
 QUATIFIED_EXPR_NAME = "_QuantifiedExpr_%d"
+CONFIG_API_NAME = "config"
 
 ########## Convenience methods for creating AST nodes: ##########
 
@@ -348,9 +349,19 @@ class PythonGenerator(NodeVisitor):
 
     def visit_Program(self, node):
         self.module_args = node._compiler_options
-        body = []
-        body.extend(self.body(node.body))
-        return Module(self.preambles + body + self.postambles)
+        mainbody = self.body(node.body)
+        body = list(self.preambles)
+        if node.configurations:
+            body.append(self.generate_config(node))
+        body.extend(mainbody)
+        body.extend(self.postambles)
+        return Module(body)
+
+    def generate_config(self, node):
+        return Expr(pyCall(pyAttr("da", CONFIG_API_NAME),
+                           [],
+                           [(key, self.visit(value))
+                            for key, value in node.configurations]))
 
     def generate_event_def(self, node):
         evtype = pyAttr(pyAttr("da", "pat"), node.type.__name__)
@@ -446,6 +457,8 @@ class PythonGenerator(NodeVisitor):
             cd.kwargs = node.ast.kwargs
         # ########################################
         cd.body = [self.generate_init(node)]
+        if node.configurations:
+            cd.body.append(self.generate_config(node))
         if node.setup is not None:
             cd.body.extend(self.visit(node.setup))
         if node.entry_point is not None:
