@@ -36,9 +36,11 @@ import traceback
 import collections
 import multiprocessing
 
-from da import pattern, common, endpoint
+from da import api, pattern, common, endpoint
 
 builtin = common.builtin
+
+_config_object = dict()
 
 class DistProcess(multiprocessing.Process):
     """Abstract base class for DistAlgo processes.
@@ -177,17 +179,17 @@ class DistProcess(multiprocessing.Process):
 
     _config_object = dict()
 
-    @classmethod
-    def _configure(cls, **props):
-        cls._config_object.update(props)
-
-    def _get_channel_type(self):
-        result = endpoint.UdpEndPoint
-        if 'channel' in self._get_config():
-            config = self._get_config()['channel']
-            if 'reliable' in config or 'fifo' in config:
-                result = endpoint.TcpEndPoint
-        return result
+    def get_config(self, key, default=None):
+        """Returns the configuration value for specified 'key'.
+        """
+        if key in common.global_options().config:
+            return common.global_options().config[key]
+        elif key in self._config_object:
+            return self._config_object[key]
+        elif key in sys.modules[self.__module__]._config_object:
+            return sys.modules[self.__module__]._config_object[key]
+        else:
+            return default
 
     def run(self):
         try:
@@ -200,8 +202,7 @@ class DistProcess(multiprocessing.Process):
             self.id = self._channel(self._dp_name, self.__class__)
             common.set_current_process(self.id)
             pattern.initialize(self.id)
-            if hasattr(self._cmdline, 'clock') and \
-               self._cmdline.clock == 'Lamport':
+            if self.get_config('clock', 'none').casefold() == 'lamport':
                 self._logical_clock = 0
             self._log = logging.getLogger(str(self))
             self._start_comm_thread()

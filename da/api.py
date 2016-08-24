@@ -131,13 +131,18 @@ def import_da(name, from_dir=None, compiler_args=[]):
 
     return importlib.import_module(name)
 
-def use_channel(channel_properties):
+def init_channel(module):
     global EndPointType
 
     ept = ep.UdpEndPoint
-    if isinstance(channel_properties, str):
-        channel_properties = [channel_properties]
-    for prop in channel_properties:
+    props = []
+    if 'channel' in common.global_options():
+        props = common.global_options()['channel']
+    elif 'channel' in module._config_object:
+        props = module._config_object['channel']
+    if isinstance(props, str):
+        props = [props]
+    for prop in props:
         if prop == "fifo":
             ept = ep.TcpEndPoint
         elif prop == "reliable":
@@ -152,18 +157,6 @@ def use_channel(channel_properties):
                 "Can not change channel type after creating child processes.")
         return
     EndPointType = ept
-
-@api
-def config(**properties):
-    for prop in properties:
-        if prop == 'channel':
-            use_channel(properties['channel'])
-        elif prop == 'clock':
-            setattr(common.global_options(), 'clock', properties[prop])
-        elif prop == 'handling':
-            setattr(common.global_options(), 'handling', properties[prop])
-        else:
-            log.warn("Unknown configuration type '%s'." % str(prop))
 
 def entrypoint():
     GlobalOptions = common.global_options()
@@ -191,6 +184,9 @@ def entrypoint():
     if GlobalOptions.inc_module_name is None:
         GlobalOptions.inc_module_name = module.__name__ + "_inc"
     common.sysinit()
+
+    # Set the default channel type:
+    init_channel(module)
 
     # Start the background statistics thread:
     RootLock.acquire()
