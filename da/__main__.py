@@ -39,12 +39,18 @@ formatter = logging.Formatter(
     '[%(asctime)s]%(name)s:%(levelname)s: %(message)s')
 log._formatter = formatter
 
+def parseConfig(item):
+    try:
+        key, value = item.split('=')
+        return key, value
+    except ValueError:
+        die("Invalid configuration format: %s" % item)
+
 def parseArgs():
     LogLevelNames = [n.lower() for n in logging._nameToLevel]
 
     parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
-    # parser.add_argument("-s", "--perffile")
-    # parser.add_argument("-u", "--dumpfile")
+
     parser.add_argument('--iterations', type=int, default=1,
                         help="number of times to run the program, defaults to 1.")
     parser.add_argument("--nolog", action="store_true", default=False,
@@ -82,6 +88,9 @@ def parseArgs():
     parser.add_argument("-c", "--compiler-flags", default="",
                         help="flags to pass to the compiler, if recompiling "
                         "is required.")
+    parser.add_argument("-o", "--config", default=[], nargs='*',
+                        help="sets runtime configuration variables, overrides "
+                        "configurations declared in the program source.")
     parser.add_argument("--start-method", default=None, choices=['fork', 'spawn'],
                         help="choose the start method for spawning child processes."
                         " 'fork' is the default method on UNIX-like systems,"
@@ -92,7 +101,9 @@ def parseArgs():
     parser.add_argument("args", nargs=argparse.REMAINDER,
                         help="arguments passed to program in sys.argv[1:].")
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.config = dict(parseConfig(item) for item in args.config)
+    return args
 
 def libmain():
     """
