@@ -137,12 +137,13 @@ def init_channel(module):
     ept = ep.UdpEndPoint
     props = []
     if 'channel' in common.global_options():
-        props = common.global_options()['channel']
+        props = common.global_options()['channel'].split(',')
     elif 'channel' in module._config_object:
         props = module._config_object['channel']
     if isinstance(props, str):
         props = [props]
     for prop in props:
+        prop = prop.casefold()
         if prop == "fifo":
             ept = ep.TcpEndPoint
         elif prop == "reliable":
