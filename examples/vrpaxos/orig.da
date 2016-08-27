@@ -114,7 +114,7 @@ class Leader(process):
         output('### start')
 #        start(new(Scout, (self.id, acceptors, ballot_num)))
         sub = new(Scout, (self.id, acceptors, ballot_num))
-        start(sub); started |= sub
+        start(sub); started.add(sub)
         await(received(('done',)))
         for tmp in started: tmp.join()
         output('terminating')
@@ -128,7 +128,7 @@ class Leader(process):
 #                          (self.id, acceptors, replicas, ballot_num, s, p)))
                 sub = new(Commander,
                           (self.id, acceptors, replicas, ballot_num, s, p))
-                start(sub); started |= sub
+                start(sub); started.add(sub)
 
     def receive(msg= ('adopted', ballot_num, pvals)):
         output('### adopted', ballot_num, pvals)
@@ -138,7 +138,7 @@ class Leader(process):
 #                      (self.id, acceptors, replicas, ballot_num, s, p)))
             sub = new(Commander,
                     (self.id, acceptors, replicas, ballot_num, s, p))
-            start(sub); started |= sub
+            start(sub); started.add(sub)
         active = True
 
     def receive(msg= ('preempted', (r1, leader1))):
@@ -147,7 +147,7 @@ class Leader(process):
             ballot_num = (r1 + 1, self.id)
 #            start(new(Scout, (self.id, acceptors, ballot_num)))
             sub = new(Scout, (self.id, acceptors, ballot_num))
-            start(sub); started |= sub
+            start(sub); started.add(sub)
 
     def circle_plus(x, y):
         return y | setof((s, p), (s, p) in x, not some((_s, _) in y))
