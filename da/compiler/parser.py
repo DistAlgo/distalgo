@@ -1152,7 +1152,7 @@ class Parser(NodeVisitor):
             # Parse 'config' statements. These may appear at the module level,
             # process level, or in the 'main' function (for backwards
             # compatability):
-            elif self.expr_check(KW_CONFIG, 0, 0, e, keywords=None):
+            elif self.expr_check(KW_CONFIG, 0, None, e, keywords=None):
                 if isinstance(self.current_parent, dast.Process):
                     self.current_process.configurations.extend(
                         self.parse_config_section(e))
@@ -1843,18 +1843,39 @@ class Parser(NodeVisitor):
         dapredicates = [self.visit(pred) for pred in preds]
         return dadomains, dapredicates
 
+    class NameTransformer(NodeTransformer):
+        def visit_Name(self, node):
+            return Str(node.id)
+
+    def parser_config_value(self, vnode):
+        value = None
+        # Configuration values can not contain variables, so we treat all
+        # 'Name's as 'Str's:
+        vnode = Parser.NameTransformer().visit(vnode)
+        if isinstance(vnode, Num) or isinstance(vnode, Str) or \
+           isinstance(vnode, Bytes) or isinstance(vnode, NameConstant) or \
+           isinstance(vnode, Set) or isinstance(vnode, List) or \
+           isinstance(vnode, Tuple):
+            value = self.visit(vnode)
+        else:
+            self.error("Invalid configuration value.", vnode)
+        return value
+
     def parse_config_section(self, node):
         res = []
+        for argexpr in node.args:
+            if (isinstance(argexpr, Compare) and
+                  isinstance(argexpr.left, Name) and
+                  len(argexpr.ops) == 1 and
+                  type(argexpr.ops[0]) is Is):
+                key = argexpr.left.id.casefold()
+                value = self.parser_config_value(argexpr.comparators[0])
+                if value is not None:
+                    res.append((key, value))
         for kw in node.keywords:
-            key = kw.arg
+            key = kw.arg.casefold()
             vnode = kw.value
-            value = None
-            if isinstance(vnode, Name) or isinstance(vnode, Num) \
-               or isinstance(vnode, Str) or isinstance(vnode, Bytes) \
-               or isinstance(vnode, NameConstant):
-                value = self.visit(vnode)
-            else:
-                self.error("Invalid configuration value.", vnode)
+            value = self.parser_config_value(vnode)
             if value is not None:
                 res.append((key, value))
         return res
