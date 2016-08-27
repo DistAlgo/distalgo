@@ -1,4 +1,5 @@
 import sys
+config(Channel is Reliable, Handling is one)
 
 class P(process):
     def setup(ps:set, v:P, maxfail:int):
@@ -17,8 +18,10 @@ class P(process):
               await(receiveflag)
               receiveflag = False
           --end
+          send(('done', ), to=ps)
           x = max(listof(v, v in V, V[v]))
           output("x = %r" % (x))
+          await(each(p in ps, received(('done',), from_=_p)))
 
     def receive(msg=('Value', v)):
        receiveflag = True

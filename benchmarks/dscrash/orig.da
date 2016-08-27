@@ -1,4 +1,5 @@
 import sys
+config(Channel is Reliable, Handling is one)
 controller = import_da('controller')
 
 class P(process, controller.Controllee):
