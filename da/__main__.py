@@ -26,7 +26,7 @@ import sys
 import logging
 import argparse
 
-__version__ = "1.0.0b16"
+__version__ = "1.0.0b17"
 
 from da.api import entrypoint
 from da.common import set_global_options
