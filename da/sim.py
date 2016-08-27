@@ -202,8 +202,12 @@ class DistProcess(multiprocessing.Process):
             self.id = self._channel(self._dp_name, self.__class__)
             common.set_current_process(self.id)
             pattern.initialize(self.id)
-            if self.get_config('clock', 'none').casefold() == 'lamport':
+            if self.get_config('clock', default='none').casefold() == 'lamport':
                 self._logical_clock = 0
+            if self.get_config('handling', default='one').casefold() == 'all':
+                self._do_label = self._label_all
+            else:
+                self._do_label = self._label_one
             self._log = logging.getLogger(str(self))
             self._start_comm_thread()
             self._lock = threading.Lock()
@@ -344,7 +348,10 @@ class DistProcess(multiprocessing.Process):
     def _label(self, name, block=False, timeout=None):
         """This simulates the controlled "label" mechanism.
 
-        Currently we simply handle one event on one label call.
+        The number of pending events handled at each label is controlled by the
+        'handling' configuration key -- if 'handling' is 'one' then `_do_label'
+        will be set to `_label_one', otherwise `_do_label' will be set to
+        `_label_all'.
 
         """
         # Handle performance timers first:
@@ -359,6 +366,14 @@ class DistProcess(multiprocessing.Process):
             self.output("Crashed(@label %s)" % name, logging.WARNING)
             self.exit(10)
 
+        self._do_label(name, block, timeout)
+        self._process_jobqueue(name)
+
+    def _label_one(self, name, block=False, timeout=None):
+        """Handle at most one pending event at a time.
+
+        """
+        nmax = self._eventq.qsize()
         if timeout is not None:
             if self._timer is None:
                 self._timer_start()
@@ -370,7 +385,32 @@ class DistProcess(multiprocessing.Process):
         else:
             timeleft = None
         self._process_event(block, timeleft)
-        self._process_jobqueue(name)
+
+    def _label_all(self, name, block=False, timeout=None):
+        """Handle up to all pending events at the time this function is called.
+
+        """
+        # 'nmax' is a "snapshot" of the queue size at the time we're called. We
+        # only attempt to process up to 'nmax' events, since otherwise we could
+        # potentially block the process forever if the events come in faster
+        # than we can process them:
+        nmax = self._eventq.qsize()
+        i = 0
+        while True:
+            if timeout is not None:
+                if self._timer is None:
+                    self._timer_start()
+                timeleft = timeout - (time.time() - self._timer)
+                if timeleft <= 0:
+                    self._timer_end()
+                    self._timer_expired = True
+                    return
+            else:
+                timeleft = None
+            handled = self._process_event(block, timeleft)
+            i += 1
+            if not handled or i >= nmax:
+                return
 
     def _process_jobqueue(self, label=None):
         leftovers = []
@@ -389,11 +429,12 @@ class DistProcess(multiprocessing.Process):
         self._jobqueue.extend(leftovers)
 
     def _process_event(self, block, timeout=None):
-        """Retrieves one message, then process the backlog event queue.
+        """Retrieves and processes one pending event.
 
         Parameter 'block' indicates whether to block waiting for next message
         to come in if the queue is currently empty. 'timeout' is the maximum
-        time to wait for an event.
+        time to wait for an event. Returns True if an event was successfully
+        processes, False otherwise.
 
         """
         try:
@@ -401,10 +442,10 @@ class DistProcess(multiprocessing.Process):
                 timeout = 0
             event = self._eventq.get(block, timeout)
         except queue.Empty:
-            return
+            return False
         except Exception as e:
             self._log.error("Caught exception while waiting for events: %r", e)
-            return
+            return False
 
         if isinstance(self._logical_clock, int):
             if not isinstance(event.timestamp, int):
@@ -413,9 +454,10 @@ class DistProcess(multiprocessing.Process):
                 self._log.warn(
                     "Invalid logical clock value: {0}; message dropped. "
                     "".format(event.timestamp))
-                return
+                return False
             self._logical_clock = max(self._logical_clock, event.timestamp) + 1
         self._trigger_event(event)
+        return True
 
     def _trigger_event(self, event):
         """Immediately triggers 'event', skipping the event queue.
