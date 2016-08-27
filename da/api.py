@@ -245,7 +245,7 @@ def entrypoint():
     log.info("Terminating...")
 
 @api
-def new(pcls, args=None, num=1, **props):
+def new(pcls, args=None, num=None, **props):
     if not issubclass(pcls, sim.DistProcess):
         log.error("Can not create non-DistProcess.")
         return set()
@@ -260,10 +260,13 @@ def new(pcls, args=None, num=1, **props):
             return
     log.debug("Current process is %s" % str(common.current_process()))
 
-    log.debug("Creating %d instances of %s.." % (num, str(pcls)))
+    log.debug("Creating %d instances of %s.." %
+              (num if num is not None else 1, str(pcls)))
     pipes = []
     iterator = []
-    if isinstance(num, int):
+    if num is None:
+        iterator = range(1)
+    elif isinstance(num, int):
         iterator = range(num)
     elif isinstance(num, set):
         iterator = num
@@ -298,7 +301,9 @@ def new(pcls, args=None, num=1, **props):
     if (args != None):
         setup(result, args)
 
-    if isinstance(num, int):
+    if num is None:
+        return result[0]
+    elif isinstance(num, int):
         return set(result.values())
     else:
         return result
