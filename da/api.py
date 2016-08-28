@@ -136,8 +136,8 @@ def init_channel(module):
 
     ept = ep.UdpEndPoint
     props = []
-    if 'channel' in common.global_options():
-        props = common.global_options()['channel'].split(',')
+    if 'channel' in common.global_options().config:
+        props = common.global_options().config['channel'].split(',')
     elif 'channel' in module._config_object:
         props = module._config_object['channel']
     if isinstance(props, str):
