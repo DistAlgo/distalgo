@@ -27,7 +27,6 @@ import abc
 import sys
 import copy
 import time
-import queue
 import signal
 import random
 import logging
@@ -85,7 +84,11 @@ class DistProcess(multiprocessing.Process):
 
         def __init__(self, parent):
             threading.Thread.__init__(self)
+            self.daemon = True
             self._parent = parent
+            self.condition = threading.Condition()
+            self.num_waiting = 0
+            self.q = collections.deque()
 
         def run(self):
             try:
@@ -100,7 +103,10 @@ class DistProcess(multiprocessing.Process):
                     e = pattern.ReceivedEvent(
                         envelope=(clock, None, src),
                         message=data)
-                    self._parent._eventq.put(e)
+                    self.q.append(e)
+                    if self.num_waiting > 0:
+                        with self.condition:
+                            self.condition.notify_all()
 
             except KeyboardInterrupt:
                 pass
@@ -121,7 +127,8 @@ class DistProcess(multiprocessing.Process):
 
         self._logical_clock = None
         self._events = []
-        self._jobqueue = collections.deque()
+        self._jobqueue = list()
+
         self._timer = None
         self._timer_expired = False
         self._lock = None
@@ -167,9 +174,7 @@ class DistProcess(multiprocessing.Process):
                     m(*args)
 
     def _start_comm_thread(self):
-        self._eventq = queue.Queue()
         self._comm = DistProcess.Comm(self)
-        self._comm.daemon =True
         self._comm.start()
 
     def _sighandler(self, signum, frame):
@@ -373,7 +378,6 @@ class DistProcess(multiprocessing.Process):
         """Handle at most one pending event at a time.
 
         """
-        nmax = self._eventq.qsize()
         if timeout is not None:
             if self._timer is None:
                 self._timer_start()
@@ -394,9 +398,10 @@ class DistProcess(multiprocessing.Process):
         # only attempt to process up to 'nmax' events, since otherwise we could
         # potentially block the process forever if the events come in faster
         # than we can process them:
-        nmax = self._eventq.qsize()
+        nmax = len(self._comm.q)
         i = 0
         while True:
+            i += 1
             if timeout is not None:
                 if self._timer is None:
                     self._timer_start()
@@ -404,18 +409,15 @@ class DistProcess(multiprocessing.Process):
                 if timeleft <= 0:
                     self._timer_end()
                     self._timer_expired = True
-                    return
+                    break
             else:
                 timeleft = None
-            handled = self._process_event(block, timeleft)
-            i += 1
-            if not handled or i >= nmax:
-                return
+            if not self._process_event(block, timeleft) or i >= nmax:
+                break
 
     def _process_jobqueue(self, label=None):
         leftovers = []
-        while self._jobqueue:
-            handler, args = self._jobqueue.popleft()
+        for handler, args in self._jobqueue:
             if ((handler._labels is None or label in handler._labels) and
                 (handler._notlabels is None or label not in handler._notlabels)):
                 try:
@@ -426,7 +428,7 @@ class DistProcess(multiprocessing.Process):
                         type(e).__name__, handler.__name__, str(args), str(e))
             else:
                 leftovers.append((handler, args))
-        self._jobqueue.extend(leftovers)
+        self._jobqueue = leftovers
 
     def _process_event(self, block, timeout=None):
         """Retrieves and processes one pending event.
@@ -437,15 +439,39 @@ class DistProcess(multiprocessing.Process):
         processes, False otherwise.
 
         """
+        event = None
+        if timeout is not None and timeout < 0:
+            timeout = 0
+
+        # Opportunistically try to get the next event off the queue:
         try:
-            if timeout is not None and timeout < 0:
-                timeout = 0
-            event = self._eventq.get(block, timeout)
-        except queue.Empty:
-            return False
-        except Exception as e:
-            self._log.error("Caught exception while waiting for events: %r", e)
-            return False
+            event = self._comm.q.popleft()
+        except IndexError:
+            pass
+
+        if event is None:
+            # The queue was empty, if we don't need to block then we're done:
+            if not block or timeout == 0:
+                return False
+            # Otherwise, we have to acquire the condition object and block:
+            else:
+                try:
+                    with self._comm.condition:
+                        self._comm.num_waiting += 1
+                        self._comm.condition.wait(timeout)
+                        self._comm.num_waiting -= 1
+                    # We have to try fetching an event again to preserve the
+                    # semantics of 'handling=one':
+                    event = self._comm.q.popleft()
+                except IndexError:
+                    # If the queue is still empty, it means that the new event
+                    # was picked up by another thread, so it's ok for us to
+                    # return:
+                    return False
+                except Exception as e:
+                    self._log.error(
+                        "Caught exception while waiting for events: %r", e)
+                    return False
 
         if isinstance(self._logical_clock, int):
             if not isinstance(event.timestamp, int):
