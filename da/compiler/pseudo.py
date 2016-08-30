@@ -403,7 +403,8 @@ class DastUnparser:
             self.label("#CONFIG")
             self.write("\n")
             for key, value in t.configurations:
-                self.fill(key + " : " + repr(value))
+                self.fill(key + " : ")
+                self.dispatch(value)
         if t.setup:
             self.label("#INIT")
             self.dispatch(t.setup.body)
