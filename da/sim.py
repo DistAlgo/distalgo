@@ -134,15 +134,6 @@ class DistProcess(multiprocessing.Process):
         self._lock = None
         self._setup_called = False
 
-        # Performance counters:
-        self._usrtime_st = 0
-        self._systime_st = 0
-        self._waltime_st = 0
-        self._usrtime = 0
-        self._systime = 0
-        self._waltime = 0
-        self._is_timer_running = False
-
         self._dp_name = self._properties.get('name', None)
         self._log = None
 
@@ -224,7 +215,6 @@ class DistProcess(multiprocessing.Process):
                 sys.exit(1)
 
             result = self._da_run_internal()
-            self.report_times()
 
         except Exception as e:
             sys.stderr.write("Unexpected error at process %s:%r"% (str(self), e))
@@ -233,25 +223,6 @@ class DistProcess(multiprocessing.Process):
         except KeyboardInterrupt as e:
             self._log.debug("Received KeyboardInterrupt, exiting")
             pass
-
-    def start_timers(self):
-        if not self._is_timer_running:
-            self._usrtime_st, self._systime_st, _, _, _ = os.times()
-            self._waltime_st = time.clock()
-            self._is_timer_running = True
-
-    def stop_timers(self):
-        if self._is_timer_running:
-            usrtime, systime, _, _, _ = os.times()
-            self._usrtime += usrtime - self._usrtime_st
-            self._systime += systime - self._systime_st
-            self._waltime += time.clock() - self._waltime_st
-            self._is_timer_running = False
-
-    def report_times(self):
-        self._parent.send(('totalusrtime', self._usrtime), self.id)
-        self._parent.send(('totalsystime', self._systime), self.id)
-        self._parent.send(('totaltime', self._waltime), self.id)
 
     @builtin
     def exit(self, code=0):
@@ -359,11 +330,6 @@ class DistProcess(multiprocessing.Process):
         `_label_all'.
 
         """
-        # Handle performance timers first:
-        if name == "start":
-            self.start_timers()
-        elif name == "end":
-            self.stop_timers()
         if self._fails('hang'):
             self.output("Hanged(@label %s)" % name, logging.WARNING)
             self._lock.acquire()

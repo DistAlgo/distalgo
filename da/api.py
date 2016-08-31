@@ -50,8 +50,6 @@ formatter = logging.Formatter(
     '[%(asctime)s]%(name)s:%(levelname)s: %(message)s')
 log._formatter = formatter
 
-PerformanceCounters = {}
-CounterLock = threading.Lock()
 RootLock = threading.Lock()
 EndPointType = ep.UdpEndPoint
 
@@ -189,51 +187,18 @@ def entrypoint():
     # Set the default channel type:
     init_channel(module)
 
-    # Start the background statistics thread:
     RootLock.acquire()
-    stat_th = threading.Thread(target=collect_statistics,
-                               name="Stat Thread")
-    stat_th.daemon = True
-    stat_th.start()
-
-    niters = GlobalOptions.iterations
-    stats = {'sent' : 0, 'usrtime': 0, 'systime' : 0, 'time' : 0,
-              'units' : 0, 'mem' : 0}
     # Start main program
+    niters = GlobalOptions.iterations
     sys.argv = [target] + GlobalOptions.args
     try:
         for i in range(0, niters):
             log.info("Running iteration %d ..." % (i+1))
 
-            walltime_start = time.perf_counter()
             module.main()
 
             print("Waiting for remaining child processes to terminate..."
                   "(Press \"Ctrl-C\" to force kill)")
-
-            walltime = time.perf_counter() - walltime_start
-
-            #log_performance_statistics(walltime)
-            r = aggregate_statistics()
-            for k, v in r.items():
-                stats[k] += v
-
-        for k in stats:
-            stats[k] /= niters
-
-        perffd = None
-        # if GlobalOptions.perffile is not None:
-        #     perffd = open(GlobalOptions.perffile, "w")
-        if perffd is not None:
-            print_simple_statistics(perffd)
-            perffd.close()
-
-        dumpfd = None
-        # if GlobalOptions.dumpfile is not None:
-        #     dumpfd = open(GlobalOptions.dumpfile, "wb")
-        if dumpfd is not None:
-            pickle.dump(stats, fd)
-            dumpfd.close()
 
     except KeyboardInterrupt as e:
         log.info("Received keyboard interrupt.")
@@ -242,7 +207,6 @@ def entrypoint():
         log.error("Caught unexpected global exception: %r", e)
         traceback.print_tb(err_info[2])
 
-    log.info("Terminating...")
 
 @api
 def new(pcls, args=None, num=None, **props):
@@ -332,7 +296,6 @@ def start(procs, args=None):
     if args is not None:
         setup(ps, args)
 
-    init_performance_counters(ps)
     log.debug("Starting %s..." % str(procs))
     for p in ps:
         p._initpipe.send("start")
@@ -348,115 +311,6 @@ def send(data, to):
     else:
         result = to.send(data, common.current_process(), 0)
     return result
-
-def collect_statistics():
-    global PerformanceCounters
-    global CounterLock
-
-    completed = 0
-    try:
-        RootLock.acquire()
-        for mesg in common.current_process().recvmesgs():
-            src, tstamp, tup = mesg
-            event_type, count = tup
-
-            CounterLock.acquire()
-            if PerformanceCounters.get(src) is not None:
-                if PerformanceCounters[src].get(event_type) is None:
-                    PerformanceCounters[src][event_type] = count
-                else:
-                    PerformanceCounters[src][event_type] += count
-            else:
-                log.debug("Unknown proc: " + str(src))
-            CounterLock.release()
-
-    except KeyboardInterrupt:
-        pass
-
-    except Exception as e:
-        err_info = sys.exc_info()
-        log.debug("Caught unexpected global exception: %r", e)
-        traceback.print_tb(err_info[2])
-
-def init_performance_counters(procs):
-    global PerformanceCounters
-    global CounterLock
-    CounterLock.acquire()
-    PerformanceCounters = {}
-    CounterLock.release()
-    for p in procs:
-        CounterLock.acquire()
-        PerformanceCounters[p] = dict()
-        CounterLock.release()
-
-def log_performance_statistics(walltime):
-    global PerformanceCounters
-    global CounterLock
-
-    statstr = "***** Statistics *****\n"
-    tot_sent = 0
-    tot_usrtime = 0
-    tot_systime = 0
-    tot_time = 0
-    tot_units = 0
-    total = dict()
-
-    CounterLock.acquire()
-    for proc, data in PerformanceCounters.items():
-        for key, val in data.items():
-            if total.get(key) is not None:
-                total[key] += val
-            else:
-                total[key] = val
-
-    statstr += ("* Total procs: %d\n" % len(PerformanceCounters))
-    CounterLock.release()
-    statstr += ("* Wallclock time: %f\n" % walltime)
-
-    if total.get('totalusrtime') is not None:
-        statstr += ("** Total usertime: %f\n" % total['totalusrtime'])
-    if total.get('totalsystime') is not None:
-        statstr += ("** Total systemtime: %f\n" % total['totalsystime'])
-    if total.get('mem') is not None:
-        statstr += ("** Total memory: %d\n" % total['mem'])
-    log.info(statstr)
-
-def print_simple_statistics(outfd):
-    st = aggregate_statistics()
-    statstr = str(st['usrtime']) + '\t' + str(st['time']) + '\t' + str(st['mem'])
-    outfd.write(statstr)
-
-def aggregate_statistics():
-    global PerformanceCounters
-    global CounterLock
-
-    result = {'sent' : 0, 'usrtime': 0, 'systime' : 0, 'time' : 0,
-              'units' : 0, 'mem' : 0}
-
-    CounterLock.acquire()
-    for key, val in PerformanceCounters.items():
-        if val.get('sent') is not None:
-            result['sent'] += val['sent']
-        if val.get('totalusrtime') is not None:
-            result['usrtime'] += val['totalusrtime']
-        if val.get('totalsystime') is not None:
-            result['systime'] += val['totalsystime']
-        if val.get('totaltime') is not None:
-            result['time'] += val['totaltime']
-        if val.get('mem') is not None:
-            result['mem'] += val['mem']
-    CounterLock.release()
-
-    return result
-
-def set_proc_attribute(procs, attr, values):
-    if isinstance(procs, dict):
-        ps = procs.values()
-    else:
-        ps = procs
-
-    for p in ps:
-        p._initpipe.send((attr, values))
 
 def die(mesg = None):
     if mesg != None:
