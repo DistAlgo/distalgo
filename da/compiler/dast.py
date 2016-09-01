@@ -2445,7 +2445,7 @@ class Process(CompoundStmt, ArgumentsContainer):
 
     @property
     def methodnames(self):
-        return {f.name for f in self.functions}
+        return {f.name for f in self.methods}
 
     @property
     def event_handlers(self):
