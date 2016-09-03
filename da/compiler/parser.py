@@ -1479,20 +1479,24 @@ class Parser(NodeVisitor):
         expr.attr = node.attr
         self.pop_state()
         if isinstance(expr.value, dast.SelfExpr):
+            if node.attr == 'id':
+                # "self.id" is represented as a SelfExpr node:
+                return expr.value
             # Need to update the namedvar object
             n = self.current_process.find_name(expr.attr)
+            expr = self.create_expr(dast.SimpleExpr, node)
             if n is None:
                 if (self.is_in_setup() and
                         isinstance(self.current_context, Assignment)):
                     self.debug("Adding name '%s' to process scope"
-                               " from setup()." % expr.attr, node)
-                    n = self.current_process.add_name(expr.attr)
+                               " from setup()." % node.attr, node)
+                    n = self.current_process.add_name(node.attr)
                     n.add_assignment(self.current_context.node,
                                      self.current_context.type)
                     n.set_scope(self.current_process)
                 else:
                     self.error("Undefined process state variable: " +
-                               str(expr.attr), node)
+                               str(node.attr), node)
             else:
                 if isinstance(self.current_context, Assignment) or \
                    isinstance(self.current_context, Delete):
@@ -1505,6 +1509,8 @@ class Parser(NodeVisitor):
                                  self.current_context.type)
                 else:
                     n.add_read(expr)
+            expr.value = n
+            self.pop_state()
         return expr
 
     def ensure_one_arg(self, name, node):

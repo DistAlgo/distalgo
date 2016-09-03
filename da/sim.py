@@ -35,11 +35,50 @@ import traceback
 import collections
 import multiprocessing
 
-from da import api, pattern, common, endpoint
+from da import pattern, common, endpoint
 
 builtin = common.builtin
 
 _config_object = dict()
+
+class Comm(threading.Thread):
+    """The background communications thread.
+
+    Creates an event object for each incoming message, and appends the
+    event object to the main process' event queue.
+    """
+
+    def __init__(self, router):
+        threading.Thread.__init__(self)
+        self.daemon = True
+        self.router = router
+        self.condition = threading.Condition()
+        self.num_waiting = 0
+        self.q = collections.deque()
+        self.log = logging.getLogger(str(self))
+
+    def run(self):
+        try:
+            self.mesgloop()
+        except KeyboardInterrupt:
+            pass
+
+    def mesgloop(self):
+        for msg in self.router.recvmesgs():
+            try:
+                (src, clock, data) = msg
+            except ValueError as e:
+                self.log.warn("Invalid message dropped: {0}".format(str(msg)))
+                continue
+
+            e = pattern.ReceivedEvent(
+                envelope=(clock, None, src),
+                message=data)
+            self.q.append(e)
+            if self.num_waiting > 0:
+                with self.condition:
+                    self.condition.notify_all()
+
 
 class DistProcess(multiprocessing.Process):
     """Abstract base class for DistAlgo processes.
@@ -75,46 +114,11 @@ class DistProcess(multiprocessing.Process):
 
     """
 
-    class Comm(threading.Thread):
-        """The background communications thread.
-
-        Creates an event object for each incoming message, and appends the
-        event object to the main process' event queue.
-        """
-
-        def __init__(self, parent):
-            threading.Thread.__init__(self)
-            self.daemon = True
-            self._parent = parent
-            self.condition = threading.Condition()
-            self.num_waiting = 0
-            self.q = collections.deque()
-
-        def run(self):
-            try:
-                for msg in self._parent._recvmesgs():
-                    try:
-                        (src, clock, data) = msg
-                    except ValueError as e:
-                        self._parent._log.warn(
-                            "Invalid message dropped: {0}".format(str(msg)))
-                        continue
-
-                    e = pattern.ReceivedEvent(
-                        envelope=(clock, None, src),
-                        message=data)
-                    self.q.append(e)
-                    if self.num_waiting > 0:
-                        with self.condition:
-                            self.condition.notify_all()
-
-            except KeyboardInterrupt:
-                pass
-
     def __init__(self, parent, initpipe, channel, props=None):
         multiprocessing.Process.__init__(self)
 
         self.id = None
+        self._state = common.Namespace()
         self._running = False
         self._parent = parent
         self._initpipe = initpipe
@@ -165,7 +169,7 @@ class DistProcess(multiprocessing.Process):
                     m(*args)
 
     def _start_comm_thread(self):
-        self._comm = DistProcess.Comm(self)
+        self._comm = Comm(self.id)
         self._comm.start()
 
     def _sighandler(self, signum, frame):
@@ -173,8 +177,12 @@ class DistProcess(multiprocessing.Process):
             os.kill(cpid, signal.SIGTERM)
         sys.exit(0)
 
+    def _debug_handler(self, sig, frame):
+        self._debugger.set_trace(frame)
+
     _config_object = dict()
 
+    @builtin
     def get_config(self, key, default=None):
         """Returns the configuration value for specified 'key'.
         """

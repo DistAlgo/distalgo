@@ -74,6 +74,7 @@ if sys.version_info > (3, 5):
 PATTERN_EXPR_NAME = "_PatternExpr_%d"
 QUATIFIED_EXPR_NAME = "_QuantifiedExpr_%d"
 CONFIG_OBJECT_NAME = "_config_object"
+STATE_ATTR_NAME = "_state"
 
 ########## Convenience methods for creating AST nodes: ##########
 
@@ -479,7 +480,8 @@ class PythonGenerator(NodeVisitor):
         if isinstance(node.parent, dast.Process):
             if node.name == "setup":
                 fd.args = self.visit(node.parent.args)
-                fd.body = ([Assign(targets=[pyAttr("self", name, Store())],
+                fd.body = ([Assign(targets=[pyAttr(pyAttr("self", STATE_ATTR_NAME),
+                                                   name, Store())],
                                    value=pyName(name))
                             for name in node.parent.ordered_names] + fd.body)
             fd.args.args.insert(0, arg("self", None))
@@ -546,7 +548,7 @@ class PythonGenerator(NodeVisitor):
             return Num(node.value)
 
     def visit_SelfExpr(self, node):
-        return pyName("self")
+        return pyAttr("self", "id")
 
     def visit_TrueExpr(self, node):
         return pyTrue()
@@ -884,7 +886,10 @@ class PythonGenerator(NodeVisitor):
 
     def visit_NamedVar(self, node):
         if isinstance(node.scope, dast.Process):
-            return pyAttr("self", node.name)
+            if node.name in node.scope.methodnames:
+                return pyAttr("self", node.name)
+            else:
+                return pyAttr(pyAttr("self", STATE_ATTR_NAME), node.name)
         else:
             return pyName(node.name)
 
