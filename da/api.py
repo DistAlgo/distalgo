@@ -51,7 +51,7 @@ formatter = logging.Formatter(
 log._formatter = formatter
 
 RootLock = threading.Lock()
-EndPointType = ep.UdpEndPoint
+EndPointType = None
 
 def find_file_on_paths(filename, paths):
     """Looks for a given 'filename' under a list of directories, in order.
@@ -129,9 +129,7 @@ def import_da(name, from_dir=None, compiler_args=[]):
 
     return importlib.import_module(name)
 
-def init_channel(module):
-    global EndPointType
-
+def get_channel_type(module):
     ept = ep.UdpEndPoint
     props = []
     if 'channel' in common.global_options().config:
@@ -148,14 +146,7 @@ def init_channel(module):
             ept = ep.TcpEndPoint
         elif prop not in {"unfifo", "unreliable"}:
             log.error("Unknown channel property %s", str(prop))
-            return
-
-    if common.current_process() is not None:
-        if EndPointType != ept:
-            log.warn(
-                "Can not change channel type after creating child processes.")
-        return
-    EndPointType = ept
+    return ept
 
 def entrypoint():
     GlobalOptions = common.global_options()
@@ -185,7 +176,8 @@ def entrypoint():
     common.sysinit()
 
     # Set the default channel type:
-    init_channel(module)
+    global EndPointType
+    EndPointType = get_channel_type(module)
 
     RootLock.acquire()
     # Start main program
@@ -217,7 +209,6 @@ def new(pcls, args=None, num=None, **props):
     if common.current_process() is None:
         if type(EndPointType) == type:
             common.set_current_process(EndPointType())
-            common.current_process().shared = multiprocessing.Value("i", 0)
             RootLock.release()
         else:
             log.error("EndPoint not defined")
@@ -242,8 +233,7 @@ def new(pcls, args=None, num=None, **props):
     daemon = props['daemon'] if 'daemon' in props else False
     for i in iterator:
         (childp, ownp) = multiprocessing.Pipe()
-        p = pcls(common.current_process(), childp,
-                 type(common.current_process()), props)
+        p = pcls(common.current_process(), childp, props)
         p.daemon = daemon
         if isinstance(i, str):
             p.set_name(i)

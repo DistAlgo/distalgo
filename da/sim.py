@@ -114,7 +114,7 @@ class DistProcess(multiprocessing.Process):
 
     """
 
-    def __init__(self, parent, initpipe, channel, props=None):
+    def __init__(self, parent, initpipe, props=None):
         multiprocessing.Process.__init__(self)
 
         self.id = None
@@ -122,7 +122,6 @@ class DistProcess(multiprocessing.Process):
         self._running = False
         self._parent = parent
         self._initpipe = initpipe
-        self._channel = channel
         self._cmdline = common.global_options()
         if props is not None:
             self._properties = props
@@ -182,6 +181,21 @@ class DistProcess(multiprocessing.Process):
 
     _config_object = dict()
 
+    def get_channel_type(self):
+        ept = endpoint.UdpEndPoint
+        props = self.get_config("channel", default=[])
+        if isinstance(props, str):
+            props = [props]
+        for prop in props:
+            prop = prop.casefold()
+            if prop == "fifo":
+                ept = endpoint.TcpEndPoint
+            elif prop == "reliable":
+                ept = endpoint.TcpEndPoint
+            elif prop not in {"unfifo", "unreliable"}:
+                log.error("Unknown channel property %s", str(prop))
+        return ept
+
     @builtin
     def get_config(self, key, default=None):
         """Returns the configuration value for specified 'key'.
@@ -203,7 +217,8 @@ class DistProcess(multiprocessing.Process):
                 common.sysinit()
 
             signal.signal(signal.SIGTERM, self._sighandler)
-            self.id = self._channel(self._dp_name, self.__class__)
+            signal.signal(signal.SIGUSR1, self._debug_handler)
+            self.id = self.get_channel_type()(self._dp_name, self.__class__)
             common.set_current_process(self.id)
             pattern.initialize(self.id)
             if self.get_config('clock', default='none').casefold() == 'lamport':
@@ -272,21 +287,6 @@ class DistProcess(multiprocessing.Process):
         """Increment Lamport clock by 1."""
         if isinstance(self._logical_clock, int):
             self._logical_clock += 1
-
-    @builtin
-    def spawn(self, pcls, args, **props):
-        """Spawns a child process"""
-        childp, ownp = multiprocessing.Pipe()
-        p = pcls(self.id, childp, self._channel, props)
-        p.daemon = True
-        p.start()
-
-        childp.close()
-        cid = ownp.recv()
-        ownp.send(("setup", args))
-        ownp.send("start")
-
-        return cid
 
     # Wrapper functions for message passing:
     def _send(self, data, to):
