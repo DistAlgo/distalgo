@@ -198,6 +198,9 @@ def builtin(func):
         builtin_registry[funame] = func
         return func
 
+class Namespace(object):
+    pass
+
 class Null(object):
     def __init__(self, *args, **kwargs): pass
     def __call__(self, *args, **kwargs): return self
