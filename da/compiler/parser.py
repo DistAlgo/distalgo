@@ -1853,7 +1853,7 @@ class Parser(NodeVisitor):
         def visit_Name(self, node):
             return Str(node.id)
 
-    def parser_config_value(self, vnode):
+    def parse_config_value(self, vnode):
         value = None
         # Configuration values can not contain variables, so we treat all
         # 'Name's as 'Str's:
@@ -1875,13 +1875,13 @@ class Parser(NodeVisitor):
                   len(argexpr.ops) == 1 and
                   type(argexpr.ops[0]) is Is):
                 key = argexpr.left.id.casefold()
-                value = self.parser_config_value(argexpr.comparators[0])
+                value = self.parse_config_value(argexpr.comparators[0])
                 if value is not None:
                     res.append((key, value))
         for kw in node.keywords:
             key = kw.arg.casefold()
             vnode = kw.value
-            value = self.parser_config_value(vnode)
+            value = self.parse_config_value(vnode)
             if value is not None:
                 res.append((key, value))
         return res
