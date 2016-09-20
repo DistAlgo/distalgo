@@ -27,6 +27,7 @@ import sys
 import copy
 import os.path
 import logging
+import collections.abc
 import importlib
 
 from inspect import signature, Parameter
@@ -299,29 +300,39 @@ class frozendict(dict):
     def __repr__(self):
         return "frozendict(%s)" % dict.__repr__(self)
 
+BuiltinImmutables = {int, float, complex, tuple, str, bytes, frozenset}
+
 def freeze(obj):
+    if type(obj) in BuiltinImmutables:
+        return obj
+
     if IncOQBaseType is not None:
         if isinstance(obj, IncOQBaseType):
             return copy.deepcopy(obj)
 
-    if isinstance(obj, list):
-        # list -> tuple
-        return tuple(freeze(elem) for elem in obj)
-    elif isinstance(obj, bytearray):
-        # bytearray -> bytes
-        return bytes(obj)
-    elif isinstance(obj, set) and not isinstance(obj, frozenset):
+    if isinstance(obj, collections.abc.MutableSequence):
+        if isinstance(obj, collections.abc.ByteString):
+            # bytearray -> bytes
+            return bytes(obj)
+        else:
+            # list -> tuple
+            return tuple(freeze(elem) for elem in obj)
+    elif isinstance(obj, collections.abc.MutableSet):
         # set -> frozenset
         return frozenset(freeze(elem) for elem in obj)
-    elif isinstance(obj, dict) and not isinstance(obj, frozendict):
+    elif isinstance(obj, collections.abc.MutableMapping):
         # dict -> frozendict
         return frozendict((freeze(k), freeze(v)) for k, v in obj.items())
-    elif isinstance(obj, tuple):
+    elif isinstance(obj, collections.abc.Sequence):
+        #NOTE: This part is fragile. For immutable sequence objects, we still
+        # have to recursively freeze its elements, which means we have to create
+        # a new instance of the same type. Here we just assume the class
+        # `__init__` method takes a 'iterable' as argument. Otherwise,
+        # everything falls apart.
         return type(obj)(freeze(e) for e in obj)
     else:
         # everything else just assume hashable & immutable, hahaha:
         return obj
-
 
 if __name__ == "__main__":
     @api
