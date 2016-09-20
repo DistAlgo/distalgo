@@ -146,14 +146,11 @@ def api(func):
     funame = func.__name__
     if api_registry.get(funame) is not None:
         return api_registry[funame]
-        #raise RuntimeError("Double definition of API function: %s" % funame)
 
     sig = signature(func)
 
     @wraps(func)
     def _func_impl(*args, **kwargs):
-        if GlobalOptions is None:
-            raise RuntimeError("DistAlgo runtime system not initialized!")
         try:
             binding = sig.bind(*args, **kwargs)
         except TypeError as e:
