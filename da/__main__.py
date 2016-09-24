@@ -82,6 +82,9 @@ def parseArgs():
     parser.add_argument("-m", "--inc-module-name",
                         help="name of the incrementalized interface module, "
                         "defaults to source module name + '_inc'. ")
+    parser.add_argument("-H", "--hostname", default='localhost',
+                        help="hostname for binding network sockets, "
+                        "defaults to 'localhost'. ")
     parser.add_argument("-r", "--recompile", dest="recompile",
                         help="force recompile DistAlgo source file. ",
                         action="store_true", default=False)

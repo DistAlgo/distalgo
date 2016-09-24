@@ -31,6 +31,7 @@ import types
 import pickle
 import signal
 import logging
+import collections.abc
 import importlib
 import threading
 import traceback
@@ -215,28 +216,26 @@ def new(pcls, args=None, num=None, **props):
             return
     log.debug("Current process is %s" % str(common.current_process()))
 
-    log.debug("Creating %d instances of %s.." %
-              (num if num is not None else 1, str(pcls)))
+    log.debug("Creating instances of %s.." % str(pcls))
     pipes = []
     iterator = []
     if num is None:
         iterator = range(1)
     elif isinstance(num, int):
         iterator = range(num)
-    elif isinstance(num, set):
+    elif isinstance(num, collections.abc.Iterable):
         iterator = num
     else:
         log.error("Unrecognised parameter: %s", str(num))
         return set()
 
     procs = set()
-    daemon = props['daemon'] if 'daemon' in props else False
     for i in iterator:
-        (childp, ownp) = multiprocessing.Pipe()
-        p = pcls(common.current_process(), childp, props)
-        p.daemon = daemon
+        name = None
         if isinstance(i, str):
-            p.set_name(i)
+            name = i
+        (childp, ownp) = multiprocessing.Pipe()
+        p = sim.OSProcessImpl(pcls, childp, name, props)
         # Buffer the pipe
         pipes.append((i, childp, ownp, p))
         # We need to start proc right away to obtain EndPoint and pid for p:
@@ -257,10 +256,8 @@ def new(pcls, args=None, num=None, **props):
 
     if num is None:
         return result[0]
-    elif isinstance(num, int):
-        return set(result.values())
     else:
-        return result
+        return set(result.values())
 
 @api
 def setup(pids, args):
@@ -272,7 +269,7 @@ def setup(pids, args):
         ps = pids
 
     for p in ps:
-        p._initpipe.send(("setup", args))
+        p._initpipe.send((sim.Command.Setup, args))
 
 @api
 def start(procs, args=None):
@@ -288,7 +285,7 @@ def start(procs, args=None):
 
     log.debug("Starting %s..." % str(procs))
     for p in ps:
-        p._initpipe.send("start")
+        p._initpipe.send(sim.Command.Start)
         del p._initpipe
 
 @api

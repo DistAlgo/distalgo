@@ -300,6 +300,11 @@ class frozendict(dict):
 BuiltinImmutables = {int, float, complex, tuple, str, bytes, frozenset}
 
 def freeze(obj):
+    """Return a hashable version of `obj`.
+
+    Contents of `obj` may be copied if necessary.
+
+    """
     if type(obj) in BuiltinImmutables:
         return obj
 

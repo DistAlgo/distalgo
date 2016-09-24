@@ -29,22 +29,20 @@ import select
 import socket
 import logging
 
+from . import common
+
 class EndPoint:
     """Represents a target for sending of messages.
 
     This is the base class for all types of communication channels in
     DistAlgo. It uniquely identifies a "node" in the distributed system. In
     most scenarios, a process will only be associated with one EndPoint
-    instance. The 'self' keyword in DistAlgo is ultimately translated into an
-    instance of this class.
+    instance.
 
     """
 
-    def __init__(self, name=None, proctype=None):
-        if name is None:
-            self._name = 'localhost'
-        else:
-            self._name = name
+    def __init__(self, proctype=None):
+        self._name = common.global_options().hostname
         self._proc = None
         self._proctype = proctype
         self._log = logging.getLogger("runtime.EndPoint")
@@ -152,8 +150,8 @@ class TcpEndPoint(EndPoint):
     senders = None
     receivers = None
 
-    def __init__(self, name=None, proctype=None, port=None):
-        super().__init__(name, proctype)
+    def __init__(self, proctype=None, port=None):
+        super().__init__(proctype)
 
         TcpEndPoint.receivers = dict()
         TcpEndPoint.senders = LRU(MAX_TCP_CONN)
@@ -396,8 +394,8 @@ MAX_UDP_BUFSIZE = 20000
 class UdpEndPoint(EndPoint):
     sender = None
 
-    def __init__(self, name=None, proctype=None, port=None):
-        super().__init__(name, proctype)
+    def __init__(self, proctype=None, port=None):
+        super().__init__(proctype)
 
         UdpEndPoint.sender = None
 

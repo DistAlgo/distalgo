@@ -250,7 +250,7 @@ def translate(distalgo_ast, filename="", options=None):
         raise PythonGeneratorException(str(pg.current_node)) from ex
 
 # List of arguments needed to initialize a process:
-PROC_INITARGS = ["parent", "initq", "props"]
+PROC_INITARGS = ["procimpl", "pid", "props"]
 
 PREAMBLE = parse(
     """
@@ -469,7 +469,6 @@ class PythonGenerator(NodeVisitor):
 
     def _entry_point(self, node):
         stmts = self.visit(node)
-        stmts[0].name = "_da_run_internal"
         return stmts
 
     def visit_Function(self, node):
