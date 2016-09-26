@@ -890,6 +890,9 @@ class Parser(NodeVisitor):
             elif (isinstance(s.parent, dast.Program) and
                   s.name == KW_ENTRY_POINT):
                 s.parent.entry_point = s
+                # HACK: if we don't pop the entry_point from the module body
+                # then it ends up getting printed twice:
+                self.current_block.pop()
             # Ignore the label decorators:
             s.decorators, _, _ = self.parse_decorators(node)
             self.current_block = s.body

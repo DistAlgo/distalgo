@@ -47,12 +47,9 @@ DISTPY_SUFFIXES = [".da", ""]
 PYTHON_SUFFIX = ".py"
 
 log = logging.getLogger(__name__)
-formatter = logging.Formatter(
+log._formatter = logging.Formatter(
     '[%(asctime)s]%(name)s:%(levelname)s: %(message)s')
-log._formatter = formatter
 
-RootLock = threading.Lock()
-EndPointType = None
 
 def find_file_on_paths(filename, paths):
     """Looks for a given 'filename' under a list of directories, in order.
@@ -130,25 +127,6 @@ def import_da(name, from_dir=None, compiler_args=[]):
 
     return importlib.import_module(name)
 
-def get_channel_type(module):
-    ept = ep.UdpEndPoint
-    props = []
-    if 'channel' in common.global_options().config:
-        props = common.global_options().config['channel'].split(',')
-    elif 'channel' in module._config_object:
-        props = module._config_object['channel']
-    if isinstance(props, str):
-        props = [props]
-    for prop in props:
-        prop = prop.casefold()
-        if prop == "fifo":
-            ept = ep.TcpEndPoint
-        elif prop == "reliable":
-            ept = ep.TcpEndPoint
-        elif prop not in {"unfifo", "unreliable"}:
-            log.error("Unknown channel property %s", str(prop))
-    return ept
-
 def entrypoint():
     GlobalOptions = common.global_options()
     if GlobalOptions.start_method != \
@@ -167,20 +145,18 @@ def entrypoint():
                            compiler_args=GlobalOptions.compiler_flags.split())
     except ImportError as e:
         die("ImportError: " + str(e))
-    if not (hasattr(module, 'main') and
-            isinstance(module.main, types.FunctionType)):
-        die("'main' function not defined!")
+
+    if not (hasattr(module, '_NodeMain') and \
+            type(module._NodeMain) is type and \
+            issubclass(module._NodeMain, sim.DistProcess)):
+        die("Main process not defined!")
+
     GlobalOptions.this_module_name = module.__name__
     GlobalOptions.main_module_name = module.__name__
     if GlobalOptions.inc_module_name is None:
         GlobalOptions.inc_module_name = module.__name__ + "_inc"
     common.sysinit()
 
-    # Set the default channel type:
-    global EndPointType
-    EndPointType = get_channel_type(module)
-
-    RootLock.acquire()
     # Start main program
     niters = GlobalOptions.iterations
     sys.argv = [target] + GlobalOptions.args
@@ -188,10 +164,13 @@ def entrypoint():
         for i in range(0, niters):
             log.info("Running iteration %d ..." % (i+1))
 
-            module.main()
+            node = new(module._NodeMain, args=())
+            start(node)
 
-            print("Waiting for remaining child processes to terminate..."
-                  "(Press \"Ctrl-C\" to force kill)")
+            log.info("Waiting for remaining child processes to terminate..."
+                     "(Press \"Ctrl-C\" to force kill)")
+            node.join()
+            log.info("Main process terminated.")
 
     except KeyboardInterrupt as e:
         log.info("Received keyboard interrupt.")
@@ -206,15 +185,6 @@ def new(pcls, args=None, num=None, **props):
     if not issubclass(pcls, sim.DistProcess):
         log.error("Can not create non-DistProcess.")
         return set()
-
-    if common.current_process() is None:
-        if type(EndPointType) == type:
-            common.set_current_process(EndPointType())
-            RootLock.release()
-        else:
-            log.error("EndPoint not defined")
-            return
-    log.debug("Current process is %s" % str(common.current_process()))
 
     log.debug("Creating instances of %s.." % str(pcls))
     pipes = []
@@ -287,17 +257,6 @@ def start(procs, args=None):
     for p in ps:
         p._initpipe.send(sim.Command.Start)
         del p._initpipe
-
-@api
-def send(data, to):
-    result = True
-    if (hasattr(to, '__iter__')):
-        for t in to:
-            r = t.send(data, common.current_process(), 0)
-            if not r: result = False
-    else:
-        result = to.send(data, common.current_process(), 0)
-    return result
 
 def die(mesg = None):
     if mesg != None:

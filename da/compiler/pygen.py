@@ -75,6 +75,8 @@ PATTERN_EXPR_NAME = "_PatternExpr_%d"
 QUATIFIED_EXPR_NAME = "_QuantifiedExpr_%d"
 CONFIG_OBJECT_NAME = "_config_object"
 STATE_ATTR_NAME = "_state"
+NODECLS_NAME = "_NodeMain"
+ENTRYPOINT_NAME = "run"
 
 ########## Convenience methods for creating AST nodes: ##########
 
@@ -354,8 +356,23 @@ class PythonGenerator(NodeVisitor):
         body = list(self.preambles)
         body.append(self.generate_config(node))
         body.extend(mainbody)
+        body.extend(self.generate_nodecls(node))
         body.extend(self.postambles)
         return Module(body)
+
+    def generate_nodecls(self, node):
+        cd = ClassDef()
+        cd.name = NODECLS_NAME
+        cd.bases = [pyAttr("da", "DistProcess")]
+        cd.decorator_list = []
+        cd.keywords = []
+        if sys.version_info < (3, 5):
+            cd.starargs = []
+            cd.kwargs = []
+        cd.body = []
+        if node.entry_point is not None:
+            cd.body.extend(self._entry_point(node.entry_point))
+        return [cd]
 
     def generate_config(self, node):
         return Assign([pyName(CONFIG_OBJECT_NAME)],
@@ -469,6 +486,8 @@ class PythonGenerator(NodeVisitor):
 
     def _entry_point(self, node):
         stmts = self.visit(node)
+        stmts[0].name = ENTRYPOINT_NAME
+        stmts[0].args = [arg('self', None)]
         return stmts
 
     def visit_Function(self, node):

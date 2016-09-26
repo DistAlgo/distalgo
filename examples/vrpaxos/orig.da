@@ -199,7 +199,7 @@ def main():
 
     for c in clients: c.join()
     print('done')
-    da.send(('done',), to= (acceptors|replicas|leaders))
+    send(('done',), to= (acceptors|replicas|leaders))
 
 # This code includes setup and termination for each client to request and
 # complete a number of operations.

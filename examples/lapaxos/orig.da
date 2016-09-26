@@ -81,7 +81,7 @@ def main():
 
     for p in learners: p.join()
     print('done')
-    da.send(('done',), to= (acceptors|proposers))  # da.send not in da-lang
+    send(('done',), to= (acceptors|proposers))  # da.send not in da-lang
 
 # This is an executable specification of the algorithm described in
 # Lamport, L. (2001).  Paxos Made Simple.  ACM SIGACT News 
