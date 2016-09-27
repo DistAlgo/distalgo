@@ -82,14 +82,14 @@ The following command installs DistAlgo for the current user:
    in the scripts to point to your Python executable.
 
    **For Windows only**: The Windows program loader does not recognize the
-   Shebang (#!) sequence, so scripts `dac` and `dar` will not work under the
-   'cmd.exe' shell. To work around this problem, batch scripts `dac.bat` and
-   `dar.bat` are wrappers to launch `dac` and `dar` under Windows. For all
-   following examples, substitute `dac` and `dar` with `dac.bat` and
-   `dar.bat`, respectively. The batch scripts assume that your Python
-   executable is `python`; if that is not the case, you must modify the batch
-   files with the full path to your Python executable.
-
+   "Shebang" (#!) sequence, so scripts `dac` and `dar` will not work under
+   the 'cmd.exe' shell. To work around this limitation, the '<PROJROOT>/bin'
+   directory also contains `dac.bat` and `dar.bat`, which are simple batch
+   script wrappers for `dac` and `dar`. To use these batch scripts under
+   Windows, substitute `dac` and `dar` with `dac.bat` and `dar.bat`,
+   respectively, for all following examples. The batch scripts assume your
+   Python executable is `python`, if that is not the case then you must
+   modify the batch files with the full path to your Python executable.
 
 # Running DistAlgo
 
