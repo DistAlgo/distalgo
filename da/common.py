@@ -38,9 +38,6 @@ CurrentProcess = None
 IncOQBaseType = None           # incoq.runtime.Type, if using incoq
 
 log = logging.getLogger(__name__)
-formatter = logging.Formatter(
-    '[%(asctime)s]%(name)s:%(levelname)s: %(message)s')
-log._formatter = formatter
 
 api_registry = dict()
 builtin_registry = dict()
@@ -140,8 +137,8 @@ def api(func):
 
     This wraps the function to perform basic type checking for type-annotated
     parameters and return value.
-    """
 
+    """
     global api_registry
     funame = func.__name__
     if api_registry.get(funame) is not None:

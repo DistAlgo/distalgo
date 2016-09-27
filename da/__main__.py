@@ -34,11 +34,6 @@ from da.common import set_global_options
 if hasattr(sys, '_real_argv'):
     sys.argv[0] = sys._real_argv
 
-log = logging.getLogger(__name__)
-formatter = logging.Formatter(
-    '[%(asctime)s]%(name)s:%(levelname)s: %(message)s')
-log._formatter = formatter
-
 def parseConfig(item):
     try:
         key, value = item.split('=')

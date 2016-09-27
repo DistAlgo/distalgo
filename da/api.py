@@ -47,8 +47,6 @@ DISTPY_SUFFIXES = [".da", ""]
 PYTHON_SUFFIX = ".py"
 
 log = logging.getLogger(__name__)
-log._formatter = logging.Formatter(
-    '[%(asctime)s]%(name)s:%(levelname)s: %(message)s')
 
 
 def find_file_on_paths(filename, paths):
@@ -158,6 +156,7 @@ def entrypoint():
     common.sysinit()
 
     # Start main program
+    log.info("Starting program {0}...".format(target))
     niters = GlobalOptions.iterations
     sys.argv = [target] + GlobalOptions.args
     try:
