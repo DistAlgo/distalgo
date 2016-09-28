@@ -36,7 +36,7 @@ import traceback
 import collections
 import multiprocessing
 
-from da import pattern, common, endpoint
+from . import pattern, common, endpoint
 builtin = common.builtin
 
 class Command(enum.Enum):
@@ -47,7 +47,7 @@ class Command(enum.Enum):
 
 _config_object = dict()
 
-class DistProcess:
+class DistProcess():
     """Abstract base class for DistAlgo processes.
 
     Each instance of this class enbodies the runtime activities of a DistAlgo
@@ -80,24 +80,29 @@ class DistProcess:
     be created by calling `new`.
 
     """
-    def __init__(self, procimpl, pid, props):
-        self._procimpl = procimpl
-        self.id = pid
+    def __init__(self, procimpl, props):
+        self.__procimpl = procimpl
+        self.__router = procimpl._comm
+        self.__channel = procimpl.endpoint
+        self.__messageq = procimpl.message_queue
+        self.__properties = props
+        self.__jobq = list()
+        self.__lock = threading.Lock()
+        self.__lock.acquire()
+        if self.get_config('handling', default='one').casefold() == 'all':
+            self.__do_label = self.__label_all
+        else:
+            self.__do_label = self.__label_one
+
+        self.id = procimpl.endpoint
         self._state = common.Namespace()
         self._events = []
-        self._jobqueue = list()
-        self._properties = props
         self._timer = None
         self._timer_expired = False
-        self._lock = None
         if self.get_config('clock', default='none').casefold() == 'lamport':
             self._logical_clock = 0
         else:
             self._logical_clock = None
-        if self.get_config('handling', default='one').casefold() == 'all':
-            self._do_label = self._label_all
-        else:
-            self._do_label = self._label_one
         self._dp_name = procimpl.procname
         self._log = logging.getLogger(str(self))
 
@@ -179,9 +184,9 @@ class DistProcess:
             self._logical_clock += 1
 
     # Wrapper functions for message passing:
-    def _send(self, data, to):
+    def _send(self, message, to):
         self.incr_logical_clock()
-        if (self._fails('send')):
+        if (self.__fails('send')):
             self.output("Simulated send fail: %s" % str(data), logging.WARNING)
             return
 
@@ -190,11 +195,10 @@ class DistProcess:
         else:
             targets = [to]
         for t in targets:
-            t.send(data, self.id, self._logical_clock)
+            t.send(message, self.id, self._logical_clock)
 
-        self._trigger_event(pattern.SentEvent((self._logical_clock,
-                                               to, self.id),
-                                              copy.deepcopy(data)))
+        self.__trigger_event(pattern.SentEvent(
+            (self._logical_clock, to, self.id), message))
 
     def _timer_start(self):
         self._timer = time.time()
@@ -203,10 +207,10 @@ class DistProcess:
     def _timer_end(self):
         self._timer = None
 
-    def _fails(self, failtype):
-        if failtype not in self._properties:
+    def __fails(self, failtype):
+        if failtype not in self.__properties:
             return False
-        if (random.random() < self._properties[failtype]):
+        if (random.random() < self.__properties[failtype]):
             return True
         return False
 
@@ -214,22 +218,22 @@ class DistProcess:
         """This simulates the controlled "label" mechanism.
 
         The number of pending events handled at each label is controlled by the
-        'handling' configuration key -- if 'handling' is 'one' then `_do_label'
-        will be set to `_label_one', otherwise `_do_label' will be set to
-        `_label_all'.
+        'handling' configuration key -- if 'handling' is 'one' then `__do_label`
+        will be set to `__label_one`, otherwise `__do_label` will be set to
+        `_label_all`(see `__init__`).
 
         """
-        if self._fails('hang'):
+        if self.__fails('hang'):
             self.output("Hanged(@label %s)" % name, logging.WARNING)
             self._lock.acquire()
-        if self._fails('crash'):
+        if self.__fails('crash'):
             self.output("Crashed(@label %s)" % name, logging.WARNING)
             self.exit(10)
 
-        self._do_label(name, block, timeout)
-        self._process_jobqueue(name)
+        self.__do_label(name, block, timeout)
+        self.__process_jobqueue(name)
 
-    def _label_one(self, name, block=False, timeout=None):
+    def __label_one(self, name, block=False, timeout=None):
         """Handle at most one pending event at a time.
 
         """
@@ -243,9 +247,9 @@ class DistProcess:
                 return
         else:
             timeleft = None
-        self._process_event(block, timeleft)
+        self.__process_event(block, timeleft)
 
-    def _label_all(self, name, block=False, timeout=None):
+    def __label_all(self, name, block=False, timeout=None):
         """Handle up to all pending events at the time this function is called.
 
         """
@@ -253,7 +257,7 @@ class DistProcess:
         # only attempt to process up to 'nmax' events, since otherwise we could
         # potentially block the process forever if the events come in faster
         # than we can process them:
-        nmax = len(self._procimpl.message_queue)
+        nmax = len(self.__messageq)
         i = 0
         while True:
             i += 1
@@ -267,14 +271,14 @@ class DistProcess:
                     break
             else:
                 timeleft = None
-            if not self._process_event(block, timeleft) or i >= nmax:
+            if not self.__process_event(block, timeleft) or i >= nmax:
                 break
 
-    def _process_jobqueue(self, label=None):
+    def __process_jobqueue(self, label=None):
         """Runs all pending handlers jobs permissible at `label`.
         """
         leftovers = []
-        for handler, args in self._jobqueue:
+        for handler, args in self.__jobq:
             if ((handler._labels is None or label in handler._labels) and
                 (handler._notlabels is None or label not in handler._notlabels)):
                 try:
@@ -285,9 +289,9 @@ class DistProcess:
                         type(e).__name__, handler.__name__, str(args), str(e))
             else:
                 leftovers.append((handler, args))
-        self._jobqueue = leftovers
+        self.__jobq = leftovers
 
-    def _process_event(self, block, timeout=None):
+    def __process_event(self, block, timeout=None):
         """Retrieves and processes one pending event.
 
         Parameter 'block' indicates whether to block waiting for next message
@@ -302,7 +306,7 @@ class DistProcess:
 
         # Opportunistically try to get the next event off the queue:
         try:
-            event = self._procimpl.message_queue.popleft()
+            event = self.__messageq.popleft()
         except IndexError:
             pass
 
@@ -313,13 +317,13 @@ class DistProcess:
             # Otherwise, we have to acquire the condition object and block:
             else:
                 try:
-                    with self._procimpl._comm.condition:
-                        self._procimpl._comm.num_waiting += 1
-                        self._procimpl._comm.condition.wait(timeout)
-                        self._procimpl._comm.num_waiting -= 1
+                    with self.__router.condition:
+                        self.__router.num_waiting += 1
+                        self.__router.condition.wait(timeout)
+                        self.__router.num_waiting -= 1
                     # We have to try fetching an event again to preserve the
                     # semantics of 'handling=one':
-                    event = self._procimpl.message_queue.popleft()
+                    event = self.__messageq.popleft()
                 except IndexError:
                     # If the queue is still empty, it means that the new event
                     # was picked up by another thread, so it's ok for us to
@@ -330,7 +334,7 @@ class DistProcess:
                         "Caught exception while waiting for events: %r", e)
                     return False
 
-        if self._fails('receive'):
+        if self.__fails('receive'):
             self.output("Simulated receive fail: %s" % str(mesg),
                         logging.WARNING)
             return False
@@ -344,14 +348,13 @@ class DistProcess:
                     "".format(event.timestamp))
                 return False
             self._logical_clock = max(self._logical_clock, event.timestamp) + 1
-        self._trigger_event(event)
+        self.__trigger_event(event)
         return True
 
-    def _trigger_event(self, event):
+    def __trigger_event(self, event):
         """Immediately triggers 'event', skipping the event queue.
 
         """
-
         self._log.debug("triggering event %s" % event)
         for p in self._events:
             bindings = dict()
@@ -363,11 +366,11 @@ class DistProcess:
                     # Call the update stub:
                     p.record_history(getattr(self, p.name), event.to_tuple())
                 for h in p.handlers:
-                    self._jobqueue.append((h, copy.deepcopy(bindings)))
+                    self.__jobq.append((h, copy.deepcopy(bindings)))
 
     def _forever_message_loop(self):
         while (True):
-            self._process_event(self._events, True)
+            self.__process_event(self._events, True)
 
     def __repr__(self):
         res = "{cname}<{pname}, {pid}>"
@@ -387,14 +390,14 @@ class DistProcess:
 class Comm(threading.Thread):
     """The background communications thread.
 
-    Creates an event object for each incoming message, and appends the
-    event object to the main process' event queue.
-    """
+    Creates an event object for each incoming message, and appends the event
+    object to the target process' event queue.
 
-    def __init__(self, router):
+    """
+    def __init__(self, endpoint):
         threading.Thread.__init__(self)
         self.daemon = True
-        self.router = router
+        self.endpoint = endpoint
         self.condition = threading.Condition()
         self.num_waiting = 0
         self.q = collections.deque()
@@ -407,7 +410,7 @@ class Comm(threading.Thread):
             pass
 
     def mesgloop(self):
-        for msg in self.router.recvmesgs():
+        for msg in self.endpoint.recvmesgs():
             try:
                 (src, clock, data) = msg
             except ValueError as e:
@@ -443,12 +446,13 @@ class OSProcessImpl(multiprocessing.Process):
             self._properties = dict()
         self.daemon = props['daemon'] if 'daemon' in props else False
         self.procname = name
-        self._log = None
+        self.endpoint = None
+        self._log = logging.getLogger(str(self))
         self._child_procs = []
 
-    def _wait_for_go(self, channel):
+    def _wait_for_go(self):
         self._log.debug("Sending id to parent...")
-        self._initpipe.send(channel)
+        self._initpipe.send(self.endpoint)
         while True:
             act = self._initpipe.recv()
 
@@ -471,8 +475,8 @@ class OSProcessImpl(multiprocessing.Process):
                     m = getattr(self, "set_" + inst)
                     m(*args)
 
-    def _start_comm_thread(self, channel):
-        self._comm = Comm(channel)
+    def _start_comm_thread(self):
+        self._comm = Comm(self.endpoint)
         self.message_queue = self._comm.q
         self._comm.start()
 
@@ -494,15 +498,13 @@ class OSProcessImpl(multiprocessing.Process):
             signal.signal(signal.SIGUSR1, self._debug_handler)
             if self.procname is None:
                 self.procname = str(self.pid)
-            channel = self._dacls.get_channel_type()(self._dacls)
-            self._daobj = self._dacls(self, channel, self._properties)
-            common.set_current_process(channel)
-            pattern.initialize(channel)
+            self.endpoint = self._dacls.get_channel_type()(self._dacls)
             self._log = logging.getLogger(str(self))
-            self._start_comm_thread(channel)
-            self._lock = threading.Lock()
-            self._lock.acquire()
-            self._wait_for_go(channel)
+            self._start_comm_thread()
+            common.set_current_process(self.endpoint)
+            pattern.initialize(self.endpoint)
+            self._daobj = self._dacls(self, self._properties)
+            self._wait_for_go()
 
             return self._daobj.run()
 
@@ -513,3 +515,6 @@ class OSProcessImpl(multiprocessing.Process):
         except KeyboardInterrupt as e:
             self._log.debug("Received KeyboardInterrupt, exiting")
             pass
+
+    def __str__(self):
+        return "{0}<{1}>".format(self.__class__.__qualname__, str(self.pid))
