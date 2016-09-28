@@ -60,6 +60,9 @@ OperatorMap = {
     dast.AndOp : And,
     dast.OrOp : Or
 }
+# New matrix multiplication operator since 3.5:
+if sys.version_info > (3, 5):
+    OperatorMap[dast.MatMultOp] = MatMult
 
 AggregateMap = {
     dast.MaxExpr : "max",
@@ -67,9 +70,6 @@ AggregateMap = {
     dast.SizeExpr : "len",
     dast.SumExpr : "sum"
 }
-# New matrix multiplication operator since 3.4:
-if sys.version_info > (3, 5):
-    OperatorMap[dast.MatMultOp] = MatMult
 
 PATTERN_EXPR_NAME = "_PatternExpr_%d"
 QUATIFIED_EXPR_NAME = "_QuantifiedExpr_%d"
