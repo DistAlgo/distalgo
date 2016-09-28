@@ -72,12 +72,14 @@ def setup_root_logger():
         rootlog.setLevel(logging.DEBUG)
         formatter = logging.Formatter(
             '[%(asctime)s]%(name)s:%(levelname)s: %(message)s')
+        consoleformatter = logging.Formatter(
+            '%(name)s:%(levelname)s: %(message)s')
         rootlog._formatter = formatter
 
         consolelvl = logging._nameToLevel[GlobalOptions.logconsolelevel.upper()]
 
         ch = logging.StreamHandler()
-        ch.setFormatter(formatter)
+        ch.setFormatter(consoleformatter)
         ch.setLevel(consolelvl)
         rootlog._consolelvl = consolelvl
         rootlog.addHandler(ch)
