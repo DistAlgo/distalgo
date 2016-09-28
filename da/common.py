@@ -27,24 +27,36 @@ import sys
 import copy
 import os.path
 import logging
-import collections.abc
 import importlib
+import warnings
+import multiprocessing
+import collections.abc
 
 from inspect import signature, Parameter
 from functools import wraps
 
 GlobalOptions = None
-CurrentProcess = None
+CurrentProcess = {'pid' : multiprocessing.current_process().pid}
 IncOQBaseType = None           # incoq.runtime.Type, if using incoq
 
+class DALogger(logging.getLoggerClass()):
+    """Custom logger that attaches current process info.
+
+    """
+    def _log(self, level, msg, args, exc_info=None, extra=None):
+        if extra is None:
+            extra = CurrentProcess
+        return super()._log(level, msg, args, exc_info, extra)
+
+logging.setLoggerClass(DALogger)
 log = logging.getLogger(__name__)
 
 api_registry = dict()
 builtin_registry = dict()
 
-def set_current_process(procobj):
+def set_current_process():
     global CurrentProcess
-    CurrentProcess = procobj
+    CurrentProcess['pid'] = multiprocessing.current_process().pid
 
 def set_global_options(params):
     global GlobalOptions
@@ -73,7 +85,7 @@ def setup_root_logger():
         formatter = logging.Formatter(
             '[%(asctime)s]%(name)s:%(levelname)s: %(message)s')
         consoleformatter = logging.Formatter(
-            '%(name)s:%(levelname)s: %(message)s')
+            '%(name)s<%(pid)s>:%(levelname)s: %(message)s')
         rootlog._formatter = formatter
 
         consolelvl = logging._nameToLevel[GlobalOptions.logconsolelevel.upper()]
@@ -118,16 +130,17 @@ def load_modules():
     else:
         main.IncModule = inc
 
+warnings.simplefilter("default", DeprecationWarning)
 def deprecated(func):
     """Declare 'func' as deprecated.
 
     This is a decorator which can be used to mark functions as deprecated. It
     will result in a warning being emmitted when the function is used.
-    """
 
+    """
     def newFunc(*args, **kwargs):
         warnings.warn("Call to deprecated function %s." % func.__name__,
-                      category=DeprecationWarning)
+                      category=DeprecationWarning, stacklevel=2)
         return func(*args, **kwargs)
     newFunc.__name__ = func.__name__
     newFunc.__doc__ = func.__doc__
@@ -168,7 +181,7 @@ def api(func):
         result = func(*args, **kwargs)
         if (sig.return_annotation is not Parameter.empty and
                 not isinstance(result, sig.return_annotation)):
-            log.warn(
+            log.warning(
                 ("Possible bug: API function '%s' return value type mismatch: "
                  "declared %s, returned %s.") %
                 (funame, sig.return_annotation, result.__class__))
@@ -345,5 +358,10 @@ if __name__ == "__main__":
     testapi(1, {})
     print(api_registry)
 
+    @deprecated
+    def testdepre():
+        print("deprecated function")
+
     t = ('a', 1)
     print("Freeze " + str(t) + "->" + str(freeze(t)))
+    testdepre()

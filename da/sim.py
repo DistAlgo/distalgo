@@ -104,7 +104,7 @@ class DistProcess():
         else:
             self._logical_clock = None
         self._dp_name = procimpl.procname
-        self._log = logging.getLogger(str(self))
+        self._log = logging.getLogger(self.__class__.__qualname__)
 
     def setup(self):
         pass
@@ -343,7 +343,7 @@ class DistProcess():
             if not isinstance(event.timestamp, int):
                 # Most likely some peer did not turn on lamport clock, issue
                 # a warning and skip this message:
-                self._log.warn(
+                self._log.warning(
                     "Invalid logical clock value: {0}; message dropped. "
                     "".format(event.timestamp))
                 return False
@@ -401,7 +401,7 @@ class Comm(threading.Thread):
         self.condition = threading.Condition()
         self.num_waiting = 0
         self.q = collections.deque()
-        self.log = logging.getLogger(str(self))
+        self.log = logging.getLogger(self.__class__.__qualname__)
 
     def run(self):
         try:
@@ -414,7 +414,7 @@ class Comm(threading.Thread):
             try:
                 (src, clock, data) = msg
             except ValueError as e:
-                self.log.warn("Invalid message dropped: {0}".format(str(msg)))
+                self.log.warning("Invalid message dropped: {0}".format(str(msg)))
                 continue
 
             e = pattern.ReceivedEvent(
@@ -447,7 +447,7 @@ class OSProcessImpl(multiprocessing.Process):
         self.daemon = props['daemon'] if 'daemon' in props else False
         self.procname = name
         self.endpoint = None
-        self._log = logging.getLogger(str(self))
+        self._log = logging.getLogger(self.__class__.__qualname__)
         self._child_procs = []
 
     def _wait_for_go(self):
@@ -494,6 +494,7 @@ class OSProcessImpl(multiprocessing.Process):
             if multiprocessing.get_start_method() == 'spawn':
                 common.set_global_options(self._cmdline)
                 common.sysinit()
+            common.set_current_process()
             signal.signal(signal.SIGTERM, self._sighandler)
             signal.signal(signal.SIGUSR1, self._debug_handler)
             if self.procname is None:
@@ -501,7 +502,6 @@ class OSProcessImpl(multiprocessing.Process):
             self.endpoint = self._dacls.get_channel_type()(self._dacls)
             self._log = logging.getLogger(str(self))
             self._start_comm_thread()
-            common.set_current_process(self.endpoint)
             pattern.initialize(self.endpoint)
             self._daobj = self._dacls(self, self._properties)
             self._wait_for_go()
