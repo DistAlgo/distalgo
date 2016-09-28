@@ -356,7 +356,8 @@ class PythonGenerator(NodeVisitor):
         body = list(self.preambles)
         body.append(self.generate_config(node))
         body.extend(mainbody)
-        body.extend(self.generate_nodecls(node))
+        if node.entry_point is not None:
+            body.extend(self.generate_nodecls(node))
         body.extend(self.postambles)
         return Module(body)
 
@@ -370,8 +371,7 @@ class PythonGenerator(NodeVisitor):
             cd.starargs = []
             cd.kwargs = []
         cd.body = []
-        if node.entry_point is not None:
-            cd.body.extend(self._entry_point(node.entry_point))
+        cd.body.extend(self._entry_point(node.entry_point))
         return [cd]
 
     def generate_config(self, node):
