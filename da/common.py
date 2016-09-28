@@ -28,10 +28,12 @@ import copy
 import os.path
 import logging
 import importlib
+import threading
 import warnings
 import multiprocessing
 import collections.abc
 
+from collections import deque
 from inspect import signature, Parameter
 from functools import wraps
 
@@ -217,6 +219,53 @@ class Null(object):
     def __getattribute__(self, attr): return self
     def __setattr__(self, attr, value): pass
     def __delattr__(self, attr): pass
+
+
+class WaitableQueue:
+    """This class implements a fast waitable queue based on a `deque`.
+
+    The `Queue` class from the standard library `queue` module has a lot of
+    unneccesary overhead due to synchronization on every `get` and `put`
+    operation. We can avoid these synchronization overheads by piggy-backing off
+    the CPython GIL when the queue is non-empty.
+
+    """
+    def __init__(self, iterable=[], maxlen=None):
+        self._q = deque(iterable, maxlen)
+        self._condition = threading.Condition()
+        self._num_waiting = 0
+
+    def append(self, item):
+        self._q.append(item)
+        if self._num_waiting > 0:
+            with self._condition:
+                self._condition.notify_all()
+
+    def pop(self, block=True, timeout=None):
+        # Opportunistically try to get the next item off the queue:
+        try:
+            return self._q.popleft()
+        except IndexError:
+            pass
+        # The queue was empty, if we don't need to block then we're done:
+        if not block or timeout == 0:
+            return None
+        # Otherwise, we have to acquire the condition object and block:
+        try:
+            with self._condition:
+                self._num_waiting += 1
+                self._condition.wait(timeout)
+                self._num_waiting -= 1
+            return self._q.popleft()
+        except IndexError:
+            # If the queue is still empty at this point, it means that the new
+            # event was picked up by another thread, so it's ok for us to
+            # return:
+            return None
+        # Other exceptions will be propagated
+
+    def __len__(self):
+        return self._q.__len__()
 
 class IntrumentationError(Exception): pass
 

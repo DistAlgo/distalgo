@@ -304,35 +304,15 @@ class DistProcess():
         if timeout is not None and timeout < 0:
             timeout = 0
 
-        # Opportunistically try to get the next event off the queue:
         try:
-            event = self.__messageq.popleft()
-        except IndexError:
-            pass
+            event = self.__messageq.pop(block, timeout)
+        except Exception as e:
+            self._log.error("Caught exception while waiting for events: %r", e)
+            return False
 
         if event is None:
-            # The queue was empty, if we don't need to block then we're done:
-            if not block or timeout == 0:
-                return False
-            # Otherwise, we have to acquire the condition object and block:
-            else:
-                try:
-                    with self.__router.condition:
-                        self.__router.num_waiting += 1
-                        self.__router.condition.wait(timeout)
-                        self.__router.num_waiting -= 1
-                    # We have to try fetching an event again to preserve the
-                    # semantics of 'handling=one':
-                    event = self.__messageq.popleft()
-                except IndexError:
-                    # If the queue is still empty, it means that the new event
-                    # was picked up by another thread, so it's ok for us to
-                    # return:
-                    return False
-                except Exception as e:
-                    self._log.error(
-                        "Caught exception while waiting for events: %r", e)
-                    return False
+            self._log.debug("__process_event: event was stolen by another thread.")
+            return False
 
         if self.__fails('receive'):
             self.output("Simulated receive fail: %s" % str(mesg),
@@ -398,9 +378,8 @@ class Comm(threading.Thread):
         threading.Thread.__init__(self)
         self.daemon = True
         self.endpoint = endpoint
-        self.condition = threading.Condition()
         self.num_waiting = 0
-        self.q = collections.deque()
+        self.q = common.WaitableQueue()
         self.log = logging.getLogger(self.__class__.__qualname__)
 
     def run(self):
@@ -417,13 +396,9 @@ class Comm(threading.Thread):
                 self.log.warning("Invalid message dropped: {0}".format(str(msg)))
                 continue
 
-            e = pattern.ReceivedEvent(
-                envelope=(clock, None, src),
-                message=data)
+            e = pattern.ReceivedEvent(envelope=(clock, None, src),
+                                      message=data)
             self.q.append(e)
-            if self.num_waiting > 0:
-                with self.condition:
-                    self.condition.notify_all()
 
 
 class OSProcessImpl(multiprocessing.Process):
