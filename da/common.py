@@ -221,6 +221,7 @@ class Null(object):
     def __delattr__(self, attr): pass
 
 
+class QueueEmpty(Exception): pass
 class WaitableQueue:
     """This class implements a fast waitable queue based on a `deque`.
 
@@ -249,7 +250,7 @@ class WaitableQueue:
             pass
         # The queue was empty, if we don't need to block then we're done:
         if not block or timeout == 0:
-            return None
+            raise QueueEmpty()
         # Otherwise, we have to acquire the condition object and block:
         try:
             with self._condition:
@@ -261,14 +262,14 @@ class WaitableQueue:
             # If the queue is still empty at this point, it means that the new
             # event was picked up by another thread, so it's ok for us to
             # return:
-            return None
+            raise QueueEmpty()
         # Other exceptions will be propagated
 
     def __len__(self):
         return self._q.__len__()
 
-class IntrumentationError(Exception): pass
 
+class IntrumentationError(Exception): pass
 class FunctionInstrument(object):
     def __init__(self, control_func, subject_func):
         super().__setattr__('_control', control_func)

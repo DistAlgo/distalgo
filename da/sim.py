@@ -306,12 +306,16 @@ class DistProcess():
 
         try:
             event = self.__messageq.pop(block, timeout)
+        except common.QueueEmpty:
+            pass
         except Exception as e:
             self._log.error("Caught exception while waiting for events: %r", e)
             return False
 
         if event is None:
-            self._log.debug("__process_event: event was stolen by another thread.")
+            if block:
+                self._log.debug(
+                    "__process_event: event was stolen by another thread.")
             return False
 
         if self.__fails('receive'):
