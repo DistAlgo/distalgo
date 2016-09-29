@@ -410,10 +410,12 @@ class Arguments(DistNode):
         self.vararg = e
 
     def add_kwonlyarg(self, name, value, annotation=None):
-        assert isinstance(name, str) and isinstance(value, DistNode)
+        assert isinstance(name, str)
         e = self.parent.add_name(name)
         # User annotated type takes precedence:
-        e.add_assignment(self, typectx=(value if annotation is None else annotation))
+        tctx = value if annotation is None else annotation
+        if tctx is not None:
+            e.add_assignment(self, typectx=tctx)
         self.kwonlyargs.append(e)
         self.kw_defaults.append(value)
 

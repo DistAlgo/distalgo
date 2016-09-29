@@ -785,8 +785,8 @@ class Parser(NodeVisitor):
             if type(node.vararg) is str:
                 container.add_vararg(node.vararg)
             else:
-                if arg.annotation is not None:
-                    annotation = self.visit(arg.annotation)
+                if node.vararg.annotation is not None:
+                    annotation = self.visit(node.vararg.annotation)
                     container.add_vararg(node.vararg.arg, annotation)
                 else:
                     container.add_vararg(node.vararg.arg)
@@ -801,11 +801,13 @@ class Parser(NodeVisitor):
                 else:
                     container.add_vararg(node.kwarg.arg)
         for kwarg, val in zip(node.kwonlyargs, node.kw_defaults):
+            if val is not None:
+                val = self.visit(val)
             if kwarg.annotation is not None:
                 annotation = self.visit(kwarg.annotation)
-                container.add_kwonlyarg(kwarg.arg, self.visit(val), annotation)
+                container.add_kwonlyarg(kwarg.arg, val, annotation)
             else:
-                container.add_kwonlyarg(kwarg.arg, self.visit(val))
+                container.add_kwonlyarg(kwarg.arg, val)
 
 
     # Top-level blocks:
