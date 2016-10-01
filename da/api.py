@@ -156,12 +156,12 @@ def entrypoint():
     common.sysinit()
 
     # Start main program
-    log.info("Starting program {0}...".format(target))
+    log.info("Starting program %s...", target)
     niters = GlobalOptions.iterations
     sys.argv = [target] + GlobalOptions.args
     try:
         for i in range(0, niters):
-            log.info("Running iteration %d ..." % (i+1))
+            log.info("Running iteration %d ...", (i+1))
 
             node = new(module._NodeMain, args=())
             start(node)
@@ -182,10 +182,10 @@ def entrypoint():
 @api
 def new(pcls, args=None, num=None, **props):
     if not issubclass(pcls, sim.DistProcess):
-        log.error("Can not create non-DistProcess.")
+        log.error("Can not create non-DistProcess classes.")
         return set()
 
-    log.debug("Creating instances of %s.." % str(pcls))
+    log.debug("Creating instances of %s..", pcls.__name__)
     pipes = []
     iterator = []
     if num is None:
@@ -195,7 +195,7 @@ def new(pcls, args=None, num=None, **props):
     elif isinstance(num, collections.abc.Iterable):
         iterator = num
     else:
-        log.error("Unrecognised parameter: %s", str(num))
+        log.error("Invalid value for `num`: %r", num)
         return set()
 
     procs = set()

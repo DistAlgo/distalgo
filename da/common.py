@@ -85,9 +85,9 @@ def setup_root_logger():
     if not GlobalOptions.nolog:
         rootlog.setLevel(logging.DEBUG)
         formatter = logging.Formatter(
-            '[%(asctime)s]%(name)s:%(levelname)s: %(message)s')
+            '[%(asctime)s] %(name)s:%(levelname)s: %(message)s')
         consoleformatter = logging.Formatter(
-            '%(name)s<%(pid)s>:%(levelname)s: %(message)s')
+            '[%(relativeCreated)d] %(processName)s<%(pid)s>:%(levelname)s: %(message)s')
         rootlog._formatter = formatter
 
         consolelvl = logging._nameToLevel[GlobalOptions.logconsolelevel.upper()]
