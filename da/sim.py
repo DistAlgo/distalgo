@@ -103,7 +103,7 @@ class DistProcess():
             self._logical_clock = 0
         else:
             self._logical_clock = None
-        self._dp_name = procimpl.procname
+        self._dp_name = procimpl.name
         self._log = logging.getLogger(self.__class__.__qualname__)
 
     def setup(self):
@@ -125,7 +125,7 @@ class DistProcess():
             elif prop == "reliable":
                 ept = endpoint.TcpEndPoint
             elif prop not in {"unfifo", "unreliable"}:
-                log.error("Unknown channel property %s", str(prop))
+                log.error("Unknown channel property %r", prop)
         return ept
 
     _config_object = dict()
@@ -187,7 +187,8 @@ class DistProcess():
     def _send(self, message, to):
         self.incr_logical_clock()
         if (self.__fails('send')):
-            self.output("Simulated send fail: %s" % str(data), logging.WARNING)
+            self._log.warning(
+                "Dropped outgoing message due to lottery: %r", message)
             return
 
         if (hasattr(to, '__iter__')):
@@ -224,10 +225,10 @@ class DistProcess():
 
         """
         if self.__fails('hang'):
-            self.output("Hanged(@label %s)" % name, logging.WARNING)
+            self._log.warning("Hanged(@label %s)", name)
             self._lock.acquire()
         if self.__fails('crash'):
-            self.output("Crashed(@label %s)" % name, logging.WARNING)
+            self._log.warning("Crashed(@label %s)", name)
             self.exit(10)
 
         self.__do_label(name, block, timeout)
@@ -311,12 +312,13 @@ class DistProcess():
             return False
 
         if event is None:
-            self._log.debug("__process_event: event was stolen by another thread.")
+            if block:
+                self._log.debug(
+                    "__process_event: event was stolen by another thread.")
             return False
 
         if self.__fails('receive'):
-            self.output("Simulated receive fail: %s" % str(mesg),
-                        logging.WARNING)
+            self._log.warning("Dropped incoming message due to lottery: %s", event)
             return False
 
         if isinstance(self._logical_clock, int):
@@ -324,8 +326,8 @@ class DistProcess():
                 # Most likely some peer did not turn on lamport clock, issue
                 # a warning and skip this message:
                 self._log.warning(
-                    "Invalid logical clock value: {0}; message dropped. "
-                    "".format(event.timestamp))
+                    "Invalid logical clock value: %r; message dropped. ",
+                    event.timestamp)
                 return False
             self._logical_clock = max(self._logical_clock, event.timestamp) + 1
         self.__trigger_event(event)
@@ -335,7 +337,7 @@ class DistProcess():
         """Immediately triggers 'event', skipping the event queue.
 
         """
-        self._log.debug("triggering event %s" % event)
+        self._log.debug("triggering event %s", event)
         for p in self._events:
             bindings = dict()
             if (p.match(event, bindings=bindings,
@@ -393,7 +395,7 @@ class Comm(threading.Thread):
             try:
                 (src, clock, data) = msg
             except ValueError as e:
-                self.log.warning("Invalid message dropped: {0}".format(str(msg)))
+                self.log.warning("Dropped invalid message: %r", msg)
                 continue
 
             e = pattern.ReceivedEvent(envelope=(clock, None, src),
@@ -408,7 +410,10 @@ class OSProcessImpl(multiprocessing.Process):
     def __init__(self, dacls, initpipe, name=None, props=None):
         assert issubclass(dacls, DistProcess)
 
-        multiprocessing.Process.__init__(self)
+        super().__init__()
+        # Logger can not be serialized so it has to be instantiated in the child
+        # proc's address space:
+        self._log = None
         self._dacls = dacls
         self._daobj = None
         self._running = False
@@ -420,9 +425,11 @@ class OSProcessImpl(multiprocessing.Process):
         else:
             self._properties = dict()
         self.daemon = props['daemon'] if 'daemon' in props else False
-        self.procname = name
+        if name is not None:
+            self.name = name
+        else:
+            self.name = dacls.__qualname__
         self.endpoint = None
-        self._log = logging.getLogger(self.__class__.__qualname__)
         self._child_procs = []
 
     def _wait_for_go(self):
@@ -434,18 +441,19 @@ class OSProcessImpl(multiprocessing.Process):
             if act == Command.Start:
                 self._running = True
                 del self._initpipe
-                self._log.debug("'start' command received, commencing...")
+                self._log.debug("`start` command received, commencing...")
                 return
             else:
                 inst, args = act
                 if inst == Command.Setup:
                     if self._setup_called:
-                        self._log.warn(
-                            "setup() already called for this process!")
+                        self._log.warning(
+                            "`setup` already called for this process!")
                     else:
-                        self._log.debug("Running setup..")
+                        self._log.debug("Running `setup`...")
                         self._daobj.setup(*args)
                         self._setup_called = True
+                        self._log.debug("`setup` complete.")
                 else:
                     m = getattr(self, "set_" + inst)
                     m(*args)
@@ -464,6 +472,7 @@ class OSProcessImpl(multiprocessing.Process):
         self._debugger.set_trace(frame)
 
     def run(self):
+        self._log = logging.getLogger(self.__class__.__qualname__)
         try:
             self._cmdline.this_module_name = self.__class__.__module__
             if multiprocessing.get_start_method() == 'spawn':
@@ -472,10 +481,7 @@ class OSProcessImpl(multiprocessing.Process):
             common.set_current_process()
             signal.signal(signal.SIGTERM, self._sighandler)
             signal.signal(signal.SIGUSR1, self._debug_handler)
-            if self.procname is None:
-                self.procname = str(self.pid)
             self.endpoint = self._dacls.get_channel_type()(self._dacls)
-            self._log = logging.getLogger(str(self))
             self._start_comm_thread()
             pattern.initialize(self.endpoint)
             self._daobj = self._dacls(self, self._properties)
