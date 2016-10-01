@@ -40,6 +40,7 @@ from functools import wraps
 GlobalOptions = None
 CurrentProcess = {'pid' : multiprocessing.current_process().pid}
 IncOQBaseType = None           # incoq.runtime.Type, if using incoq
+INCOQ_MODULE_NAME = "incoq.mars.runtime"
 
 class DALogger(logging.getLoggerClass()):
     """Custom logger that attaches current process info.
@@ -51,6 +52,12 @@ class DALogger(logging.getLoggerClass()):
         return super()._log(level, msg, args, exc_info, extra)
 
 logging.setLoggerClass(DALogger)
+# Define a custom level for text output from user code using the `output`
+# builtin, to better differentiate user output from library output. This level
+# should *only* be used by the `output` builtin. Its severity is set to one
+# level above 'INFO':
+logging.addLevelName(logging.INFO+1, "OUTPUT")
+
 log = logging.getLogger(__name__)
 
 api_registry = dict()
@@ -85,9 +92,9 @@ def setup_root_logger():
     if not GlobalOptions.nolog:
         rootlog.setLevel(logging.DEBUG)
         formatter = logging.Formatter(
-            '[%(asctime)s] %(name)s:%(levelname)s: %(message)s')
+            '[%(asctime)s] %(name)s<%(processName)s>:%(levelname)s: %(message)s')
         consoleformatter = logging.Formatter(
-            '[%(relativeCreated)d] %(processName)s<%(pid)s>:%(levelname)s: %(message)s')
+            '[%(relativeCreated)d] %(name)s<%(processName)s>:%(levelname)s: %(message)s')
         rootlog._formatter = formatter
 
         consolelvl = logging._nameToLevel[GlobalOptions.logconsolelevel.upper()]
@@ -124,7 +131,7 @@ def load_modules():
     main = sys.modules[GlobalOptions.this_module_name]
     inc = importlib.import_module(GlobalOptions.inc_module_name)
     if inc.JbStyle:
-        IncOQBaseType = importlib.import_module("incoq.mars.runtime") \
+        IncOQBaseType = importlib.import_module(INCOQ_MODULE_NAME) \
                         .IncOQType
     if GlobalOptions.control_module_name is not None:
         ctrl = importlib.import_module(GlobalOptions.control_module_name)
@@ -175,18 +182,18 @@ def api(func):
             if (atype is not Parameter.empty and
                     not isinstance(binding.arguments[argname], atype)):
                 log.error(
-                    ("'%s' called with wrong type argument: "
-                     "%s, expected %s, got %s.") %
-                    (funame, argname, str(atype),
-                     str(binding.arguments[argname].__class__)))
+                    "'%s' called with wrong type argument: "
+                     "%s, expected %s, got %s.",
+                    funame, argname, str(atype),
+                    str(binding.arguments[argname].__class__))
                 return None
         result = func(*args, **kwargs)
         if (sig.return_annotation is not Parameter.empty and
                 not isinstance(result, sig.return_annotation)):
             log.warning(
-                ("Possible bug: API function '%s' return value type mismatch: "
-                 "declared %s, returned %s.") %
-                (funame, sig.return_annotation, result.__class__))
+                "Possible bug: API function '%s' return value type mismatch: "
+                "declared %s, returned %s.",
+                funame, sig.return_annotation, result.__class__)
         return result
 
     _func_impl.__name__ = func.__name__
