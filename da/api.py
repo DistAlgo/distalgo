@@ -200,7 +200,7 @@ def new(pcls, args=None, num=None, **props):
 
     procs = set()
     for i in iterator:
-        name = None
+        name = ""
         if isinstance(i, str):
             name = i
         (childp, ownp) = multiprocessing.Pipe()

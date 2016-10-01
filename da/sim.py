@@ -39,6 +39,8 @@ import multiprocessing
 from . import pattern, common, endpoint
 builtin = common.builtin
 
+logger = logging.getLogger(__name__)
+
 class Command(enum.Enum):
     """An enum of process commands.
     """
@@ -81,6 +83,8 @@ class DistProcess():
 
     """
     def __init__(self, procimpl, props):
+        self._log = logging.getLogger(self.__class__.__module__) \
+                           .getChild(self.__class__.__qualname__)
         self.__procimpl = procimpl
         self.__router = procimpl._comm
         self.__channel = procimpl.endpoint
@@ -104,7 +108,6 @@ class DistProcess():
         else:
             self._logical_clock = None
         self._dp_name = procimpl.name
-        self._log = logging.getLogger(self.__class__.__qualname__)
 
     def setup(self):
         pass
@@ -125,7 +128,7 @@ class DistProcess():
             elif prop == "reliable":
                 ept = endpoint.TcpEndPoint
             elif prop not in {"unfifo", "unreliable"}:
-                log.error("Unknown channel property %r", prop)
+                logger.error("Unknown channel property %r", prop)
         return ept
 
     _config_object = dict()
@@ -147,7 +150,7 @@ class DistProcess():
         raise SystemExit(code)
 
     @builtin
-    def output(self, *value, sep=' ', level=logging.INFO):
+    def output(self, *value, sep=' ', level=logging.INFO+1):
         """Prints arguments to the process log.
 
         Optional argument 'level' is a positive integer that specifies the
@@ -380,17 +383,18 @@ class Comm(threading.Thread):
     """
     def __init__(self, endpoint):
         threading.Thread.__init__(self)
+        self.log = logging.getLogger(__name__) \
+                          .getChild(self.__class__.__qualname__)
         self.daemon = True
         self.endpoint = endpoint
         self.num_waiting = 0
         self.q = common.WaitableQueue()
-        self.log = logging.getLogger(self.__class__.__qualname__)
 
     def run(self):
         try:
             self.mesgloop()
         except KeyboardInterrupt:
-            pass
+            self.log.debug("Received KeyboardInterrupt, stopping.")
 
     def mesgloop(self):
         for msg in self.endpoint.recvmesgs():
@@ -409,7 +413,7 @@ class OSProcessImpl(multiprocessing.Process):
     """An implementation of processes using OS process.
 
     """
-    def __init__(self, dacls, initpipe, name=None, props=None):
+    def __init__(self, dacls, initpipe, name="", props=None):
         assert issubclass(dacls, DistProcess)
 
         super().__init__()
@@ -427,10 +431,7 @@ class OSProcessImpl(multiprocessing.Process):
         else:
             self._properties = dict()
         self.daemon = props['daemon'] if 'daemon' in props else False
-        if name is not None:
-            self.name = name
-        else:
-            self.name = dacls.__qualname__
+        self.name = name
         self.endpoint = None
         self._child_procs = []
 
@@ -474,7 +475,9 @@ class OSProcessImpl(multiprocessing.Process):
         self._debugger.set_trace(frame)
 
     def run(self):
-        self._log = logging.getLogger(self.__class__.__qualname__)
+        self._log = logger.getChild(self.__class__.__qualname__)
+        if len(self.name) == 0:
+            self.name = str(self.pid)
         try:
             self._cmdline.this_module_name = self.__class__.__module__
             if multiprocessing.get_start_method() == 'spawn':
