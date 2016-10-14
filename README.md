@@ -123,6 +123,11 @@ The following command installs DistAlgo for the current user:
    or call the `dar` script:
 
       dar <SOURCE>
+      
+   The `--version`(or `-v`) command line option will print out the version
+   number of the installed DistAlgo system. The `--help`(or `-h`) command
+   line option will print out a list of all command line options along with
+   a brief description of each option.
 
 ### Passing command line arguments to the DistAlgo program
 
