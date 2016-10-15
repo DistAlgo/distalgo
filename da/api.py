@@ -178,6 +178,9 @@ def entrypoint():
         log.error("Caught unexpected global exception: %r", e)
         traceback.print_tb(err_info[2])
 
+@api
+def config(**props):
+    common.set_global_config(props)
 
 @api
 def new(pcls, args=None, num=None, **props):

@@ -38,6 +38,7 @@ from inspect import signature, Parameter
 from functools import wraps
 
 GlobalOptions = None
+GlobalConfig = dict()
 CurrentProcess = {'pid' : multiprocessing.current_process().pid}
 IncOQBaseType = None           # incoq.runtime.Type, if using incoq
 INCOQ_MODULE_NAME = "incoq.mars.runtime"
@@ -70,6 +71,12 @@ def set_current_process():
 def set_global_options(params):
     global GlobalOptions
     GlobalOptions = params
+
+def set_global_config(props):
+    GlobalConfig.update(props)
+
+def global_config():
+    return GlobalConfig
 
 def global_options():
     return GlobalOptions

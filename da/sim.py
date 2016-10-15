@@ -138,6 +138,8 @@ class DistProcess():
         """
         if key in common.global_options().config:
             return common.global_options().config[key]
+        elif key in common.global_config():
+            return common.global_config()[key]
         elif key in cls._config_object:
             return cls._config_object[key]
         elif key in sys.modules[cls.__module__]._config_object:
