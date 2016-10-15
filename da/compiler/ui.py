@@ -27,6 +27,7 @@ import sys
 import time
 import argparse
 
+import da
 from da.tools.unparse import Unparser
 
 from da.compiler.parser import Parser, daast_from_file
@@ -308,6 +309,7 @@ def main(argv=None):
                     action='store_true', default=False)
     ap.add_argument('-p', help="Generate DistAlgo pseudo code.",
                     action='store_true', dest="genpsd", default=False)
+    ap.add_argument("-v", "--version", action="version", version=da.__version__)
     ap.add_argument('--psdfile', help="Name of DistAlgo pseudo code output file.",
                     dest="psdfile", default=None)
     ap.add_argument('infile', metavar='SOURCEFILE', type=str,
