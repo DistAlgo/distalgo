@@ -90,7 +90,7 @@ class DistProcess():
         self.__channel = procimpl.endpoint
         self.__messageq = procimpl.message_queue
         self.__properties = props
-        self.__jobq = list()
+        self.__jobq = collections.deque()
         self.__lock = threading.Lock()
         self.__lock.acquire()
         if self.get_config('handling', default='one').casefold() == 'all':
@@ -282,18 +282,30 @@ class DistProcess():
         """Runs all pending handlers jobs permissible at `label`.
         """
         leftovers = []
-        for handler, args in self.__jobq:
+        handler = args = None
+        while self.__jobq:
+            try:
+                handler, args = self.__jobq.popleft()
+            except IndexError:
+                self._log.debug("Job item stolen by another thread.")
+                break
+            except ValueError:
+                self._log.error("Corrupted job item!")
+                continue
+
             if ((handler._labels is None or label in handler._labels) and
                 (handler._notlabels is None or label not in handler._notlabels)):
                 try:
                     handler(**args)
-                except TypeError as e:
+                except Exception as e:
                     self._log.error(
-                        "%s when calling handler '%s' with '%s': %s",
-                        type(e).__name__, handler.__name__, str(args), str(e))
+                        "%r when calling handler '%s' with '%s': %s",
+                        e, handler.__name__, args, e)
             else:
+                self._log.debug("Skipping (%s, %r) due to label constraint.",
+                                handler, args)
                 leftovers.append((handler, args))
-        self.__jobq = leftovers
+        self.__jobq.extend(leftovers)
 
     def __process_event(self, block, timeout=None):
         """Retrieves and processes one pending event.
