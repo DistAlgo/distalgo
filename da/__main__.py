@@ -86,11 +86,22 @@ def parseArgs():
     parser.add_argument("-H", "--hostname", default='localhost',
                         help="hostname for binding network sockets, "
                         "defaults to 'localhost'. ")
+    parser.add_argument("-N", "--nodename", default="",
+                        help="hostname for binding network sockets, "
+                        "defaults to 'localhost'. ")
+    parser.add_argument("--cookie", default=None,
+                        help="a string for authentication of peers. "
+                        "All peer processes participating in message passing "
+                        "must have matching cookies. "
+                        "Defaults to the content of '${HOME}/.da.cookie'. ")
+    parser.add_argument('--message-buffer-size', type=int, default=(4 * 1024),
+                        help="Size in bytes of send and receive buffers used by "
+                        "transports. Default value is 4096.")
     parser.add_argument("-r", "--recompile", dest="recompile",
                         help="force recompile DistAlgo source file. ",
                         action="store_true", default=False)
     parser.add_argument("-c", "--compiler-flags", default="",
-                        help="flags to pass to the compiler, if recompiling "
+                        help="flags to pass to the compiler, if (re)compiling "
                         "is required.")
     parser.add_argument("-o", "--config", default=[], nargs='*',
                         help="sets runtime configuration variables, overrides "
