@@ -45,6 +45,8 @@ FILE_LOG_FORMAT = \
 
 # a dict that contains the runtime configuration values:
 GlobalOptions = None
+# a dict containing configuration overrides set by the `config` API:
+GlobalConfig = dict()
 # Process id of the node process:
 CurrentNode = None
 # incoq.runtime.Type, only if using incoq:
@@ -89,6 +91,12 @@ def initialize_runtime_options(configs):
 def _restore_runtime_options(params):
     global GlobalOptions
     GlobalOptions = params
+
+def set_global_config(props):
+    GlobalConfig.update(props)
+
+def global_config():
+    return GlobalConfig
 
 def _set_node(node_id):
     global CurrentNode

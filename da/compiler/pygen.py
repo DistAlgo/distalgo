@@ -604,6 +604,16 @@ class PythonGenerator(NodeVisitor):
                      if node.kwargs is not None else None)
         return propagate_attributes([ast.func] + ast.args, ast)
 
+    def visit_ApiCallExpr(self, node):
+        ast = pyCall(pyAttr("da", node.func),
+                     [self.visit(a) for a in node.args],
+                     [(key, self.visit(value)) for key, value in node.keywords],
+                     self.visit(node.starargs)
+                     if node.starargs is not None else None,
+                     self.visit(node.kwargs)
+                     if node.kwargs is not None else None)
+        return propagate_attributes(ast.args, ast)
+
     def visit_BuiltinCallExpr(self, node):
         ast = pyCall(pyAttr("self", node.func),
                      [self.visit(a) for a in node.args],

@@ -1166,9 +1166,8 @@ class Parser(NodeVisitor):
                                    "Valid arguments are: " +
                                    str(ValidResetTypes), node)
 
-            # Parse 'config' statements. These may appear at the module level,
-            # process level, or in the 'main' function (for backwards
-            # compatability):
+            # Parse 'config' statements. These may appear at the module level or
+            # the process level:
             elif self.expr_check(KW_CONFIG, 0, None, e, keywords=None):
                 if isinstance(self.current_parent, dast.Process):
                     self.current_process.configurations.extend(
@@ -1176,11 +1175,14 @@ class Parser(NodeVisitor):
                 elif isinstance(self.current_parent, dast.Program):
                     self.current_parent.configurations.extend(
                         self.parse_config_section(e))
+                # If 'config' occurs in the 'main' function, treat it as an
+                # ApiCallExpr (for backwards compatability):
                 elif (isinstance(self.current_parent, dast.Function) and
                       self.current_parent.name == KW_ENTRY_POINT and
-                      isinstance(self.current_parent.parent, dast.Program)):
-                    self.current_parent.parent.configurations.extend(
-                        self.parse_config_section(e))
+                      self.current_process is self._dummy_process):
+                    stmtobj = self.create_stmt(dast.SimpleStmt, node)
+                    self.current_context = Read(stmtobj)
+                    stmtobj.expr = self.visit(node.value)
                 else:
                     self.error("Invalid context for '%s' statement." %
                                KW_CONFIG, node)

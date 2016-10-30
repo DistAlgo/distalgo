@@ -208,6 +208,10 @@ def entrypoint():
         log.error("Caught unexpected global exception: %r", e)
         traceback.print_tb(err_info[2])
 
+@api
+def config(**props):
+    common.set_global_config(props)
+
 def die(mesg = None):
     if mesg != None:
         sys.stderr.write(mesg + "\n")

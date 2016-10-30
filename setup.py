@@ -4,7 +4,8 @@ import da
 
 setup(name = "DistAlgo",
       version = da.__version__,
-      author= "bolin",
+      url = "https://github.com/DistAlgo/distalgo",
+      author = "bolin",
       author_email = "bolin@cs.stonybrook.edu",
       classifiers = [
           'Development Status :: 4 - Beta',
