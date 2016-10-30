@@ -21,7 +21,7 @@ class P(process):
           send(('done', ), to=ps)
           x = max(listof(v, v in V, V[v]))
           output("x = %r" % (x))
-          await(each(p in ps, received(('done',), from_=_p)))
+          await(each(p in ps, has=received(('done',), from_=p)))
 
     def receive(msg=('Value', v)):
        receiveflag = True
