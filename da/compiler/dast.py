@@ -1096,26 +1096,20 @@ class BuiltinCallExpr(CallExpr):
         return list(chain(*[a.ordered_nameobjs for a in self.args
                             if a is not None]))
 
-class SetupExpr(CallExpr):
+class SetupExpr(BuiltinCallExpr):
     @property
     def func(self):
-        return "setup"
+        return "_setup"
 
-    @property
-    def ordered_nameobjs(self):
-        return list(chain(*[a.ordered_nameobjs for a in self.args
-                            if a is not None]))
-
-class StartExpr(CallExpr):
+class StartExpr(BuiltinCallExpr):
     @property
     def func(self):
-        return "start"
+        return "_start"
 
+class ConfigExpr(BuiltinCallExpr):
     @property
-    def ordered_nameobjs(self):
-        return list(chain(*[a.ordered_nameobjs for a in self.args
-                            if a is not None]))
-
+    def func(self):
+        return "_config"
 
 class BooleanOperator(DistNode): pass
 class AndOp(BooleanOperator): pass

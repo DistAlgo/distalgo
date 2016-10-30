@@ -89,8 +89,8 @@ def initialize_runtime_options(configs):
     GlobalOptions = dict(configs)
 
 def _restore_runtime_options(params):
-    global GlobalOptions
-    GlobalOptions = params
+    global GlobalOptions, GlobalConfig
+    GlobalOptions, GlobalConfig = params
 
 def set_global_config(props):
     GlobalConfig.update(props)
@@ -197,7 +197,7 @@ class ProcessId(namedtuple("_ProcessId",
     __slots__ = ()
 
     @staticmethod
-    def __gen_uid(hostname, pid):
+    def gen_uid(hostname, pid):
         """Generate a globally unique 96-bit id.
 
         """
@@ -211,19 +211,19 @@ class ProcessId(namedtuple("_ProcessId",
         cnt = ThreadLocals.pid_counter = (ThreadLocals.pid_counter + 1) % 1024
         return (tstamp << 42) | (hh << 26) | (pid << 10) | cnt
 
-    @staticmethod
-    def _create(pcls, transports, name=""):
+    @classmethod
+    def _create(idcls, pcls, transports, name=""):
         """Creates a new `ProcessId` instance.
 
         """
         hostname = get_runtime_option('hostname')
         nodename = get_runtime_option('nodename')
-        uid = ProcessId.__gen_uid(hostname,
-                                  pid=threading.current_thread().ident)
-        return ProcessId(uid=uid, seqno=1,
-                         clsname=pcls.__qualname__,
-                         name=name, nodename=nodename,
-                         hostname=hostname, transports=transports)
+        uid = ProcessId.gen_uid(hostname,
+                                pid=threading.current_thread().ident)
+        return idcls(uid=uid, seqno=1,
+                     clsname=pcls.__qualname__,
+                     name=name, nodename=nodename,
+                     hostname=hostname, transports=transports)
 
     def _short_form_(self):
         """Constructs a short string representation of this pid.

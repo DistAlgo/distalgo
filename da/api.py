@@ -39,7 +39,7 @@ import multiprocessing
 import os.path
 
 from . import common, sim, endpoint
-from .common import api, deprecated, get_runtime_option
+from .common import api, deprecated, get_runtime_option, ProcessId
 
 DISTPY_SUFFIXES = [".da", ""]
 PYTHON_SUFFIX = ".py"
@@ -180,9 +180,9 @@ def entrypoint():
                  get_runtime_option('hostname'), trman.transport_addresses[0])
         log.info("Starting program %s...", target)
         nodename = get_runtime_option('nodename')
-        nid = sim.ProcessId._create(pcls=module.Node_,
-                                    transports=trman.transport_addresses,
-                                    name=nodename)
+        nid = ProcessId._create(pcls=module.Node_,
+                                transports=trman.transport_addresses,
+                                name=nodename)
         common._set_node(nid)
         log.debug("Node has id %r", nid)
         for i in range(0, niters):
@@ -207,10 +207,6 @@ def entrypoint():
         err_info = sys.exc_info()
         log.error("Caught unexpected global exception: %r", e)
         traceback.print_tb(err_info[2])
-
-@api
-def config(**props):
-    common.set_global_config(props)
 
 def die(mesg = None):
     if mesg != None:

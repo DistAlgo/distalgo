@@ -624,25 +624,7 @@ class PythonGenerator(NodeVisitor):
                      if node.kwargs is not None else None)
         return propagate_attributes(ast.args, ast)
 
-    def visit_SetupExpr(self, node):
-        ast = pyCall(pyAttr("self", "_setup"),
-                     [self.visit(a) for a in node.args],
-                     [(key, self.visit(value)) for key, value in node.keywords],
-                     self.visit(node.starargs)
-                     if node.starargs is not None else None,
-                     self.visit(node.kwargs)
-                     if node.kwargs is not None else None)
-        return propagate_attributes(ast.args, ast)
-
-    def visit_StartExpr(self, node):
-        ast = pyCall(pyAttr("self", "_start"),
-                     [self.visit(a) for a in node.args],
-                     [(key, self.visit(value)) for key, value in node.keywords],
-                     self.visit(node.starargs)
-                     if node.starargs is not None else None,
-                     self.visit(node.kwargs)
-                     if node.kwargs is not None else None)
-        return propagate_attributes(ast.args, ast)
+    visit_SetupExpr = visit_StartExpr = visit_ConfigExpr = visit_BuiltinCallExpr
 
     def visit_AggregateExpr(self, node):
         ast = pyCall(AggregateMap[type(node)],

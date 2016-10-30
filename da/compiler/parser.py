@@ -1175,8 +1175,8 @@ class Parser(NodeVisitor):
                 elif isinstance(self.current_parent, dast.Program):
                     self.current_parent.configurations.extend(
                         self.parse_config_section(e))
-                # If 'config' occurs in the 'main' function, treat it as an
-                # ApiCallExpr (for backwards compatability):
+                # If 'config' occurs in the 'main' function, treat it as a
+                # BuiltinCallExpr (for backwards compatability):
                 elif (isinstance(self.current_parent, dast.Function) and
                       self.current_parent.name == KW_ENTRY_POINT and
                       self.current_process is self._dummy_process):
@@ -1977,6 +1977,10 @@ class Parser(NodeVisitor):
                              keywords=None, optional_keywords=None):
             self.debug("Start expression. ", node)
             expr = self.create_expr(dast.StartExpr, node)
+        elif self.expr_check({KW_CONFIG}, None, None, node,
+                             keywords=None, optional_keywords=None):
+            self.debug("Config expression. ", node)
+            expr = self.create_expr(dast.ConfigExpr, node)
         elif self.expr_check(AggregateMap, 1, None, node,
                              keywords={}, optional_keywords={}):
             self.debug("Aggregate: " + node.func.id, node)

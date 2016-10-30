@@ -111,21 +111,12 @@ class DistProcess():
         self.__local.timer_expired = False
         self.__setup_called = False
         self.__running = False
-        self.__init_dispatch_table()
-        if self.get_config('handling', default='one').casefold() == 'all':
-            self.__do_label = self.__label_all
-        else:
-            self.__do_label = self.__label_one
-        self.__default_flags = self.__get_channel_flags(
-            self.get_config("channel", default=[]))
         self.__parent = procimpl.daparent
+        self.__init_dispatch_table()
+        self.__init_config()
 
         self._state = common.Namespace()
         self._events = []
-        if self.get_config('clock', default='none').casefold() == 'lamport':
-            self._logical_clock = 0
-        else:
-            self._logical_clock = None
 
     def setup(self):
         """Initialization routine for the DistAlgo process.
@@ -151,6 +142,18 @@ class DistProcess():
                         to=self.__parent, flags=ChannelCaps.RELIABLEFIFO)
         self.__wait_for(lambda: self.__running)
         return self.run()
+
+    def __init_config(self):
+        if self.get_config('handling', default='one').casefold() == 'all':
+            self.__do_label = self.__label_all
+        else:
+            self.__do_label = self.__label_one
+        self.__default_flags = self.__get_channel_flags(
+            self.get_config("channel", default=[]))
+        if self.get_config('clock', default='').casefold() == 'lamport':
+            self._logical_clock = 0
+        else:
+            self._logical_clock = None
 
     def __init_dispatch_table(self):
         self.__command_dispatch_table = [None] * Command.Sentinel.value
@@ -192,6 +195,8 @@ class DistProcess():
         cfgobj = get_runtime_option('config')
         if key in cfgobj:
             return cfgobj[key]
+        elif key in common.global_config():
+            return common.global_config()[key]
         elif key in cls._config_object:
             return cls._config_object[key]
         elif key in sys.modules[cls.__module__]._config_object:
@@ -274,11 +279,35 @@ class DistProcess():
         return res
 
     @builtin
+    def _config(self, **props):
+        """Set global configuration overrides.
+
+        Configurations set by this function have higher priority than those
+        declared at module and process level, but lower priority than '--config'
+        command line option. This function is only callable from the `main`
+        method of a node process and affects all processes created on that node.
+
+        """
+        common.set_global_config(props)
+        # XXX: Hack: we have to update our configurations to reflect the new
+        # settings here, but certain configuration items (such as 'clock') need
+        # to take affect from beginning of process execution (in order to affect
+        # all incoming and outgoing messages), so this might not always work as
+        # intended:
+        self.__init_config()
+
+    @builtin
     def parent(self):
+        """Returns the id of our parent process.
+
+        The parent process is the one that called `new` to create this process.
+
+        """
         return self.__parent
 
     @builtin
     def node(self):
+        """Returns the id of our node process."""
         return self.__procimpl._nodeid
 
     @builtin
@@ -790,7 +819,7 @@ class OSProcessImpl(multiprocessing.Process):
             self.name = process_name
         self.endpoint = transport_manager
         if multiprocessing.get_start_method() == 'spawn':
-            self._rtopts = common.GlobalOptions
+            self._rtopts = (common.GlobalOptions, common.GlobalConfig)
 
     def start_router(self):
         self.endpoint.start()
@@ -858,12 +887,12 @@ class OSProcessImpl(multiprocessing.Process):
             self.name = str(self.pid)
         try:
             if multiprocessing.get_start_method() == 'spawn':
-                self._rtopts['this_module_name'] = self.__class__.__module__
                 common._restore_runtime_options(self._rtopts)
                 common._set_node(self._nodeid)
-                common.sysinit()
             common.set_runtime_option('this_module_name',
                                       self.__class__.__module__)
+            if multiprocessing.get_start_method() == 'spawn':
+                common.sysinit()
             pattern.initialize(self.dapid)            # XXX:: FIXME!
             signal.signal(signal.SIGTERM, self._sighandler)
             signal.signal(signal.SIGUSR1, self._debug_handler)
