@@ -35,6 +35,8 @@ KW_ENTRY_POINT = "main"
 KW_PROCESS_DEF = "process"
 KW_PROCESS_ENTRY_POINT = "run"
 KW_CONFIG = "config"
+KW_SETUP = "setup"
+KW_START = "start"
 KW_RECV_QUERY = "received"
 KW_SENT_QUERY = "sent"
 KW_RECV_EVENT = "receive"
@@ -71,11 +73,15 @@ KW_SUCH_THAT = "has"
 KW_RESET = "reset"
 KW_INC_VERB = "_INC_"
 
+##########################
+# Helper functions:
+##########################
+
 def is_setup_func(node):
     """Returns True if this node defines a function named 'setup'."""
 
     return (isinstance(node, FunctionDef) and
-            node.name == "setup")
+            node.name == KW_SETUP)
 
 def extract_label(node):
     """Returns the label name specified in 'node', or None if 'node' is not a
@@ -89,10 +95,6 @@ def extract_label(node):
         return node.operand.operand.id
     else:
         return None
-
-##########################
-# Helper functions:
-##########################
 
 def daast_from_file(filename, args=None):
     """Generates DistAlgo AST from source file.
@@ -193,6 +195,7 @@ ApiMethods = set(common.api_registry.keys())
 ApiMethods.add('import_da')     # 'import_da' is a special method
 BuiltinMethods = set(common.builtin_registry.keys())
 PythonBuiltins = dir(builtins)
+NodeProcName = "Node_"
 
 AggregateMap = {
     KW_AGGREGATE_MAX  : dast.MaxExpr,
@@ -468,6 +471,8 @@ class Parser(NodeVisitor):
         self.current_block = None
         self.current_context = None
         self.current_label = None
+        # Allows temporarily overriding `current_process`:
+        self._dummy_process = None
         self.errcnt = 0
         self.warncnt = 0
         self.program = execution_context if execution_context is not None \
@@ -517,6 +522,8 @@ class Parser(NodeVisitor):
 
     @property
     def current_process(self):
+        if self._dummy_process is not None:
+            return self._dummy_process
         for node, _, _, _ in reversed(self.state_stack):
             if isinstance(node, dast.Process):
                 return node
@@ -891,9 +898,13 @@ class Parser(NodeVisitor):
                     self.current_process.methods.append(s)
             elif (isinstance(s.parent, dast.Program) and
                   s.name == KW_ENTRY_POINT):
-                s.parent.entry_point = s
-                # HACK: if we don't pop the entry_point from the module body
-                # then it ends up getting printed twice:
+                # Create the node process:
+                s.parent.nodecls = dast.Process(self.current_parent, None,
+                                                name=NodeProcName)
+                self._dummy_process = s.process = s.parent.nodecls
+                self._dummy_process.entry_point = s
+                # If we don't pop the entry_point from the module body then it
+                # ends up getting printed twice:
                 self.current_block.pop()
             # Ignore the label decorators:
             s.decorators, _, _ = self.parse_decorators(node)
@@ -906,6 +917,7 @@ class Parser(NodeVisitor):
                 dbgstr.append(("%s: %s; " % (n, str(n.get_typectx()))))
             self.debug("".join(dbgstr))
             self.pop_state()
+            self._dummy_process = None
 
         else:
             # This is an event handler:
@@ -1485,7 +1497,7 @@ class Parser(NodeVisitor):
         self.pop_state()
         if isinstance(expr.value, dast.SelfExpr):
             if node.attr == 'id':
-                # "self.id" is represented as a SelfExpr node:
+                self.warn("'self.id' is deprecated, use 'self' instead!", node)
                 return expr.value
             # Need to update the namedvar object
             n = self.current_process.find_name(expr.attr)
@@ -1955,6 +1967,14 @@ class Parser(NodeVisitor):
             self.debug("Builtin method call: " + node.func.id, node)
             expr = self.create_expr(dast.BuiltinCallExpr, node)
             expr.func = node.func.id
+        elif self.expr_check({KW_SETUP}, None, None, node,
+                             keywords=None, optional_keywords=None):
+            self.debug("Setup expression. ", node)
+            expr = self.create_expr(dast.SetupExpr, node)
+        elif self.expr_check({KW_START}, None, None, node,
+                             keywords=None, optional_keywords=None):
+            self.debug("Start expression. ", node)
+            expr = self.create_expr(dast.StartExpr, node)
         elif self.expr_check(AggregateMap, 1, None, node,
                              keywords={}, optional_keywords={}):
             self.debug("Aggregate: " + node.func.id, node)

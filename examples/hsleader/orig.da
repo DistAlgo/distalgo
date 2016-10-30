@@ -9,11 +9,11 @@ class P(process):
 
     def run():
         while True:
-            send(('Token', self.id, 'out', 1 << phase), to={left, right})
+            send(('Token', self, 'out', 1 << phase), to={left, right})
 
             if await(status == "Leader"):
                 output("I am leader at phase %d!"%phase)
-                send(('Leader', self.id), to={left, right})
+                send(('Leader', self), to={left, right})
                 break
             elif (phase_left and phase_right):
                 phase += 1
@@ -24,31 +24,31 @@ class P(process):
 
     def receive(msg=('Token', v, direction, h), from_=source):
         if source == left and direction == 'out':
-            if v > self.id and h > 1:
+            if v > self and h > 1:
                 send(('Token', v, 'out', h-1), to=right)
-            elif v > self.id and h == 1:
+            elif v > self and h == 1:
                 send(('Token', v, 'in', 1), to=left)
-            elif v == self.id:
+            elif v == self:
                 status = "Leader"
 
         elif source == right and direction == 'out':
-            if v > self.id and h > 1:
+            if v > self and h > 1:
                 send(('Token', v, 'out', h-1), to=left)
-            elif v > self.id and h == 1:
+            elif v > self and h == 1:
                 send(('Token', v, 'in', 1), to=right)
-            elif v == self.id:
+            elif v == self:
                 status = "Leader"
 
         elif source == left and direction == 'in':
-            if v > self.id:
+            if v > self:
                 send(('Token', v, 'in', 1), to=right)
-            elif v == self.id:
+            elif v == self:
                 phase_left = True
 
         elif source == right and direction == 'in':
-            if v > self.id:
+            if v > self:
                 send(('Token', v, 'in', 1), to=left)
-            elif v == self.id:
+            elif v == self:
                 phase_right = True
 
     def receive(msg=('Leader', leader), from_=source):

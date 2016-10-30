@@ -9,7 +9,7 @@ class P(process):
           send(('Value',
                 setof(v, v in V,
                       not some(sent(('Value', V2, _)), has=(v in V2))),
-                self.id), to=ps)
+                self), to=ps)
           reset("Received")
           await(some(received(('Value', _, _))))
           V |= setof(v, received(('Value', V2, _)), v in V2)

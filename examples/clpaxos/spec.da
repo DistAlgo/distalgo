@@ -3,15 +3,15 @@ import sys
 class Proposer(process):
     def setup(acceptors:set, quorumsize:int,
               f:float, nrounds:int, timeout:float):
-        self.propNum = (0, self.id)          # Current proposal(ballot) number
-        self.propVal = self.id          # Own value to propose
+        self.propNum = (0, self)          # Current proposal(ballot) number
+        self.propVal = self          # Own value to propose
 
     def run():
         count = 0
         while count < nrounds:
             work()
             --prepare
-            send(('Prepare', propNum, self.id), to=acceptors)
+            send(('Prepare', propNum, self), to=acceptors)
             if await(len(setof(a, received(('Promise', _propNum, _, _, a)))) > quorumsize):
                 --propose
                 _, voted = max(setof((n, v),
@@ -19,19 +19,19 @@ class Proposer(process):
                                      len(setof(a,
                                                received(('Promise',
                                                          _propNum, _n, _v, a)))) > f) |
-                               {((-1, self.id), propVal)})
+                               {((-1, self), propVal)})
 
-                send(('OneC', propNum, voted, self.id), to=acceptors)
+                send(('OneC', propNum, voted, self), to=acceptors)
                 if await(len(setof(a, received(('TwoAv', _propNum, _voted, a)))) > quorumsize):
                     --end
-                    output("Succeeded proposing %r" % voted)
+                    output("Succeeded proposing %s" % (voted,))
                     count += 1
                     continue
                 elif timeout(timeout):
                     output("Failed to Propose in time, retrying.")
             elif timeout(timeout):
                 output("Failed to Prepare in time, retrying.")
-            propNum = (propNum[0] + 1, self.id)
+            propNum = (propNum[0] + 1, self)
         send(('Done',), to=acceptors)
 
 class Acceptor(process):
@@ -51,17 +51,17 @@ class Acceptor(process):
 
     def receive(msg=('Prepare', n, p)):
         if n > maxpromised():
-            vn, vv = max(setof((vpn, vv), sent(('TwoAv', vpn, vv, self.id))) |
-                         {((-1, self.id), None)})
-            send(('Promise', n, vn, vv, self.id), to=peers)
+            vn, vv = max(setof((vpn, vv), sent(('TwoAv', vpn, vv, self))) |
+                         {((-1, self), None)})
+            send(('Promise', n, vn, vv, self), to=peers)
 
     def receive(msg=('OneC', n, v, p)):
         if (n >= maxpromised() and islegal(n, v) and
-                (not some(sent(('TwoAv', _n, _, self.id))))):
-            send(('TwoAv', n, v, self.id), to=peers)
+                (not some(sent(('TwoAv', _n, _, self))))):
+            send(('TwoAv', n, v, self), to=peers)
 
     def maxpromised():
-        return max(setof(n, sent(('Promise', n, _, _, _))) | {(-2, self.id)})
+        return max(setof(n, sent(('Promise', n, _, _, _))) | {(-2, self)})
 
     def islegal(n, v):
         voted = setof((vn, vv), received(('Promise', _n, vn, vv, _)),
@@ -75,7 +75,7 @@ def main():
     nproposers = int(sys.argv[1]) if len(sys.argv) > 1 else 5
     nacceptors = int(sys.argv[2]) if len(sys.argv) > 2 else 10
     nrounds = int(sys.argv[3]) if len(sys.argv) > 3 else 1
-    timeout = int(sys.argv[4]) if len(sys.argv) > 4 else 5
+    timeout = int(sys.argv[4]) if len(sys.argv) > 4 else 1
     f = int((nacceptors-1)/3)
     quorum = int(nacceptors/2 + f)
 

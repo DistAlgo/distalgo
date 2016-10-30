@@ -75,7 +75,6 @@ PATTERN_EXPR_NAME = "_PatternExpr_%d"
 QUATIFIED_EXPR_NAME = "_QuantifiedExpr_%d"
 CONFIG_OBJECT_NAME = "_config_object"
 STATE_ATTR_NAME = "_state"
-NODECLS_NAME = "_NodeMain"
 ENTRYPOINT_NAME = "run"
 
 ########## Convenience methods for creating AST nodes: ##########
@@ -353,26 +352,16 @@ class PythonGenerator(NodeVisitor):
     def visit_Program(self, node):
         self.module_args = node._compiler_options
         mainbody = self.body(node.body)
+        if node.nodecls is not None:
+            # `nodecls` is the `Node_` process:
+            nodeproc = self.visit(node.nodecls)
         body = list(self.preambles)
         body.append(self.generate_config(node))
         body.extend(mainbody)
-        if node.entry_point is not None:
-            body.extend(self.generate_nodecls(node))
+        if node.nodecls is not None:
+            body.extend(nodeproc)
         body.extend(self.postambles)
         return Module(body)
-
-    def generate_nodecls(self, node):
-        cd = ClassDef()
-        cd.name = NODECLS_NAME
-        cd.bases = [pyAttr("da", "DistProcess")]
-        cd.decorator_list = []
-        cd.keywords = []
-        if sys.version_info < (3, 5):
-            cd.starargs = []
-            cd.kwargs = []
-        cd.body = []
-        cd.body.extend(self._entry_point(node.entry_point))
-        return [cd]
 
     def generate_config(self, node):
         return Assign([pyName(CONFIG_OBJECT_NAME)],
@@ -465,13 +454,18 @@ class PythonGenerator(NodeVisitor):
         cd.name = node.name
         cd.bases = self.bases(node.bases)
         cd.bases.append(pyAttr("da", "DistProcess"))
-        # ########################################
-        # TODO: just pass these through until we figure out a use for them:
-        cd.keywords = node.ast.keywords
-        if sys.version_info < (3, 5):
-            cd.starargs = node.ast.starargs
-            cd.kwargs = node.ast.kwargs
-        # ########################################
+        if node.ast is not None:
+            # ########################################
+            # TODO: just pass these through until we figure out a use for them:
+            cd.keywords = node.ast.keywords
+            if sys.version_info < (3, 5):
+                cd.starargs = node.ast.starargs
+                cd.kwargs = node.ast.kwargs
+            # ########################################
+        else:
+            cd.keywords = []
+            cd.starargs = []
+            cd.kwargs = []
         cd.body = [self.generate_init(node)]
         if node.configurations:
             cd.body.append(self.generate_config(node))
@@ -566,7 +560,7 @@ class PythonGenerator(NodeVisitor):
             return Num(node.value)
 
     def visit_SelfExpr(self, node):
-        return pyAttr("self", "id")
+        return pyAttr("self", "_id")
 
     def visit_TrueExpr(self, node):
         return pyTrue()
@@ -610,8 +604,8 @@ class PythonGenerator(NodeVisitor):
                      if node.kwargs is not None else None)
         return propagate_attributes([ast.func] + ast.args, ast)
 
-    def visit_ApiCallExpr(self, node):
-        ast = pyCall(pyAttr("da", node.func),
+    def visit_BuiltinCallExpr(self, node):
+        ast = pyCall(pyAttr("self", node.func),
                      [self.visit(a) for a in node.args],
                      [(key, self.visit(value)) for key, value in node.keywords],
                      self.visit(node.starargs)
@@ -620,9 +614,24 @@ class PythonGenerator(NodeVisitor):
                      if node.kwargs is not None else None)
         return propagate_attributes(ast.args, ast)
 
-    def visit_BuiltinCallExpr(self, node):
-        ast = pyCall(pyAttr("self", node.func),
-                     [self.visit(a) for a in node.args])
+    def visit_SetupExpr(self, node):
+        ast = pyCall(pyAttr("self", "_setup"),
+                     [self.visit(a) for a in node.args],
+                     [(key, self.visit(value)) for key, value in node.keywords],
+                     self.visit(node.starargs)
+                     if node.starargs is not None else None,
+                     self.visit(node.kwargs)
+                     if node.kwargs is not None else None)
+        return propagate_attributes(ast.args, ast)
+
+    def visit_StartExpr(self, node):
+        ast = pyCall(pyAttr("self", "_start"),
+                     [self.visit(a) for a in node.args],
+                     [(key, self.visit(value)) for key, value in node.keywords],
+                     self.visit(node.starargs)
+                     if node.starargs is not None else None,
+                     self.visit(node.kwargs)
+                     if node.kwargs is not None else None)
         return propagate_attributes(ast.args, ast)
 
     def visit_AggregateExpr(self, node):
@@ -1142,7 +1151,7 @@ class PythonGenerator(NodeVisitor):
     def visit_SendStmt(self, node):
         mesg = self.visit(node.message)
         tgt = self.visit(node.target)
-        ast = Expr(pyCall(func=pyAttr("self", "_send"),
+        ast = Expr(pyCall(func=pyAttr("self", "send"),
                           args=[mesg, tgt]))
         return concat_bodies([mesg, tgt], [ast])
 

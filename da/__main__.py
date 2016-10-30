@@ -26,10 +26,10 @@ import sys
 import logging
 import argparse
 
-__version__ = "1.0.0b18"
+__version__ = "1.0.0rc1"
 
+from da.common import initialize_runtime_options
 from da.api import entrypoint
-from da.common import set_global_options
 
 if hasattr(sys, '_real_argv'):
     sys.argv[0] = sys._real_argv
@@ -48,8 +48,10 @@ def parseArgs():
 
     parser.add_argument('--iterations', type=int, default=1,
                         help="number of times to run the program, defaults to 1.")
-    parser.add_argument("--nolog", action="store_true", default=False,
-                        help="disables all logging output.")
+    parser.add_argument("--no-log",
+                        action="store_true", default=False,
+                        help="if set, don't customize the root logger. "
+                        "Useful if DistAlgo is run as a library .")
     parser.add_argument("-f", "--logfile", action="store_true", default=False,
                         help="creates a log file for this run.")
     parser.add_argument("--logfilename",
@@ -64,6 +66,10 @@ def parseArgs():
                         choices=LogLevelNames, default="debug",
                         help="severity level of logging messages to log to "
                         "the log file, defaults to 'debug'.")
+    parser.add_argument("--long-form-ids",
+                        action="store_true", default=False,
+                        help="if set, use the full string representation of "
+                        "process ids in formatting. Useful for debugging.")
     parser.add_argument("-i", "--load-inc-module",
                         action="store_true", default=False,
                         help="if set, try to load the incrementalized "
@@ -90,7 +96,7 @@ def parseArgs():
                         help="sets runtime configuration variables, overrides "
                         "configurations declared in the program source.")
     parser.add_argument("--start-method", default=None, choices=['fork', 'spawn'],
-                        help="choose the start method for spawning child processes."
+                        help="choose the semantics for creating child process."
                         " 'fork' is the default method on UNIX-like systems,"
                         " 'spawn' is the default method on Windows systems.")
     parser.add_argument("-v", "--version", action="version", version=__version__)
@@ -104,12 +110,14 @@ def parseArgs():
     return args
 
 def libmain():
-    """
-    Main program entry point. Parses command line options, sets up global
-    variables, and calls the 'main' function of the DistAlgo program.
-    """
+    """Main program entry point.
 
-    set_global_options(parseArgs())
+    Parses command line options, sets up global variables, and calls the 'main'
+    function of the DistAlgo program.
+
+    """
+    args = parseArgs()
+    initialize_runtime_options(args.__dict__)
     entrypoint()
 
 def die(mesg = None):

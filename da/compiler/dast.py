@@ -1096,6 +1096,26 @@ class BuiltinCallExpr(CallExpr):
         return list(chain(*[a.ordered_nameobjs for a in self.args
                             if a is not None]))
 
+class SetupExpr(CallExpr):
+    @property
+    def func(self):
+        return "setup"
+
+    @property
+    def ordered_nameobjs(self):
+        return list(chain(*[a.ordered_nameobjs for a in self.args
+                            if a is not None]))
+
+class StartExpr(CallExpr):
+    @property
+    def func(self):
+        return "start"
+
+    @property
+    def ordered_nameobjs(self):
+        return list(chain(*[a.ordered_nameobjs for a in self.args
+                            if a is not None]))
+
 
 class BooleanOperator(DistNode): pass
 class AndOp(BooleanOperator): pass
@@ -1926,7 +1946,7 @@ class Program(CompoundStmt, NameScope):
         self.configurations = []
         self.directives = []
         self.processes = []
-        self.entry_point = None
+        self.nodecls = None
         # The 'da' module is always available to all DistAlgo programs:
         self.add_name("da")
 

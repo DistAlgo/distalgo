@@ -38,13 +38,17 @@ import traceback
 import multiprocessing
 import os.path
 
-from da import common, sim, endpoint as ep
-
-api = common.api
-deprecated = common.deprecated
+from . import common, sim, endpoint
+from .common import api, deprecated, get_runtime_option
 
 DISTPY_SUFFIXES = [".da", ""]
 PYTHON_SUFFIX = ".py"
+NODECLS = "Node_"
+
+CONSOLE_LOG_FORMAT = \
+    '[%(relativeCreated)d] %(name)s%(daPid)s:%(levelname)s: %(message)s'
+FILE_LOG_FORMAT = \
+    '[%(asctime)s] %(name)s%(daPid)s:%(levelname)s: %(message)s'
 
 log = logging.getLogger(__name__)
 
@@ -72,6 +76,14 @@ def strip_suffix(filename):
     dotidx = filename.rfind(".")
     return filename[:dotidx] if dotidx != -1 else filename
 
+@api
+def init(**configs):
+    """Initializes the DistAlgo runtime.
+
+    """
+    common.initialize_runtime_options(configs)
+
+@api
 def import_da(name, from_dir=None, compiler_args=[]):
     """Imports DistAlgo module 'module', returns the module object.
 
@@ -105,9 +117,7 @@ def import_da(name, from_dir=None, compiler_args=[]):
     except OSError:
         pymode = None
 
-    GlobalOptions = common.global_options()
-    force_recompile = GlobalOptions.recompile \
-                      if GlobalOptions is not None else False
+    force_recompile = get_runtime_option('recompile', default=False)
     if (pymode is None or
             pymode[stat.ST_MTIME] < mode[stat.ST_MTIME] or force_recompile):
         oldargv = sys.argv
@@ -123,16 +133,21 @@ def import_da(name, from_dir=None, compiler_args=[]):
             raise ImportError("Unable to compile %s, errno: %d" %
                               (fullpath, res))
 
-    return importlib.import_module(name)
+    moduleobj = importlib.import_module(name)
+    common.setup_logging_for_module(name, CONSOLE_LOG_FORMAT, FILE_LOG_FORMAT)
+    return moduleobj
 
 def entrypoint():
-    GlobalOptions = common.global_options()
-    if GlobalOptions.start_method != \
-       multiprocessing.get_start_method(allow_none=True):
-        multiprocessing.set_start_method(GlobalOptions.start_method)
-    target = GlobalOptions.file
+    """Entry point when running DistAlgo as the main module.
+
+    """
+    startmeth = get_runtime_option('start_method')
+    if startmeth != multiprocessing.get_start_method(allow_none=True):
+        multiprocessing.set_start_method(startmeth)
+    target = get_runtime_option('file')
     source_dir = os.path.dirname(target)
     basename = strip_suffix(os.path.basename(target))
+    compiler_args = get_runtime_option('compiler_flags').split()
     if not os.access(target, os.R_OK):
         die("Can not access source file %s" % target)
 
@@ -140,36 +155,51 @@ def entrypoint():
     try:
         module = import_da(basename,
                            from_dir=source_dir,
-                           compiler_args=GlobalOptions.compiler_flags.split())
+                           compiler_args=compiler_args)
     except ImportError as e:
         die("ImportError: " + str(e))
 
-    if not (hasattr(module, '_NodeMain') and \
-            type(module._NodeMain) is type and \
-            issubclass(module._NodeMain, sim.DistProcess)):
+    if not (hasattr(module, 'Node_') and
+            type(module.Node_) is type and
+            issubclass(module.Node_, sim.DistProcess)):
         die("Main process not defined!")
 
-    GlobalOptions.this_module_name = module.__name__
-    GlobalOptions.main_module_name = module.__name__
-    if GlobalOptions.inc_module_name is None:
-        GlobalOptions.inc_module_name = module.__name__ + "_inc"
+    common.set_runtime_option('this_module_name', module.__name__)
+    common.set_runtime_option('main_module_name', module.__name__)
+    if get_runtime_option('inc_module_name') is None:
+        common.set_runtime_option('inc_module_name', module.__name__ + "_inc")
     common.sysinit()
 
     # Start main program
-    log.info("Starting program %s...", target)
-    niters = GlobalOptions.iterations
-    sys.argv = [target] + GlobalOptions.args
+    niters = get_runtime_option('iterations')
+    sys.argv = [target] + get_runtime_option('args')
     try:
+        trman = endpoint.TransportManager()
+        trman.initialize()
+        log.info("Node initialized at %s:%d.",
+                 get_runtime_option('hostname'), trman.transport_addresses[0])
+        log.info("Starting program %s...", target)
+        nodename = get_runtime_option('nodename')
+        nid = sim.ProcessId._create(pcls=module.Node_,
+                                    transports=trman.transport_addresses,
+                                    name=nodename)
+        common._set_node(nid)
+        log.debug("Node has id %r", nid)
         for i in range(0, niters):
             log.info("Running iteration %d ...", (i+1))
 
-            node = new(module._NodeMain, args=())
-            start(node)
+            nodeimpl = sim.OSProcessImpl(process_class=module.Node_,
+                                         transport_manager=trman,
+                                         process_id=nid,
+                                         parent_id=nid,
+                                         process_name=nodename)
+            nodeimpl.start()
 
             log.info("Waiting for remaining child processes to terminate..."
                      "(Press \"Ctrl-C\" to force kill)")
-            node.join()
+            nodeimpl.join()
             log.info("Main process terminated.")
+            del nodeimpl
 
     except KeyboardInterrupt as e:
         log.info("Received keyboard interrupt.")
@@ -177,85 +207,6 @@ def entrypoint():
         err_info = sys.exc_info()
         log.error("Caught unexpected global exception: %r", e)
         traceback.print_tb(err_info[2])
-
-
-@api
-def new(pcls, args=None, num=None, **props):
-    if not issubclass(pcls, sim.DistProcess):
-        log.error("Can not create non-DistProcess classes.")
-        return set()
-
-    log.debug("Creating instances of %s..", pcls.__name__)
-    pipes = []
-    iterator = []
-    if num is None:
-        iterator = range(1)
-    elif isinstance(num, int):
-        iterator = range(num)
-    elif isinstance(num, collections.abc.Iterable):
-        iterator = num
-    else:
-        log.error("Invalid value for `num`: %r", num)
-        return set()
-
-    procs = set()
-    for i in iterator:
-        name = ""
-        if isinstance(i, str):
-            name = i
-        (childp, ownp) = multiprocessing.Pipe()
-        p = sim.OSProcessImpl(pcls, childp, name, props)
-        # Buffer the pipe
-        pipes.append((i, childp, ownp, p))
-        # We need to start proc right away to obtain EndPoint and pid for p:
-        p.start()
-        procs.add(p)
-
-    log.debug("%d instances of %s created.", len(procs), pcls.__name__)
-    result = dict()
-    for i, childp, ownp, p in pipes:
-        childp.close()
-        cid = ownp.recv()
-        cid._initpipe = ownp    # Tuck the pipe here
-        cid._proc = p           # Set the process object
-        result[i] = cid
-
-    if (args != None):
-        setup(result, args)
-
-    if num is None:
-        return result[0]
-    else:
-        return set(result.values())
-
-@api
-def setup(pids, args):
-    if isinstance(pids, dict):
-        ps = pids.values()
-    elif not hasattr(pids, '__iter__'):
-        ps = [pids]
-    else:
-        ps = pids
-
-    for p in ps:
-        p._initpipe.send((sim.Command.Setup, args))
-
-@api
-def start(procs, args=None):
-    if isinstance(procs, dict):
-        ps = procs.values()
-    elif not hasattr(procs, '__iter__'):
-        ps = [procs]
-    else:
-        ps = procs
-
-    if args is not None:
-        setup(ps, args)
-
-    log.debug("Starting %s..." % str(procs))
-    for p in ps:
-        p._initpipe.send(sim.Command.Start)
-        del p._initpipe
 
 def die(mesg = None):
     if mesg != None:

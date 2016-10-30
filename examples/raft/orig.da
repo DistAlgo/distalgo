@@ -62,7 +62,7 @@ class Server(process):
         currentTerm += 1
         RequestVoteRPC(target=peers,
                        term=currentTerm,
-                       candidateId=self.id,
+                       candidateId=self,
                        lastLogIndex=len(log)-1,
                        lastLogTerm=log[-1].term)
         if await(len(setof(p, received(('RequestVoteReply', _currentTerm, True),
@@ -84,7 +84,7 @@ class Server(process):
         for server, index in nextIndex.items():
             AppendEntriesRPC(target=server,
                              term=currentTerm,
-                             leaderId=self.id,
+                             leaderId=self,
                              prevLogIndex=index-1,
                              prevLogTerm=log[index-1].term,
                              entries=log[index:],
@@ -173,10 +173,9 @@ class Server(process):
 
     def commit_to_state_machine():
         entry = log[lastApplied]
-        output("Log entry", entry, " at index", lastApplied,
-               "applied to state machine.")
+        output(entry, " at index", lastApplied, "applied to state machine.")
         if currentRole is Leader:
-            send(('Reply', entry.command, self.id), to=entry.client)
+            send(('Reply', entry.command, self), to=entry.client)
 
     def AppendEntriesRPC(target, term, leaderId, prevLogIndex, prevLogTerm,
                          entries, leaderCommit):
@@ -196,9 +195,6 @@ class Server(process):
     def RequestVoteReply(target, term, voteGranted):
         send(('RequestVoteReply', term, voteGranted), to=target)
 
-    def receive(msg= ('Done', )):
-        exit()
-
 class Client(process):
     def setup(servers, nrequests, timeout): pass
 
@@ -209,27 +205,31 @@ class Client(process):
             send(('ClientRequest', req), to=target)
             if await(some(received(('NotLeader', _req, leader)),
                           has= leader is not None)):
-                output("Wrong server, changing to", leader)
+                debug("Wrong server, changing to", leader)
                 target = leader
                 reset("Received")
             elif some(received(('Reply', _req, _))):
-                output("Request", req, "complete.")
+                output("Request", req + 1, "complete.")
                 req += 1
             elif timeout(timeout/1000):
-                output("Timeout, new random.")
+                debug("Timeout, new random.")
                 target = random.choice(servers)
 
-        send(('Done',), to=servers)
+        send(('Done',), to=parent())
 
 def main():
     nservers = int(sys.argv[1]) if len(sys.argv) > 1 else 5
-    nrequests = int(sys.argv[2]) if len(sys.argv) > 2 else 3
-    maxtimeout = int(sys.argv[3]) if len(sys.argv) > 3 else 3000
-    send_failrate = float(sys.argv[4]) if len(sys.argv) > 4 else 0.0
+    nclients = int(sys.argv[2]) if len(sys.argv) > 2 else 3
+    nrequests = int(sys.argv[3]) if len(sys.argv) > 3 else 3
+    maxtimeout = int(sys.argv[4]) if len(sys.argv) > 4 else 3000
+    send_failrate = float(sys.argv[5]) if len(sys.argv) > 5 else 0.0
 
     servers = new(Server, num= nservers, send= send_failrate)
     setup(servers, (servers, maxtimeout))
-    clients = new(Client, num= 1)
+    clients = new(Client, num= nclients)
     setup(clients, (list(servers), nrequests, maxtimeout))
     start(servers)
     start(clients)
+    await(each(c in clients, has=received(('Done',), from_=c)))
+    output("All clients done.")
+    end(servers)

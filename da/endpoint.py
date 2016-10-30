@@ -23,436 +23,570 @@
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 import sys
-import pickle
+import enum
+import time
 import random
-import select
 import socket
 import logging
+import threading
+import selectors
+import multiprocessing
+from collections import namedtuple
 
-from . import common
+from .common import get_runtime_option, LRU, WaitableQueue
 
-class EndPoint:
-    """Represents a target for sending of messages.
+logger = logging.getLogger(__name__)
 
-    This is the base class for all types of communication channels in
-    DistAlgo. It uniquely identifies a "node" in the distributed system. In
-    most scenarios, a process will only be associated with one EndPoint
-    instance.
+MAX_MESSAGE_SIZE = 4 * 1024
+HEADER_SIZE = 8
+MAX_PAYLOAD_SIZE = MAX_MESSAGE_SIZE - HEADER_SIZE
+BYTEORDER = 'big'
+
+class ChannelCaps:
+    """An enum of channel capabilities."""
+    FIFO = 1
+    RELIABLE = 2
+    INTERHOST = 4
+    RELIABLEFIFO = FIFO | RELIABLE
+
+TransportTypes = []
+
+class TransportManager:
+    """Manages all DistAlgo transports within a process.
 
     """
+    def __init__(self):
+        self.queue = WaitableQueue()
+        self.transports = tuple(cls(self.queue) for cls in TransportTypes)
+        self.started = False
 
-    def __init__(self, proctype=None):
-        self._name = common.global_options().hostname
-        self._proc = None
-        self._proctype = proctype
-        self._log = logging.getLogger("runtime.EndPoint")
-        self._address = None
+    @property
+    def transport_addresses(self):
+        return tuple(t.address for t in self.transports)
 
-    def send(self, data, src, timestamp = 0):
+    def initialize(self):
+        """Initialize all transports.
+
+        """
+        logger.debug("TransportManager: initializing...")
+        total = len(TransportTypes)
+        cnt = 0
+        for transport in self.transports:
+            try:
+                transport.initialize()
+                cnt += 1
+            except Exception as err:
+                logger.error("Failed to initialize transport %s: %r",
+                             transport, err)
+        logger.debug("TransportManager: %d/%d transports initialized.", cnt, total)
+
+    def start(self):
+        """Start all transports.
+
+        """
+        logger.debug("TransportManager: starting...")
+        total = len(TransportTypes)
+        cnt = 0
+        for transport in self.transports:
+            try:
+                transport.start()
+                cnt += 1
+            except Exception as err:
+                logger.error("Failed to start transport %s: %r", transport, err)
+        logger.debug("TransportManager: %d/%d transports started.", cnt, total)
+
+    def close(self):
+        """Shut down all transports.
+
+        """
+        logger.debug("TransportManager: stopping...")
+        total = len(TransportTypes)
+        cnt = 0
+        for transport in self.transports:
+            try:
+                transport.close()
+                cnt += 1
+            except Exception as err:
+                logger.warning("Exception when stopping transport %s: %r",
+                               transport, err)
+        logger.debug("TransportManager: %d/%d transports stopped.", cnt, total)
+
+    def get_transport(self, flags):
+        """Returns the first transport instance satisfying `flags`, or None if
+        no transport satisfies `flags`.
+        """
+        for tr in self.transports:
+            if (flags & tr.capabilities) == 0:
+                return tr
+        return None
+
+
+class TransportException(Exception): pass
+class NoAvailablePortsException(TransportException): pass
+class NoTargetTransportException(TransportException): pass
+class InvalidTransportStateException(TransportException): pass
+
+class Transport:
+    """Represents a type of communication channel for sending of data.
+
+    This is the base class for all types of communication channels in DistAlgo.
+
+    """
+    slot_index = 0
+    def __init__(self, queue):
+        super().__init__()
+        self._log = logger.getChild(self.__class__.__qualname__)
+        self.queue = queue
+        self.hostname = get_runtime_option('hostname')
+
+    def start(self):
+        """Starts the transport.
+
+        """
         pass
 
-    def recv(self, block, timeout = None):
+    def close(self):
+        """Stops the transport and clean up resources.
+
+        """
         pass
+
+    def send(self, data, dest):
+        """Send `data` to `dest`.
+
+        `data` should be a `bytes` or `bytearray` object. `dest` should be a
+        DistAlgo process id.
+
+        """
+        return False
 
     def setname(self, name):
         self._name = name
 
-    def getlogname(self):
-        if self._address is not None:
-            return "%s_%s" % (self._address[0], str(self._address[1]))
+    @classmethod
+    def address_from_id(cls, target):
+        """Returns the transport address of `target`.
+
+        Given process id `target`, return the address of it's corresponding
+        transport, or None if `target` does not have a corresponding transport.
+
+        """
+        address = target.transports[cls.slot_index]
+        if address is None:
+            return None
         else:
-            return self._name
+            return (target.hostname, address)
 
-    def close(self):
-        pass
-
-    ###################################################
-    # Make the EndPoint behave like a Process object:
-
-    def is_alive(self):
-        if self._proc is not None:
-            return self._proc.is_alive()
-        else:
-            self._log.warn("is_alive can only be called from parent process.")
-            return self
-
-    def join(self):
-        if self._proc is not None:
-            return self._proc.join()
-        else:
-            self._log.warn("join can only be called from parent process.")
-            return self
-
-    def terminate(self):
-        if self._proc is not None:
-            return self._proc.terminate()
-        else:
-            self._log.warn("terminate can only be called from parent process.")
-            return self
-
-    ###################################################
-
-    def __getstate__(self):
-        return ("EndPoint", self._address, self._name, self._proctype)
-
-    def __setstate__(self, value):
-        proto, self._address, self._name, self._proctype = value
-        self._log = logging.getLogger("runtime.EndPoint")
+    @property
+    def address(self):
+        return None
 
     def __str__(self):
-        if self._address is not None:
-            return str(self._address)
-        else:
-            return self._name
+        return self.__class__.__name__
 
-    def __repr__(self):
-        if self._proctype is not None:
-            return "<" + self._proctype.__name__ + str(self) + ">"
-        else:
-            return "<process " + str(self) + ">"
-
-    def __hash__(self):
-        return hash(self._address)
-
-    def __eq__(self, obj):
-        if not hasattr(obj, "_address"):
-            return False
-        return self._address == obj._address
-    def __lt__(self, obj):
-        return self._address < obj._address
-    def __le__(self, obj):
-        return self._address <= obj._address
-    def __gt__(self, obj):
-        return self._address > obj._address
-    def __ge__(self, obj):
-        return self._address >= obj._address
-    def __ne__(self, obj):
-        if not hasattr(obj, "_address"):
-            return True
-        return self._address != obj._address
-
-
-# TCP Implementation:
-
-INTEGER_BYTES = 8
-
-MAX_TCP_CONN = 200
-MIN_TCP_PORT = 10000
-MAX_TCP_PORT = 40000
-MAX_TCP_BUFSIZE = 200000          # Maximum pickled message size
-MAX_RETRY = 5
-
-class TcpEndPoint(EndPoint):
-    """Endpoint based on TCP.
+def transport(cls):
+    """Decorator to register `cls` as a transport.
 
     """
-
-    senders = None
-    receivers = None
-
-    def __init__(self, proctype=None, port=None):
-        super().__init__(proctype)
-
-        TcpEndPoint.receivers = dict()
-        TcpEndPoint.senders = LRU(MAX_TCP_CONN)
-
-        self._conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        if port is None:
-            while True:
-                self._address = (self._name,
-                                 random.randint(MIN_TCP_PORT, MAX_TCP_PORT))
-                try:
-                    self._conn.bind(self._address)
-                    break
-                except socket.error:
-                    pass
-        else:
-            self._address = (self._name, port)
-            self._conn.bind(self._address)
-
-        self._conn.listen(10)
-        TcpEndPoint.receivers[self._conn] = self._address
-
-        self._log = logging.getLogger("runtime.TcpEndPoint(%s)" %
-                                      super().getlogname())
-        self._log.debug("TcpEndPoint %s initialization complete",
-                        str(self._address))
-
-    def send(self, data, src, timestamp = 0):
-        retry = 1
-        while True:
-            conn = TcpEndPoint.senders.get(self)
-            if conn is None:
-                conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                try:
-                    conn.connect(self._address)
-                    TcpEndPoint.senders[self] = conn
-                except socket.error:
-                    self._log.debug("Can not connect to %s. Peer is down.",
-                                   str(self._address))
-                    return False
-
-            bytedata = pickle.dumps((src, timestamp, data))
-            l = len(bytedata)
-            header = int(l).to_bytes(INTEGER_BYTES, sys.byteorder)
-            mesg = header + bytedata
-
-            if len(mesg) > MAX_TCP_BUFSIZE:
-                self._log.warn("Packet size exceeded maximum buffer size! "
-                               "Outgoing packet dropped.")
-                self._log.debug("Dropped packet: %s",
-                                str((src, timestamp, data)))
-                break
-
-            else:
-                try:
-                    if self._send_1(mesg, conn):
-                        break
-                except socket.error as e:
-                    pass
-                self._log.debug("Error sending packet, retrying.")
-                retry += 1
-                if retry > MAX_RETRY:
-                    self._log.debug("Max retry count reached, reconnecting.")
-                    conn.close()
-                    del TcpEndPoint.senders[self]
-                    retry = 1
-
-        self._log.debug("Sent packet %r to %r." % (data, self))
-        return True
-
-    def _send_1(self, data, conn):
-        msglen = len(data)
-        totalsent = 0
-        while totalsent < msglen:
-            sent = conn.send(data[totalsent:])
-            if sent == 0:
-                return False
-            totalsent += sent
-        return True
-
-    def recvmesgs(self):
-        try:
-            while True:
-                r, _, _ = select.select(TcpEndPoint.receivers.keys(), [], [])
-
-                if self._conn in r:
-                    # We have pending new connections, handle the first in
-                    # line. If there are any more they will have to wait until
-                    # the next iteration
-                    conn, addr = self._conn.accept()
-                    TcpEndPoint.receivers[conn] = addr
-                    r.remove(self._conn)
-
-                for c in r:
-                    try:
-                        bytedata = self._receive_1(INTEGER_BYTES, c)
-                        datalen = int.from_bytes(bytedata, sys.byteorder)
-
-                        bytedata = self._receive_1(datalen, c)
-                        src, tstamp, data = pickle.loads(bytedata)
-                        bytedata = None
-
-                        if not isinstance(src, TcpEndPoint):
-                            raise TypeError()
-                        else:
-                            yield (src, tstamp, data)
-
-                    except pickle.UnpicklingError as e:
-                        self._log.warn("UnpicklingError, packet from %s dropped",
-                                       TcpEndPoint.receivers[c])
-
-                    except socket.error as e:
-                        self._log.debug("Remote connection %s terminated.",
-                                        str(c))
-                        del TcpEndPoint.receivers[c]
-
-        except select.error as e:
-            self._log.debug("select.error occured, terminating receive loop.")
-
-    def _receive_1(self, totallen, conn):
-        msg = bytes()
-        while len(msg) < totallen:
-            chunk = conn.recv(totallen-len(msg))
-            if len(chunk) == 0:
-                raise socket.error("EOF received")
-            msg += chunk
-        return msg
-
-    def close(self):
-        pass
-
-    def __getstate__(self):
-        return ("TCP", self._address, self._name, self._proctype)
-
-    def __setstate__(self, value):
-        proto, self._address, self._name, self._proctype = value
-        self._conn = None
-        self._log = logging.getLogger("runtime.TcpEndPoint(%s)" % self._name)
+    cls.slot_index = len(TransportTypes)
+    TransportTypes.append(cls)
 
 
-class Node(object):
-    __slots__ = ['prev', 'next', 'me']
-    def __init__(self, prev, me):
-        self.prev = prev
-        self.me = me
-        self.next = None
+class SocketTransport(Transport):
+    """Base class for socket-based transports.
+
+    """
+    capabilities = ~(ChannelCaps.INTERHOST)
+    def __init__(self, queue, port=None):
+        super().__init__(queue)
+        self.port = port
+        self.conn = None
+        self.worker = None
+
+    @property
+    def address(self):
+        return self.port
+
     def __str__(self):
-        return str(self.me)
-    def __repr__(self):
-        return self.me.__repr__()
-
-class LRU:
-    """
-    Implementation of a length-limited O(1) LRU queue.
-    Built for and used by PyPE:
-    http://pype.sourceforge.net
-    Copyright 2003 Josiah Carlson.
-    """
-    def __init__(self, count, pairs=[]):
-        self.count = max(count, 1)
-        self.d = {}
-        self.first = None
-        self.last = None
-        for key, value in pairs:
-            self[key] = value
-    def __contains__(self, obj):
-        return obj in self.d
-    def __getitem__(self, obj):
-        a = self.d[obj].me
-        self[a[0]] = a[1]
-        return a[1]
-    def __setitem__(self, obj, val):
-        if obj in self.d:
-            del self[obj]
-        nobj = Node(self.last, (obj, val))
-        if self.first is None:
-            self.first = nobj
-        if self.last:
-            self.last.next = nobj
-        self.last = nobj
-        self.d[obj] = nobj
-        if len(self.d) > self.count:
-            if self.first == self.last:
-                self.first = None
-                self.last = None
-                return
-            a = self.first
-            a.next.prev = None
-            self.first = a.next
-            a.next = None
-            del self.d[a.me[0]]
-            del a
-    def __delitem__(self, obj):
-        nobj = self.d[obj]
-        if nobj.prev:
-            nobj.prev.next = nobj.next
-        else:
-            self.first = nobj.next
-        if nobj.next:
-            nobj.next.prev = nobj.prev
-        else:
-            self.last = nobj.prev
-        del self.d[obj]
-    def __iter__(self):
-        cur = self.first
-        while cur != None:
-            cur2 = cur.next
-            yield cur.me[1]
-            cur = cur2
-    def __str__(self):
-        return str(self.d)
-    def __repr__(self):
-        return self.d.__repr__()
-    def iteritems(self):
-        cur = self.first
-        while cur != None:
-            cur2 = cur.next
-            yield cur.me
-            cur = cur2
-    def iterkeys(self):
-        return iter(self.d)
-    def itervalues(self):
-        for i,j in self.iteritems():
-            yield j
-    def keys(self):
-        return self.d.keys()
-    def get(self, k, d=None):
-        v = self.d.get(k)
-        if v is None: return None
-        a = v.me
-        self[a[0]] = a[1]
-        return a[1]
+        fmt = "<{0.__class__.__qualname__}({0.hostname}:{0.port})>"
+        return fmt.format(self)
 
 
 # UDP Implementation:
 
 MIN_UDP_PORT = 10000
 MAX_UDP_PORT = 40000
-MAX_UDP_BUFSIZE = 20000
+MAX_UDP_BUFSIZE = 32 * 1024
 
-class UdpEndPoint(EndPoint):
-    sender = None
+@transport
+class UdpTransport(SocketTransport):
+    """A channel that supports sending and receiving messages via UDP.
 
-    def __init__(self, proctype=None, port=None):
-        super().__init__(proctype)
+    """
+    capabilities = ~(ChannelCaps.INTERHOST)
+    def __init__(self, queue, port=None):
+        super().__init__(queue, port)
 
-        UdpEndPoint.sender = None
+    def initialize(self):
+        address = None
+        if self.port is None:
+            self.port = random.randint(MIN_UDP_PORT, MAX_UDP_PORT)
+        self.conn = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.conn.set_inheritable(True)
+        for _ in range(MAX_RETRY):
+            address = (self.hostname, self.port)
+            try:
+                self.conn.bind(address)
+                break
+            except socket.error:
+                address = None
+                self.port = random.randint(MIN_UDP_PORT, MAX_UDP_PORT)
 
-        self._conn = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        if port is None:
-            while True:
-                self._address = (self._name,
-                                 random.randint(MIN_UDP_PORT, MAX_UDP_PORT))
-                try:
-                    self._conn.bind(self._address)
-                    break
-                except socket.error:
-                    pass
+        if address is None:
+            self._log.error(
+                "Failed to bind to an available port after %d attempts, aborted.",
+                MAX_RETRY)
+            self.conn.close()
+            self.conn = None
+            raise NoAvailablePortsException()
+
+        self._log.debug("Transport initialized at address: %s", address)
+
+    def start(self):
+        if self.conn is None:
+            raise InvalidTransportStateException(
+                "Transport has not been initialized!")
+
+        self.worker = threading.Thread(target=self.recvmesgs, daemon=True)
+        self.worker.start()
+        self._log.debug("Transport started.")
+
+    def close(self):
+        if self.conn is None:
+            self._log.warning("Already stopped.")
         else:
-            self._address = (self._name, port)
-            self._conn.bind(self._address)
+            try:
+                self.conn.close()
+            except OSError:
+                pass
+            finally:
+                self.conn = None
+        if self.worker is not None:
+            self.worker.join()
+            self.worker = None
+        self._log.debug("Transport stopped.")
 
-        self._log = logging.getLogger("runtime.UdpEndPoint(%s)" %
-                                      super().getlogname())
-        self._log.debug("UdpEndPoint %s initialization complete",
-                        str(self._address))
+    def send(self, chunk, dest):
+        if self.conn is None:
+            raise InvalidTransportStateException(
+                "Invalid transport state for sending.")
 
-
-    def send(self, data, src, timestamp = 0):
-        if UdpEndPoint.sender is None:
-            UdpEndPoint.sender = socket.socket(socket.AF_INET,
-                                               socket.SOCK_DGRAM)
-
-        bytedata = pickle.dumps((src, timestamp, data))
-        if len(bytedata) > MAX_UDP_BUFSIZE:
-            self._log.warn("Data size exceeded maximum buffer size!" +
-                           " Outgoing packet dropped.")
-            self._log.debug("Dropped packet: %s", str((src, timestamp, data)))
-
-        elif (UdpEndPoint.sender.sendto(bytedata, self._address) !=
-              len(bytedata)):
-            raise socket.error()
+        if len(chunk) > MAX_UDP_BUFSIZE:
+            self._log.warning("Data size exceeded maximum buffer size!"
+                              " Outgoing packet dropped.")
+            self._log.debug("Dropped packet: %s", chunk)
+            return False
+        else:
+            target = self.address_from_id(dest)
+            if target is None:
+                raise NoTargetTransportException()
+            cnt = 0
+            while True:
+                try:
+                    if self.conn.sendto(chunk, target) == len(chunk):
+                        return True
+                    else:
+                        raise socket.error("Unable to send full chunk.")
+                except PermissionError as e:
+                    # The 'conntrack' module of iptables will cause UDP `sendto`
+                    # to return `EPERM` if it's sending too fast:
+                    self._log.debug("Packet to %s dropped by iptables, "
+                                    "reduce send rate.", target)
+                    cnt += 1
+                    if cnt >= MAX_RETRY:
+                        return False
+                    time.sleep(0)
 
     def recvmesgs(self):
-        flags = 0
+        if self.conn is None:
+            raise InvalidTransportStateException(
+                "Invalid transport state for receiving.")
 
         try:
             while True:
-                bytedata = self._conn.recv(MAX_UDP_BUFSIZE, flags)
-                src, tstamp, data = pickle.loads(bytedata)
-                if not isinstance(src, UdpEndPoint):
-                    raise TypeError()
+                chunk, _, flags, remote= self.conn.recvmsg(MAX_UDP_BUFSIZE)
+                if not chunk:
+                    # XXX: zero length packet == closed socket??
+                    self._log.debug("Transport closed, terminating receive loop.")
+                    break
+                elif flags & socket.MSG_TRUNC:
+                    self._log.debug("Dropped truncated packet. ")
+                elif flags & socket.MSG_ERRQUEUE:
+                    self._log.debug("No data received. ")
                 else:
-                    yield (src, tstamp, data)
+                    self.queue.append((self.__class__.slot_index, chunk, remote))
         except socket.error as e:
-            self._log.debug("socket.error occured, terminating receive loop.")
+            self._log.warning("socket.error occured, terminating receive loop.")
 
-    def __getstate__(self):
-        return ("UDP", self._address, self._name, self._proctype)
+    @property
+    def started(self):
+        return self.worker is not None
 
-    def __setstate__(self, value):
-        proto, self._address, self._name, self._proctype = value
-        self._conn = None
-        self._log = logging.getLogger("runtime.UdpEndPoint")
 
+# TCP Implementation:
+
+MAX_TCP_BACKLOG = 10
+MAX_TCP_CONN = 200
+MIN_TCP_PORT = 10000
+MAX_TCP_PORT = 40000
+MAX_RETRY = 10
+
+class AuxConnectionData:
+    """Auxiliary data associated with each TCP connection.
+
+    """
+    def __init__(self, peername):
+        self.peername = peername
+        self.buf = bytearray(MAX_MESSAGE_SIZE * 2)
+        self.view = memoryview(self.buf)
+        self.lastptr = 0
+        self.freeptr = 0
+
+@transport
+class TcpTransport(SocketTransport):
+    """A channel that supports sending and receiving messages via TCP.
+
+    """
+    capabilities = ~((ChannelCaps.FIFO) |
+                     (ChannelCaps.RELIABLE) |
+                     (ChannelCaps.INTERHOST))
+    def __init__(self, queue, port=None, strict=False):
+        super().__init__(queue, port)
+        self.cache = None
+        self.lock = threading.Lock()
+        self.selector = None
+
+    def initialize(self):
+        self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        if self.port is None:
+            self.port = random.randint(MIN_TCP_PORT, MAX_TCP_PORT)
+        address = None
+        for _ in range(MAX_RETRY):
+            address = (self.hostname, self.port)
+            try:
+                self.conn.bind(address)
+                break
+            except socket.error:
+                address = None
+                self.port = random.randint(MIN_TCP_PORT, MAX_TCP_PORT)
+
+        if address is None:
+            self._log.error(
+                "Failed to bind to an available port after %d attempts, aborted.",
+                MAX_RETRY)
+            self.conn.close()
+            self.conn = None
+            raise NoAvailablePortsException()
+
+        self._log.debug("Transport initialized at address %s", address)
+
+    def start(self):
+        if self.conn is None:
+            raise InvalidTransportStateException(
+                "Transport has not been initialized!")
+
+        self.conn.listen(MAX_TCP_BACKLOG)
+        # self.conn.setblocking(False)
+        self.conn.settimeout(5)
+        self.cache = dict()
+        self.selector = selectors.DefaultSelector()
+        self.selector.register(self.conn, selectors.EVENT_READ,
+                               (self._accept, None))
+        self.worker = threading.Thread(target=self.recvmesgs, daemon=True)
+        self.worker.start()
+        self._log.debug("Transport started.")
+
+    def close(self):
+        if self.selector is not None:
+            self.selector.close()
+        if self.conn is not None:
+            try:
+                self.conn.close()
+            except OSError:
+                pass
+            finally:
+                self.conn = None
+        if self.worker is not None:
+            self.worker.join()
+            self.worker = None
+        self.cache = None
+        self._log.debug("Transport stopped.")
+
+    def _accept(self, conn, auxdata):
+        conn, addr = self.conn.accept()
+        self._log.debug("Accepted connection from %s.", addr)
+        if addr in self.cache:
+            self._log.warning("Double connection from %s!", addr)
+        with self.lock:
+            self.cache[addr] = conn
+        self.selector.register(conn, selectors.EVENT_READ,
+                               (self._receive_1, AuxConnectionData(addr)))
+
+    def _connect(self, target):
+        self._log.debug("Initiating connection to %s.", target)
+        conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        conn.settimeout(3)
+        conn.connect(target)
+        self._log.debug("Connection to %s established.", target)
+        return conn
+
+    def _cleanup(self, conn, remote):
+        self._log.debug("Cleanup connection to %s.", remote)
+        try:
+            self.selector.unregister(conn)
+        except KeyError:
+            pass
+        except ValueError:
+            pass
+        if remote in self.cache:
+            with self.lock:
+                if self.cache[remote] is conn:
+                    del self.cache[remote]
+                else:
+                    self._log.warning("Possible corrupted cache entry for %s",
+                                      remote)
+        try:
+            conn.close()
+        except OSError:
+            pass
+
+    def send(self, chunk, dest):
+        target = self.address_from_id(dest)
+        if target is None:
+            raise NoTargetTransportException(
+                "Process %s does not have TCP transport!", dest)
+
+        retry = 1
+        saved = conn = None
+        with self.lock:
+            saved = conn = self.cache.get(target)
+        while True:
+            try:
+                if conn is None:
+                    conn = self._connect(target)
+                l = len(chunk)
+                header = int(l).to_bytes(HEADER_SIZE, BYTEORDER)
+                if self._send_1((header, chunk), conn, target):
+                    break
+            except ConnectionRefusedError:
+                self._log.warning(
+                    "Sending to %s: connection refused at address %s, perhaps "
+                    "the target process has terminated?", dest, target)
+                break
+            except socket.error:
+                pass
+
+            if conn is not None:
+                conn.close()
+                conn = None
+            if retry > MAX_RETRY:
+                self._log.debug("Sending to %s: max retries reached, abort.", dest)
+                break
+            else:
+                self._log.debug("Sending to %s: failed on %dth try.", dest, retry)
+                retry += 1
+                time.sleep(1)
+
+        if conn is not None:
+            if saved != conn:
+                with self.lock:
+                    self.cache[target] = conn
+                self.selector.register(conn, selectors.EVENT_READ,
+                                       (self._receive_1,
+                                        AuxConnectionData(target)))
+            return True
+        else:
+            if target in self.cache:
+                with self.lock:
+                    del self.cache[target]
+            return False
+
+    def _send_1(self, data, conn, target):
+        msglen = sum(len(chunk) for chunk in data)
+        sent = conn.sendmsg(data)
+        if sent != msglen:
+            self._log.debug("_send_1: only sent %d/%d bytes. ", sent, msglen)
+            return False
+        else:
+            self._log.debug("Sent %d bytes to %s.", msglen, target)
+            return True
+
+    def recvmesgs(self):
+        if self.conn is None:
+            raise InvalidTransportStateException(
+                "Invalid transport state for receiving.")
+
+        while True:
+            events = self.selector.select()
+            for key, mask in events:
+                callback, aux = key.data
+                try:
+                    callback(key.fileobj, aux)
+                except socket.error as e:
+                    if key.fileobj is self.conn:
+                        self._log.error("socket.error on listener: %r", e)
+                        break
+                    else:
+                        self._log.debug(
+                            "socket.error when receiving from %s: %r",
+                            aux.peername, e)
+                        self._cleanup(key.fileobj, aux.peername)
+
+    def _receive_1(self, conn, aux):
+        buf = aux.buf
+        view = aux.view
+        fptr = 0
+        remote = aux.peername
+        if aux.freeptr > 0:
+            fptr = aux.freeptr
+            aux.freeptr = 0
+            rbuf = view[fptr:]
+        else:
+            rbuf = buf
+
+        rlen = conn.recv_into(rbuf)
+        if rlen == 0:
+            self._log.debug("Peer disconnected: %s.", remote)
+            self._cleanup(conn, remote)
+            return
+
+        self._log.debug("%d/%d bytes received from %s.", rlen, len(rbuf), remote)
+        datalen = fptr + rlen
+        fptr = aux.lastptr
+        aux.lastptr = 0
+        cnt = 0
+        while fptr < (datalen - HEADER_SIZE):
+            pstart = fptr + HEADER_SIZE
+            psize = int.from_bytes(view[fptr:pstart], BYTEORDER)
+            pend = pstart + psize
+            if psize > 0:
+                if pend <= datalen:
+                    chunk = bytes(view[pstart:pend])
+                    self.queue.append((self.__class__.slot_index, chunk, remote))
+                    cnt += 1
+                else:
+                    break
+            else:
+                self._log.debug("Invalid message header: %d!", psize)
+            fptr = pend
+        self._log.debug("%d message(s) received.", cnt)
+        if fptr != datalen:
+            leftover = datalen - fptr
+            self._log.debug("%d bytes leftover.", leftover)
+            if fptr > len(buf) / 2:
+                buf[:leftover] = buf[fptr:datalen]
+                aux.freeptr = leftover
+                self._log.debug("Leftover bytes moved to buffer start.")
+            else:
+                aux.lastptr = fptr
+                aux.freeptr = datalen

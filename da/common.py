@@ -25,100 +25,125 @@
 import os
 import sys
 import copy
+import time
 import os.path
 import logging
+import warnings
 import importlib
 import threading
-import warnings
 import multiprocessing
-import collections.abc
 
-from collections import deque
+from collections import abc, deque, namedtuple
 from inspect import signature, Parameter
 from functools import wraps
 
-GlobalOptions = None
-CurrentProcess = {'pid' : multiprocessing.current_process().pid}
-IncOQBaseType = None           # incoq.runtime.Type, if using incoq
 INCOQ_MODULE_NAME = "incoq.mars.runtime"
+CONSOLE_LOG_FORMAT = \
+    '[%(relativeCreated)d] %(name)s<%(processName)s>:%(levelname)s: %(message)s'
+FILE_LOG_FORMAT = \
+    '[%(asctime)s] %(name)s<%(processName)s>:%(levelname)s: %(message)s'
 
-class DALogger(logging.getLoggerClass()):
-    """Custom logger that attaches current process info.
+# a dict that contains the runtime configuration values:
+GlobalOptions = None
+# Process id of the node process:
+CurrentNode = None
+# incoq.runtime.Type, only if using incoq:
+IncOQBaseType = None
 
-    """
-    def _log(self, level, msg, args, exc_info=None, extra=None):
-        if extra is None:
-            extra = CurrentProcess
-        return super()._log(level, msg, args, exc_info, extra)
-
-logging.setLoggerClass(DALogger)
-# Define a custom level for text output from user code using the `output`
-# builtin, to better differentiate user output from library output. This level
-# should *only* be used by the `output` builtin. Its severity is set to one
-# level above 'INFO':
+# Define custom levels for text output from user code using the `output`,
+# `debug`, and `error` builtins, to differentiate output from user programs and
+# log messages from the DistAlgo system:
 logging.addLevelName(logging.INFO+1, "OUTPUT")
+logging.addLevelName(logging.INFO+2, "USRERR")
+logging.addLevelName(logging.DEBUG+1, "USRDBG")
 
 log = logging.getLogger(__name__)
 
 api_registry = dict()
 builtin_registry = dict()
 
-def set_current_process():
-    global CurrentProcess
-    CurrentProcess['pid'] = multiprocessing.current_process().pid
+class InvalidStateException(RuntimeError): pass
 
-def set_global_options(params):
+def get_runtime_option(key, default=None):
+    if GlobalOptions is None:
+        if default is None:
+            raise InvalidStateException("DistAlgo is not initialized.")
+        else:
+            return default
+
+    return GlobalOptions.get(key, default)
+
+def set_runtime_option(key, value):
+    if GlobalOptions is None:
+        raise InvalidStateException("DistAlgo is not initialized.")
+
+    GlobalOptions[key] = value
+
+def initialize_runtime_options(configs):
+    global GlobalOptions
+    if GlobalOptions is not None:
+        raise InvalidStateException("DistAlgo is already initialized")
+
+    GlobalOptions = dict(configs)
+
+def _restore_runtime_options(params):
     global GlobalOptions
     GlobalOptions = params
 
-def global_options():
-    return GlobalOptions
+def _set_node(node_id):
+    global CurrentNode
+    CurrentNode = node_id
 
-def current_process():
-    return CurrentProcess
+def pid_of_node():
+    return CurrentNode
 
 def get_inc_module():
-    if not hasattr(sys.modules, GlobalOptions.inc_module_name):
+    if GlobalOptions is None:
+        raise InvalidStateException("DistAlgo is not initialized.")
+    if not hasattr(sys.modules, GlobalOptions['inc_module_name']):
         return None
-    return sys.modules[GlobalOptions.inc_module_name]
+    return sys.modules[GlobalOptions['inc_module_name']]
 
 def sysinit():
-    setup_root_logger()
+    if get_runtime_option("long_form_ids"):
+        ProcessId.__str__ = ProcessId.__repr__ = ProcessId._long_form_
+    setup_logging_for_module("da")
     load_modules()
 
-def setup_root_logger():
-    rootlog = logging.getLogger("")
+def setup_logging_for_module(modulename,
+                             consolefmt=CONSOLE_LOG_FORMAT,
+                             filefmt=FILE_LOG_FORMAT):
+    """Configures package level logger.
 
-    if not GlobalOptions.nolog:
+    """
+    rootlog = logging.getLogger(modulename)
+    rootlog.handlers = []       # Clear all handlers
+
+    if not GlobalOptions['no_log']:
         rootlog.setLevel(logging.DEBUG)
-        formatter = logging.Formatter(
-            '[%(asctime)s] %(name)s<%(processName)s>:%(levelname)s: %(message)s')
-        consoleformatter = logging.Formatter(
-            '[%(relativeCreated)d] %(name)s<%(processName)s>:%(levelname)s: %(message)s')
-        rootlog._formatter = formatter
-
-        consolelvl = logging._nameToLevel[GlobalOptions.logconsolelevel.upper()]
-
+        consoleformatter = logging.Formatter(consolefmt)
+        consolelvl = logging._nameToLevel[GlobalOptions['logconsolelevel'].upper()]
         ch = logging.StreamHandler()
         ch.setFormatter(consoleformatter)
         ch.setLevel(consolelvl)
         rootlog._consolelvl = consolelvl
         rootlog.addHandler(ch)
 
-        if GlobalOptions.logfile:
-            filelvl = logging._nameToLevel[GlobalOptions.logfilelevel.upper()]
-            logfilename = GlobalOptions.logfilename \
-                          if GlobalOptions.logfilename is not None else \
-                             (os.path.basename(GlobalOptions.file) + ".log")
+        if GlobalOptions['logfile']:
+            filelvl = logging._nameToLevel[GlobalOptions['logfilelevel'].upper()]
+            logfilename = GlobalOptions['logfilename'] \
+                          if GlobalOptions['logfilename'] is not None else \
+                             (os.path.basename(GlobalOptions['file']) + ".log")
             fh = logging.FileHandler(logfilename)
+            formatter = logging.Formatter(filefmt)
             fh.setFormatter(formatter)
             fh.setLevel(filelvl)
             rootlog._filelvl = filelvl
             rootlog.addHandler(fh)
 
-        if GlobalOptions.logdir is not None:
-            os.makedirs(GlobalOptions.logdir, exist_ok=True)
-            rootlog._logdir = GlobalOptions.logdir
+        if GlobalOptions['logdir'] is not None:
+            os.makedirs(GlobalOptions['logdir'], exist_ok=True)
+            rootlog._logdir = GlobalOptions['logdir']
         else:
             rootlog._logdir = None
     else:
@@ -126,18 +151,105 @@ def setup_root_logger():
 
 def load_modules():
     global IncOQBaseType
-    if not GlobalOptions.load_inc_module:
+    if not GlobalOptions['load_inc_module']:
         return
-    main = sys.modules[GlobalOptions.this_module_name]
-    inc = importlib.import_module(GlobalOptions.inc_module_name)
+    main = sys.modules[GlobalOptions['this_module_name']]
+    inc = importlib.import_module(GlobalOptions['inc_module_name'])
     if inc.JbStyle:
         IncOQBaseType = importlib.import_module(INCOQ_MODULE_NAME) \
                         .IncOQType
-    if GlobalOptions.control_module_name is not None:
-        ctrl = importlib.import_module(GlobalOptions.control_module_name)
+    if GlobalOptions['control_module_name'] is not None:
+        ctrl = importlib.import_module(GlobalOptions['control_module_name'])
         main.IncModule = ModuleIntrument(ctrl, inc)
     else:
         main.IncModule = inc
+
+####################
+# Process ID
+####################
+ThreadLocals = threading.local()
+ThreadLocals.pid_counter = 0
+class ProcessId(namedtuple("_ProcessId",
+                           'uid, seqno, clsname, \
+                           name, nodename, hostname, transports')):
+    """An instance of `ProcessId` uniquely identifies a DistAlgo process instance.
+
+    A `ProcessId` instance should contain all necessary information for any
+    DistAlgo process in a distributed system to send messages to that process.
+    This includes the network addresses of all ports the process listens on.
+
+    There is a total ordering over the set of all `ProcessId`s. `ProcessId`s
+    referring to the same process will always compare equal.
+
+    From the point of view of DistAlgo programs, `ProcessId` instances are
+    opaque objects -- no assumptions should be made about the internal structure
+    of `ProcessId` instances.
+
+    """
+    __slots__ = ()
+
+    @staticmethod
+    def __gen_uid(hostname, pid):
+        """Generate a globally unique 96-bit id.
+
+        """
+        # 54 bits of timestamp:
+        tstamp = int(time.time() * 1000) & 0x3fffffffffffff
+        # 16 bits of hostname hash
+        hh = int(hash(hostname)) & 0xffff
+        # 16 bits of os pid
+        pid %= 0xffff
+        # 10 bit thread-local counter
+        cnt = ThreadLocals.pid_counter = (ThreadLocals.pid_counter + 1) % 1024
+        return (tstamp << 42) | (hh << 26) | (pid << 10) | cnt
+
+    @staticmethod
+    def _create(pcls, transports, name=""):
+        """Creates a new `ProcessId` instance.
+
+        """
+        hostname = get_runtime_option('hostname')
+        nodename = get_runtime_option('nodename')
+        uid = ProcessId.__gen_uid(hostname,
+                                  pid=threading.current_thread().ident)
+        return ProcessId(uid=uid, seqno=1,
+                         clsname=pcls.__qualname__,
+                         name=name, nodename=nodename,
+                         hostname=hostname, transports=transports)
+
+    def _short_form_(self):
+        """Constructs a short string representation of this pid.
+
+        This form is more suitable for use in output strings.
+
+        """
+        if len(self.nodename) > 0:
+            if len(self.name) > 0:
+                return "<{0.clsname}:{0.name}@{0.nodename}>".format(self)
+            else:
+                # otherwise, we use `uid` truncated to the last 5 hex digits:
+                return "<{0.clsname}:{1:05x}@{0.nodename}>".format(
+                    self, self.uid & 0xfffff)
+        else:
+            if len(self.name) > 0:
+                return "<{0.clsname}:{0.name}>".format(self)
+            else:
+                return "<{0.clsname}:{1:05x}>".format(self, self.uid & 0xfffff)
+
+    def _long_form_(self):
+        """Constructs a full string representation of this pid.
+
+        This form may be more useful in debugging.
+
+        """
+        fmt = "ProcessId(uid={0.uid:x}, seqno={0.seqno}, clsname={0.clsname}, " \
+              "name='{0.name}', nodename='{0.nodename}', " \
+              "hostname='{0.hostname}', transports={0.transports})"
+        return fmt.format(self)
+
+    __str__ = __repr__ = _short_form_
+
+####################
 
 warnings.simplefilter("default", DeprecationWarning)
 def deprecated(func):
@@ -227,6 +339,18 @@ class Null(object):
     def __setattr__(self, attr, value): pass
     def __delattr__(self, attr): pass
 
+class BufferIOWrapper:
+    def __init__(self, barray):
+        self.buffer = barray
+        self.total_bytes = len(barray)
+        self.fptr = 0
+
+    def write(self, data):
+        end = self.fptr + len(data)
+        if end > self.total_bytes:
+            raise IOError("buffer full.")
+        self.buffer[self.fptr:end] = data
+        self.fptr = end
 
 class QueueEmpty(Exception): pass
 class WaitableQueue:
@@ -274,6 +398,100 @@ class WaitableQueue:
 
     def __len__(self):
         return self._q.__len__()
+
+
+class Node(object):
+    __slots__ = ['prev', 'next', 'me']
+    def __init__(self, prev, me):
+        self.prev = prev
+        self.me = me
+        self.next = None
+    def __str__(self):
+        return str(self.me)
+    def __repr__(self):
+        return self.me.__repr__()
+
+class LRU:
+    """
+    Implementation of a length-limited O(1) LRU queue.
+    Built for and used by PyPE:
+    http://pype.sourceforge.net
+    Copyright 2003 Josiah Carlson.
+    """
+    def __init__(self, count, pairs=[]):
+        self.count = max(count, 1)
+        self.d = {}
+        self.first = None
+        self.last = None
+        for key, value in pairs:
+            self[key] = value
+    def __contains__(self, obj):
+        return obj in self.d
+    def __getitem__(self, obj):
+        a = self.d[obj].me
+        self[a[0]] = a[1]
+        return a[1]
+    def __setitem__(self, obj, val):
+        if obj in self.d:
+            del self[obj]
+        nobj = Node(self.last, (obj, val))
+        if self.first is None:
+            self.first = nobj
+        if self.last:
+            self.last.next = nobj
+        self.last = nobj
+        self.d[obj] = nobj
+        if len(self.d) > self.count:
+            if self.first == self.last:
+                self.first = None
+                self.last = None
+                return
+            a = self.first
+            a.next.prev = None
+            self.first = a.next
+            a.next = None
+            del self.d[a.me[0]]
+            del a
+    def __delitem__(self, obj):
+        nobj = self.d[obj]
+        if nobj.prev:
+            nobj.prev.next = nobj.next
+        else:
+            self.first = nobj.next
+        if nobj.next:
+            nobj.next.prev = nobj.prev
+        else:
+            self.last = nobj.prev
+        del self.d[obj]
+    def __iter__(self):
+        cur = self.first
+        while cur != None:
+            cur2 = cur.next
+            yield cur.me[1]
+            cur = cur2
+    def __str__(self):
+        return str(self.d)
+    def __repr__(self):
+        return self.d.__repr__()
+    def iteritems(self):
+        cur = self.first
+        while cur != None:
+            cur2 = cur.next
+            yield cur.me
+            cur = cur2
+    def iterkeys(self):
+        return iter(self.d)
+    def itervalues(self):
+        for i,j in self.iteritems():
+            yield j
+    def keys(self):
+        return self.d.keys()
+    def get(self, k, d=None):
+        v = self.d.get(k)
+        if v is None: return None
+        a = v.me
+        self[a[0]] = a[1]
+        return a[1]
 
 
 class IntrumentationError(Exception): pass
@@ -374,27 +592,27 @@ def freeze(obj):
     Contents of `obj` may be copied if necessary.
 
     """
-    if type(obj) in BuiltinImmutables:
+    if any(isinstance(obj, itype) for itype in BuiltinImmutables):
         return obj
 
     if IncOQBaseType is not None:
         if isinstance(obj, IncOQBaseType):
             return copy.deepcopy(obj)
 
-    if isinstance(obj, collections.abc.MutableSequence):
-        if isinstance(obj, collections.abc.ByteString):
+    if isinstance(obj, abc.MutableSequence):
+        if isinstance(obj, abc.ByteString):
             # bytearray -> bytes
             return bytes(obj)
         else:
             # list -> tuple
             return tuple(freeze(elem) for elem in obj)
-    elif isinstance(obj, collections.abc.MutableSet):
+    elif isinstance(obj, abc.MutableSet):
         # set -> frozenset
         return frozenset(freeze(elem) for elem in obj)
-    elif isinstance(obj, collections.abc.MutableMapping):
+    elif isinstance(obj, abc.MutableMapping):
         # dict -> frozendict
         return frozendict((freeze(k), freeze(v)) for k, v in obj.items())
-    elif isinstance(obj, collections.abc.Sequence):
+    elif isinstance(obj, abc.Sequence):
         #NOTE: This part is fragile. For immutable sequence objects, we still
         # have to recursively freeze its elements, which means we have to create
         # a new instance of the same type. Here we just assume the class

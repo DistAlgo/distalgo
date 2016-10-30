@@ -164,7 +164,7 @@ class Event:
     def to_tuple(self):
         """Generates a tuple representation for this event."""
         return (type(self),
-                (self.timestamp, freeze(self.destination), freeze(self.source)),
+                (self.timestamp, self.destination, self.source),
                 freeze(self.message))
 
     def __str__(self):

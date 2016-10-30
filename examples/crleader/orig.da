@@ -5,29 +5,29 @@ class P(process):
         self.leaderid = None
 
     def initiate():
-        send(('Election', self.id), to=left)
+        send(('Election', self), to=left)
 
     def receive(msg=('Election', p)):
-        if p > self.id:
+        if p > self:
             send(('Election', p), to=left)
-        if p < self.id:
-            if not sent(('Election', self.id)):
-                send(('Election', self.id), to=left)
-        if p == self.id:
-            send(('Leader', self.id), to=left)
+        if p < self:
+            if not sent(('Election', self)):
+                send(('Election', self), to=left)
+        if p == self:
+            send(('Leader', self), to=left)
 
     def receive(msg=('Leader', leader)):
         leaderid = leader
-        if leader != self.id:
+        if leader != self:
             send(('Leader', leader), to=left)
 
     def run():
         initiate()
         await (some(received(('Leader', _))))
-        output("Leader is %r."%(leaderid))
+        output("Leader is", leaderid)
 
 def main():
-    n = int(sys.argv[1]) if len(sys.argv) > 1 else 5
+    n = int(sys.argv[1]) if len(sys.argv) > 1 else 10
     config(channel="fifo")
     ps = list(new(P, num= n))
     for i, p in enumerate(ps):

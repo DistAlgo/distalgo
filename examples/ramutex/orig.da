@@ -30,13 +30,13 @@ class P(process):
             output("In cs!")
         for i in range(nrounds) :
             cs(anounce)
-        send(('Done', self.id), to=ps)
+        send(('Done', self), to=ps)
         await(each(p in ps, has= received(('Done', p))))
         output("Terminating..")
 
     # when receiving requests from others, enque and reply
     def receive(msg=('Request', timestamp), from_=source):
-        if (reqc == None or (timestamp, source) < (reqc, self.id)):
+        if (reqc == None or (timestamp, source) < (reqc, self)):
             send(('Reply', logical_clock()), to=source)
         else:
             waiting.add(source)

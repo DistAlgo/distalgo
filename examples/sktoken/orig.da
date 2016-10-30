@@ -2,7 +2,7 @@ import sys
 
 class P(process):
     def setup(ps:set, orig_token:bool,
-              nrounds:int): # other procs, and whether self.id holds token
+              nrounds:int): # other procs, and whether self holds token
         self.RN = dict((p, 0) for p in ps)        # last request number received
         # Token structure:
         self.Q = []                   # queue of pending requests
@@ -11,14 +11,13 @@ class P(process):
     def cs(task):
         -- request
         if not haveToken():
-            RN[self.id] += 1
-            send(('request', self.id, RN[self.id]), to=ps)
-            #await(some(rcvd(('token', _, _LN1)), LN1[self.id] < rn))
+            RN[self] += 1
+            send(('request', self, RN[self]), to=ps)
             await(haveToken())
 
         task()                   #critical section
 
-        LN[self.id] = RN[self.id]
+        LN[self] = RN[self]
         Q.extend(listof(p, p in ps, p not in Q, RN[p] == LN[p] + 1))
         if len(Q) > 0:
             p = Q.pop()
@@ -37,7 +36,7 @@ class P(process):
         return (orig_token and not some(sent(('token', _, _)))) or\
                 some(received(('token', _, LN1)),
                      has=(not some(sent(('token', _, LN2)),
-                                   has=(LN2[self.id] > LN1[self.id]))))
+                                   has=(LN2[self] > LN1[self]))))
 
     def run():
         def anounce():

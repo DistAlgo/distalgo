@@ -9,9 +9,9 @@ class P (process):
         --request
         if not token_present():
             clock += 1
-            send(('request', clock, self.id), to=ps)
+            send(('request', clock, self), to=ps)
             await(token_present())
-        token[self.id] = clock
+        token[self] = clock
 
         task()                  # critical section
 
@@ -37,7 +37,7 @@ class P (process):
         return (orig_token and not some(sent(('access', _))) or
                 some(received(('access', token1)),
                      has= (not some(sent(('access', token2)),
-                                    has= (token2[self.id] > token1[self.id])))))
+                                    has= (token2[self] > token1[self])))))
 
     def run():
         def anounce():
