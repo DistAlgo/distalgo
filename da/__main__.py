@@ -66,10 +66,17 @@ def parseArgs():
                         choices=LogLevelNames, default="debug",
                         help="severity level of logging messages to log to "
                         "the log file, defaults to 'debug'.")
-    parser.add_argument("--long-form-ids",
-                        action="store_true", default=False,
-                        help="if set, use the full string representation of "
-                        "process ids in formatting. Useful for debugging.")
+    parser.add_argument("--pid-format",
+                        choices=['short', 'long', 'full'], default='short',
+                        help="sets the format of string representation of "
+                        "process ids. 'short' prints the process class name "
+                        "followed by the uid truncated to the last 5 hexdigits. "
+                        "This is the default. 'long' prints the process class "
+                        "name followed by the full 24 hexdigit untruncated uid. "
+                        "'full' prints the full string representation of the "
+                        "process id object. For named processes, both the "
+                        "'short' and 'long' forms print the process name "
+                        "in place of the uid.")
     parser.add_argument("-i", "--load-inc-module",
                         action="store_true", default=False,
                         help="if set, try to load the incrementalized "

@@ -113,8 +113,14 @@ def get_inc_module():
     return sys.modules[GlobalOptions['inc_module_name']]
 
 def sysinit():
-    if get_runtime_option("long_form_ids"):
+    pid_format = get_runtime_option("pid_format")
+    if pid_format == 'full':
+        ProcessId.__str__ = ProcessId.__repr__ = ProcessId._full_form_
+    elif pid_format == 'long':
         ProcessId.__str__ = ProcessId.__repr__ = ProcessId._long_form_
+    else:
+        # default is short
+        pass
     setup_logging_for_module("da")
     load_modules()
 
@@ -246,6 +252,24 @@ class ProcessId(namedtuple("_ProcessId",
                 return "<{0.clsname}:{1:05x}>".format(self, self.uid & 0xfffff)
 
     def _long_form_(self):
+        """Constructs a short string representation of this pid.
+
+        This form is more suitable for use in output strings.
+
+        """
+        if len(self.nodename) > 0:
+            if len(self.name) > 0:
+                return "<{0.clsname}:{0.name}@{0.nodename}>".format(self)
+            else:
+                # otherwise, we use `uid` truncated to the last 5 hex digits:
+                return "<{0.clsname}:{1:x}@{0.nodename}>".format(self, self.uid)
+        else:
+            if len(self.name) > 0:
+                return "<{0.clsname}:{0.name}>".format(self)
+            else:
+                return "<{0.clsname}:{1:x}>".format(self, self.uid)
+
+    def _full_form_(self):
         """Constructs a full string representation of this pid.
 
         This form may be more useful in debugging.
