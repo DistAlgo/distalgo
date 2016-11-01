@@ -108,15 +108,14 @@ class Leader(process):
     def setup(acceptors:set, replicas:set):
         self.ballot_num = (0, self);
         self.active = False;  self.proposals = set()
-        self.started = set()
 
     def run():
         debug('### start')
-        sub = new(Scout, (self, acceptors, ballot_num))
-        start(sub); started.add(sub)
+        sub = new(Scout, (self, acceptors, ballot_num),
+                  method='thread', daemon=True)
+        start(sub)
         await(received(('done',)))
         output('terminating')
-        end(started)
 
     def receive(msg= ('propose', s, p)):
         debug('### propose', s, p)
@@ -124,24 +123,27 @@ class Leader(process):
             proposals.add((s,p))
             if active:
                 sub = new(Commander,
-                          (self, acceptors, replicas, ballot_num, s, p))
-                start(sub); started.add(sub)
+                          (self, acceptors, replicas, ballot_num, s, p),
+                          method='thread', daemon=True)
+                start(sub)
 
     def receive(msg= ('adopted', ballot_num, pvals)):
         debug('### adopted', ballot_num, pvals)
         proposals = circle_plus(proposals, pmax(pvals))
         for (s, p) in proposals:
             sub = new(Commander,
-                    (self, acceptors, replicas, ballot_num, s, p))
-            start(sub); started.add(sub)
+                      (self, acceptors, replicas, ballot_num, s, p),
+                      method='thread', daemon=True)
+            start(sub)
         active = True
 
     def receive(msg= ('preempted', (r1, leader1))):
         if (r1, leader1) > ballot_num:
             active = False
             ballot_num = (r1 + 1, self)
-            sub = new(Scout, (self, acceptors, ballot_num))
-            start(sub); started.add(sub)
+            sub = new(Scout, (self, acceptors, ballot_num),
+                      method='thread', daemon=True)
+            start(sub)
 
     def circle_plus(x, y):
         return y | setof((s, p), (s, p) in x, not some((_s, _) in y))
