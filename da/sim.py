@@ -553,7 +553,7 @@ class DistProcess():
         with self.__lock:
             remaining.difference_update(container)
             self.__async_events[msgtype.value][seqno] = remaining
-        self.__wait_for(lambda: remaining)
+        self.__wait_for(lambda: not remaining)
         self.__deregister_async_event(msgtype, seqno)
 
     def __wait_for(self, predicate, timeout=None):
