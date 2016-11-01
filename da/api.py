@@ -208,6 +208,11 @@ def entrypoint():
         log.error("Caught unexpected global exception: %r", e)
         traceback.print_tb(err_info[2])
 
+@api
+def nameof(pid):
+    assert isinstance(pid, ProcessId)
+    return pid.name
+
 def die(mesg = None):
     if mesg != None:
         sys.stderr.write(mesg + "\n")
