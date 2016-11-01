@@ -61,6 +61,7 @@ class Command(enum.Enum):
     StartAck  = 11
     SetupAck  = 12
     ConfigAck = 13
+    EndAck    = 15
     NewAck    = 16
     Message   = 20
     RPC       = 30
@@ -166,6 +167,8 @@ class DistProcess():
 
         self._cmd_NewAck = functools.partial(self.__cmd_handle_Ack,
                                              cmdtype=Command.NewAck.value)
+        self._cmd_EndAck = functools.partial(self.__cmd_handle_Ack,
+                                             cmdtype=Command.EndAck.value)
         self._cmd_StartAck = functools.partial(self.__cmd_handle_Ack,
                                                cmdtype=Command.StartAck.value)
         self._cmd_SetupAck = functools.partial(self.__cmd_handle_Ack,
@@ -403,6 +406,11 @@ class DistProcess():
             (self._logical_clock, to, self._id), message))
         return res
 
+    @builtin
+    def hanged(self):
+        self.__register_async_event(Command.EndAck, seqno=0)
+        self.__sync_async_event(Command.EndAck, seqno=0, srcs=self._id)
+
     def __send(self, msgtype, message, to, flags=None, **params):
         """Internal send.
 
@@ -456,7 +464,7 @@ class DistProcess():
         """
         if self.__fails('hang'):
             self._log.warning("Hanged(@label %s)", name)
-            self._lock.acquire()
+            self.hanged()
         if self.__fails('crash'):
             self._log.warning("Crashed(@label %s)", name)
             self.exit(10)
@@ -704,10 +712,6 @@ class DistProcess():
                     p.record_history(getattr(self, p.name), event.to_tuple())
                 for h in p.handlers:
                     self.__jobq.append((h, copy.deepcopy(bindings)))
-
-    def _forever_message_loop(self):
-        while (True):
-            self.__process_event(self._events, True)
 
     def __repr__(self):
         res = "<process {0._id}#{0.__procimpl}>"
