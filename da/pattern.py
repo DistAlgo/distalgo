@@ -1,15 +1,4 @@
-from da.common import freeze
-SELF_ID = None
-
-def initialize(pid):
-    """Initialize the pattern module.
-
-    This must be called by each DistProcess as part of their initialization
-    process.
-
-    """
-    global SELF_ID
-    SELF_ID = pid
+from .common import freeze
 
 class PatternElement:
     """Tree structure representing a message pattern.
@@ -78,7 +67,7 @@ class SelfPattern(ConstantPattern):
         super().__init__(None)
 
     def match(self, message, bindings=None,
-              ignore_bound_vars=False, **context):
+              ignore_bound_vars=False, SELF_ID=None, **context):
         return message == SELF_ID
 
     def __str__(self):

@@ -175,8 +175,6 @@ def load_modules():
 ####################
 # Process ID
 ####################
-ThreadLocals = threading.local()
-ThreadLocals.pid_counter = 0
 class ProcessId(namedtuple("_ProcessId",
                            'uid, seqno, clsname, \
                            name, nodename, hostname, transports')):
@@ -195,6 +193,8 @@ class ProcessId(namedtuple("_ProcessId",
 
     """
     __slots__ = ()
+    pid_counter = 0
+    lock = threading.Lock()
 
     @staticmethod
     def gen_uid(hostname, pid):
@@ -208,8 +208,9 @@ class ProcessId(namedtuple("_ProcessId",
         # 16 bits of os pid
         pid %= 0xffff
         # 10 bit thread-local counter
-        cnt = ThreadLocals.pid_counter = (ThreadLocals.pid_counter + 1) % 1024
-        return (tstamp << 42) | (hh << 26) | (pid << 10) | cnt
+        with ProcessId.lock:
+            ProcessId.pid_counter = (ProcessId.pid_counter + 1) % 1024
+        return (tstamp << 42) | (hh << 26) | (pid << 10) | ProcessId.pid_counter
 
     @classmethod
     def _create(idcls, pcls, transports, name=""):

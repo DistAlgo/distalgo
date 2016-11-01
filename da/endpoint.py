@@ -41,6 +41,7 @@ MAX_MESSAGE_SIZE = 4 * 1024
 HEADER_SIZE = 8
 MAX_PAYLOAD_SIZE = MAX_MESSAGE_SIZE - HEADER_SIZE
 BYTEORDER = 'big'
+MAX_RETRY = 10
 
 class ChannelCaps:
     """An enum of channel capabilities."""
@@ -151,7 +152,7 @@ class Transport:
         """
         pass
 
-    def send(self, data, dest):
+    def send(self, data, dest, **params):
         """Send `data` to `dest`.
 
         `data` should be a `bytes` or `bytearray` object. `dest` should be a
@@ -276,7 +277,7 @@ class UdpTransport(SocketTransport):
             self.worker = None
         self._log.debug("Transport stopped.")
 
-    def send(self, chunk, dest):
+    def send(self, chunk, dest, wait=0.01, **rest):
         if self.conn is None:
             raise InvalidTransportStateException(
                 "Invalid transport state for sending.")
@@ -305,7 +306,8 @@ class UdpTransport(SocketTransport):
                     cnt += 1
                     if cnt >= MAX_RETRY:
                         return False
-                    time.sleep(0)
+                    else:
+                        time.sleep(wait)
 
     def recvmesgs(self):
         if self.conn is None:
@@ -339,7 +341,6 @@ MAX_TCP_BACKLOG = 10
 MAX_TCP_CONN = 200
 MIN_TCP_PORT = 10000
 MAX_TCP_PORT = 40000
-MAX_RETRY = 10
 
 class AuxConnectionData:
     """Auxiliary data associated with each TCP connection.
@@ -460,7 +461,8 @@ class TcpTransport(SocketTransport):
         except OSError:
             pass
 
-    def send(self, chunk, dest):
+    def send(self, chunk, dest, retries=MAX_RETRY, wait=0.1,
+             retry_refused_connections=False, **rest):
         target = self.address_from_id(dest)
         if target is None:
             raise NoTargetTransportException(
@@ -476,26 +478,27 @@ class TcpTransport(SocketTransport):
                     conn = self._connect(target)
                 l = len(chunk)
                 header = int(l).to_bytes(HEADER_SIZE, BYTEORDER)
-                if self._send_1((header, chunk), conn, target):
-                    break
+                self._send_1((header, chunk), conn, target)
+                break
             except ConnectionRefusedError:
-                self._log.warning(
-                    "Sending to %s: connection refused at address %s, perhaps "
-                    "the target process has terminated?", dest, target)
-                break
+                if (not retry_refused_connections) or retry > retries:
+                    self._log.warning(
+                        "Sending to %s: connection refused at address %s, perhaps "
+                        "the target process has terminated?", dest, target)
+                    break
             except socket.error:
-                pass
-
-            if conn is not None:
-                conn.close()
-                conn = None
-            if retry > MAX_RETRY:
-                self._log.debug("Sending to %s: max retries reached, abort.", dest)
-                break
-            else:
-                self._log.debug("Sending to %s: failed on %dth try.", dest, retry)
-                retry += 1
-                time.sleep(1)
+                if conn is not None:
+                    conn.close()
+                    conn = None
+                if retry > retries:
+                    self._log.warning(
+                        "Sending to %s: max retries reached, abort.", dest)
+                    break
+                else:
+                    self._log.debug("Sending to %s: failed on %dth try.",
+                                    dest, retry)
+            retry += 1
+            time.sleep(wait)
 
         if conn is not None:
             if saved != conn:
@@ -516,10 +519,9 @@ class TcpTransport(SocketTransport):
         sent = conn.sendmsg(data)
         if sent != msglen:
             self._log.debug("_send_1: only sent %d/%d bytes. ", sent, msglen)
-            return False
+            raise socket.error("Unable to send full chunk.")
         else:
             self._log.debug("Sent %d bytes to %s.", msglen, target)
-            return True
 
     def recvmesgs(self):
         if self.conn is None:

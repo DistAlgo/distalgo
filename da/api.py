@@ -188,11 +188,11 @@ def entrypoint():
         for i in range(0, niters):
             log.info("Running iteration %d ...", (i+1))
 
-            nodeimpl = sim.OSProcessImpl(process_class=module.Node_,
-                                         transport_manager=trman,
-                                         process_id=nid,
-                                         parent_id=nid,
-                                         process_name=nodename)
+            nodeimpl = sim.OSThreadContainer(process_class=module.Node_,
+                                             transport_manager=trman,
+                                             process_id=nid,
+                                             parent_id=nid,
+                                             process_name=nodename)
             nodeimpl.start()
 
             log.info("Waiting for remaining child processes to terminate..."

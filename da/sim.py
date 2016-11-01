@@ -44,6 +44,11 @@ from .endpoint import ChannelCaps
 
 logger = logging.getLogger(__name__)
 
+class DistProcessExit(BaseException):
+    def __init__(self, code=0):
+        super().__init__()
+        self.exit_code = code
+
 class Command(enum.Enum):
     """An enum of process commands.
 
@@ -205,7 +210,7 @@ class DistProcess():
             return default
 
     @builtin
-    def new(self, pcls, args=None, num=None, **props):
+    def new(self, pcls, args=None, num=None, method=None, **props):
         if not issubclass(pcls, DistProcess):
             self._log.error("Can not create non-DistProcess classes.")
             return set()
@@ -220,11 +225,14 @@ class DistProcess():
         else:
             self._log.error("Invalid value for `num`: %r", num)
             return set()
+        if method is None:
+            method = get_runtime_option('default_proc_impl')
 
-        self._log.debug("Creating instances of %s..", pcls.__name__)
+        self._log.debug("Creating instances of %s using '%s'", pcls, method)
         seqno = self.__create_cmd_seqno()
         self.__register_async_event(Command.NewAck, seqno)
-        children = self.__procimpl.spawn(pcls, iterator, self._id, props, seqno)
+        children = self.__procimpl.spawn(pcls, iterator, self._id, props, seqno,
+                                         container=method)
         self.__sync_async_event(Command.NewAck, seqno, children)
         self._log.debug("%d instances of %s created.", len(children), pcls)
 
@@ -234,7 +242,7 @@ class DistProcess():
                 if self._setup(cid, args, seqno=seqno):
                     tmp.append(cid)
                 else:
-                    self._log.debug("`setup` failed for %r, terminating.", cid)
+                    self._log.warning("`setup` failed for %r, terminating.", cid)
                     self.end(cid)
             children = tmp
         if num is None:
@@ -250,7 +258,8 @@ class DistProcess():
         if self.__send(msgtype=Command.Setup,
                        message=(seqno, args),
                        to=procs,
-                       flags=ChannelCaps.RELIABLEFIFO):
+                       flags=ChannelCaps.RELIABLEFIFO,
+                       retry_refused_connections=True):
             self.__sync_async_event(msgtype=Command.SetupAck,
                                     seqno=seqno,
                                     srcs=procs)
@@ -312,7 +321,7 @@ class DistProcess():
 
     @builtin
     def exit(self, code=0):
-        raise SystemExit(code)
+        raise DistProcessExit(code)
 
     @builtin
     def output(self, *value, sep=' ', level=logging.INFO+1):
@@ -394,22 +403,27 @@ class DistProcess():
             (self._logical_clock, to, self._id), message))
         return res
 
-    def __send(self, msgtype, message, to, flags=None):
+    def __send(self, msgtype, message, to, flags=None, **params):
         """Internal send.
 
-        Forwards message to router.
+        Pack the message and forward to router.
 
         """
+        if to is None:
+            self._log.warning("send: 'to' is None!")
+            return False
         if flags is None:
             flags = self.__default_flags
         protocol_message = (msgtype, message)
         res = True
         if type(to) is ProcessId:
-            res = self.__router.send(self._id, to, protocol_message, flags)
+            res = self.__router.send(self._id, to, protocol_message,
+                                     params, flags)
         else:
-            # to must a collection of `ProcessId`s:
+            # 'to' must be a collection of `ProcessId`s:
             for t in to:
-                if not self.__router.send(self._id, t, protocol_message, flags):
+                if not self.__router.send(self._id, t, protocol_message,
+                                          params, flags):
                     res = False
         return res
 
@@ -681,8 +695,8 @@ class DistProcess():
         """
         for p in self._events:
             bindings = dict()
-            if (p.match(event, bindings=bindings,
-                        ignore_bound_vars=True, **self.__dict__)):
+            if (p.match(event, bindings=bindings, ignore_bound_vars=True,
+                        SELF_ID=self._id, **self._state.__dict__)):
                 if p.record_history is True:
                     getattr(self, p.name).append(event.to_tuple())
                 elif p.record_history is not None:
@@ -727,6 +741,10 @@ class Router(threading.Thread):
         self.local_procs[pid] = common.WaitableQueue()
         self.log.debug("Process %s registered.", pid)
 
+    def deregister_local_process(self, pid):
+        if pid in self.local_procs:
+            del self.local_procs[pid]
+
     def get_queue_for_process(self, pid):
         return self.local_procs.get(pid, None)
 
@@ -736,10 +754,10 @@ class Router(threading.Thread):
         except KeyboardInterrupt:
             self.log.debug("Received KeyboardInterrupt, stopping.")
 
-    def send(self, src, dest, mesg, flags=0):
-        return self._dispatch(src, dest, mesg, flags)
+    def send(self, src, dest, mesg, params, flags=0):
+        return self._dispatch(src, dest, mesg, params, flags)
 
-    def _send_remote(self, src, dest, mesg, flags):
+    def _send_remote(self, src, dest, mesg, params, flags):
         """Forward `mesg` to remote process `dest`.
 
         """
@@ -764,9 +782,9 @@ class Router(threading.Thread):
         self.log.debug("** Forwarding %r(%d bytes) to %s with flags=%d using %s.",
                        mesg, wrapper.fptr, dest, flags, transport)
         with memoryview(self.local.buf)[0:wrapper.fptr] as chunk:
-            return transport.send(chunk, dest)
+            return transport.send(chunk, dest, **params)
 
-    def _dispatch(self, src, dest, payload, flags=0):
+    def _dispatch(self, src, dest, payload, params=dict(), flags=0):
         if dest in self.local_procs:
             self.log.debug("Local forward from %s to %s: %r", src, dest, payload)
             try:
@@ -779,7 +797,7 @@ class Router(threading.Thread):
                 self.log.warning("Failed to deliver to local process %s.", dest)
                 return False
         else:
-            return self._send_remote(src, dest, payload, flags)
+            return self._send_remote(src, dest, payload, params, flags)
 
     def mesgloop(self):
         while True:
@@ -792,15 +810,13 @@ class Router(threading.Thread):
                 self.log.warning("Dropped invalid message: %r", chunk)
                 continue
 
-
-class OSProcessImpl(multiprocessing.Process):
-    """An implementation of processes using OS process.
+class ProcessContainer:
+    """An abstract base class for process implementations.
 
     """
     def __init__(self, process_class, transport_manager, process_id, parent_id,
-                 process_name="", cmd_seqno=None, props=None):
+                 process_name="", cmd_seqno=None, props=None, router=None):
         assert issubclass(process_class, DistProcess)
-
         super().__init__()
         # Logger can not be serialized so it has to be instantiated in the child
         # proc's address space:
@@ -810,21 +826,113 @@ class OSProcessImpl(multiprocessing.Process):
         self._nodeid = common.pid_of_node()
         self._properties = props if props is not None else dict()
         self._lock = threading.Lock()
-        self.daemon = props['daemon'] if 'daemon' in self._properties else False
         self.dapid = process_id
         self.daparent = parent_id
-        self.router = None
+        self.router = router
         self.seqno = cmd_seqno
         if len(process_name) > 0:
             self.name = process_name
         self.endpoint = transport_manager
-        if multiprocessing.get_start_method() == 'spawn':
-            self._rtopts = (common.GlobalOptions, common.GlobalConfig)
 
     def start_router(self):
         self.endpoint.start()
         self.router = Router(self.endpoint)
         self.router.start()
+
+    def is_node(self):
+        return self.dapid == common.pid_of_node()
+
+    def _spawn_process(self, pcls, name, parent, props, seqno=None):
+        trman = None
+        p = None
+        cid = None
+        try:
+            trman = endpoint.TransportManager()
+            trman.initialize()
+            cid = ProcessId._create(pcls, trman.transport_addresses, name)
+            p = OSProcessContainer(process_class=pcls,
+                                   transport_manager=trman,
+                                   process_id=cid,
+                                   parent_id=parent,
+                                   process_name=name,
+                                   cmd_seqno=seqno,
+                                   **props)
+            p.start()
+            p.join(timeout=0.01)
+            if not p.is_alive():
+                self._log.error("%r terminated prematurely.", cid)
+                cid = None
+        except Exception as e:
+            cid = None
+            self._log.error("Failed to create instance (%s) of %s: %r",
+                            name, pcls, e)
+            if p is not None:
+                p.terminate()
+        finally:
+            if trman is not None:
+                trman.close()
+        return cid
+
+    def _spawn_thread(self, pcls, name, parent, props, seqno=None):
+        p = None
+        cid = None
+        try:
+            cid = ProcessId._create(pcls,
+                                    self.endpoint.transport_addresses,
+                                    name)
+            p = OSThreadContainer(process_class=pcls,
+                                  transport_manager=self.endpoint,
+                                  process_id=cid,
+                                  parent_id=parent,
+                                  process_name=name,
+                                  cmd_seqno=seqno,
+                                  router=self.router,
+                                  **props)
+            p.start()
+            p.join(timeout=0.01)
+            if not p.is_alive():
+                self._log.error("%r terminated prematurely.", cid)
+                cid = None
+        except Exception as e:
+            cid = None
+            self._log.error("Failed to create instance (%s) of %s: %r",
+                            name, pcls, e)
+        return cid
+
+    def spawn(self, pcls, names, parent, props, seqno=None, container='process'):
+        children = []
+        if container == 'process':
+            spawn_1 = self._spawn_process
+        elif container == 'thread':
+            spawn_1 = self._spawn_thread
+        else:
+            self._log.error("Invalid process container: %r", container)
+            return children
+        for name in names:
+            if not isinstance(name, str):
+                name = ""
+            cid = spawn_1(pcls, name, parent, props, seqno)
+            if cid is not None:
+                children.append(cid)
+        self._log.debug("%d instances of %s created.",
+                        len(children), pcls.__name__)
+        return children
+
+    def __str__(self):
+        return "{0}<{1}>".format(self.__class__.__qualname__, str(self.pid))
+
+
+class OSProcessContainer(ProcessContainer, multiprocessing.Process):
+    """An implementation of processes using OS process.
+
+    """
+    def __init__(self, process_class, transport_manager, process_id, parent_id,
+                 process_name="", cmd_seqno=None, daemon=False, **rest):
+        super().__init__(process_class, transport_manager, process_id,
+                         parent_id, process_name, cmd_seqno, rest)
+        self.daemon = daemon
+        if multiprocessing.get_start_method() == 'spawn':
+            self._rtopts = (common.GlobalOptions, common.GlobalConfig)
 
     def _sighandler(self, signum, frame):
         for child in multiprocessing.active_children():
@@ -834,53 +942,6 @@ class OSProcessImpl(multiprocessing.Process):
     def _debug_handler(self, sig, frame):
         self._debugger.set_trace(frame)
 
-    def is_node(self):
-        return self.dapid == common.pid_of_node()
-
-    def _spawn_1(self, pcls, name, parent, props, seqno=None):
-        with self._lock:
-            trman = None
-            p = None
-            cid = None
-            try:
-                trman = endpoint.TransportManager()
-                trman.initialize()
-                cid = ProcessId._create(pcls, trman.transport_addresses, name)
-                p = OSProcessImpl(process_class=pcls,
-                                  transport_manager=trman,
-                                  process_id=cid,
-                                  parent_id=parent,
-                                  process_name=name,
-                                  cmd_seqno=seqno,
-                                  props=props)
-                p.start()
-                p.join(timeout=0.01)
-                if not p.is_alive():
-                    self._log.error("%r terminated prematurely.", cid)
-                    cid = None
-            except Exception as e:
-                cid = None
-                self._log.error("Failed to create instance (%s) of %s: %r",
-                                name, pcls, e)
-                if p is not None:
-                    p.terminate()
-            finally:
-                if trman is not None:
-                    trman.close()
-            return cid
-
-    def spawn(self, pcls, names, parent, props, seqno=None):
-        children = []
-        for name in names:
-            if not isinstance(name, str):
-                name = ""
-            cid = self._spawn_1(pcls, name, parent, props, seqno)
-            if cid is not None:
-                children.append(cid)
-        self._log.debug("%d instances of %s created.",
-                        len(children), pcls.__name__)
-        return children
-
     def run(self):
         self._log = logger.getChild(self.__class__.__qualname__)
         if len(self.name) == 0:
@@ -889,11 +950,9 @@ class OSProcessImpl(multiprocessing.Process):
             if multiprocessing.get_start_method() == 'spawn':
                 common._restore_runtime_options(self._rtopts)
                 common._set_node(self._nodeid)
-            common.set_runtime_option('this_module_name',
-                                      self.__class__.__module__)
-            if multiprocessing.get_start_method() == 'spawn':
+                common.set_runtime_option('this_module_name',
+                                          self.__class__.__module__)
                 common.sysinit()
-            pattern.initialize(self.dapid)            # XXX:: FIXME!
             signal.signal(signal.SIGTERM, self._sighandler)
             signal.signal(signal.SIGUSR1, self._debug_handler)
 
@@ -907,13 +966,53 @@ class OSProcessImpl(multiprocessing.Process):
             else:
                 return self._daobj._delayed_start()
 
+        except DistProcessExit as e:
+            self._log.debug("Caught %r, exiting gracefully.", e)
+            return e.exit_code
+        except KeyboardInterrupt as e:
+            self._log.debug("Received KeyboardInterrupt, exiting")
+            return 2
         except Exception as e:
             sys.stderr.write("Unexpected error at process %s:%r"% (str(self), e))
             traceback.print_tb(e.__traceback__)
 
+class OSThreadContainer(ProcessContainer, threading.Thread):
+    """An implementation of processes using OS threads.
+
+    """
+    def __init__(self, process_class, transport_manager, process_id, parent_id,
+                 process_name="", cmd_seqno=None, daemon=False, router=None,
+                 **rest):
+        super().__init__(process_class, transport_manager, process_id,
+                         parent_id, process_name, cmd_seqno, rest, router)
+        self.daemon = daemon
+
+    def run(self):
+        self._log = logger.getChild(self.__class__.__qualname__)
+        if len(self.name) == 0:
+            self.name = str(self.pid)
+        try:
+            if self.router is None:
+                self.start_router()
+            self.router.register_local_process(self.dapid)
+            self._daobj = self._dacls(self, self._properties)
+            self._log.debug("Process object initialized.")
+
+            if self.is_node():
+                return self._daobj.run()
+            else:
+                return self._daobj._delayed_start()
+
+        except DistProcessExit as e:
+            self._log.debug("Caught %r, exiting gracefully.", e)
+            return e.exit_code
         except KeyboardInterrupt as e:
             self._log.debug("Received KeyboardInterrupt, exiting")
-            pass
-
-    def __str__(self):
-        return "{0}<{1}>".format(self.__class__.__qualname__, str(self.pid))
+            return 2
+        except Exception as e:
+            sys.stderr.write("Unexpected error at process %s:%r"% (str(self), e))
+            traceback.print_tb(e.__traceback__)
+            return 3
+        finally:
+            if self.router is not None:
+                self.router.deregister_local_process(self.dapid)

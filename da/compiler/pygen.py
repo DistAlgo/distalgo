@@ -840,6 +840,9 @@ class PythonGenerator(NodeVisitor):
             # 'PATTERN in DOMAIN'
             context = [(v.unique_name, self.visit(v.value))
                        for v in node.left.ordered_boundpatterns]
+            if node.immediate_container_of_type(dast.Process) is not None:
+                # Propagate value of current process id to `SelfPattern`:
+                context.append(("SELF_ID", pyAttr("self", "_id")))
             ast = pyCall(func=pyAttr(left, "match_iter"),
                          args=[right], keywords=context)
         else:

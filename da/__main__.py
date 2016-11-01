@@ -110,6 +110,12 @@ def parseArgs():
                         help="choose the semantics for creating child process."
                         " 'fork' is the default method on UNIX-like systems,"
                         " 'spawn' is the default method on Windows systems.")
+    parser.add_argument("-I", "--default-proc-impl", default='process',
+                        choices=['process', 'thread'],
+                        help="choose the default implementation for running "
+                        " DistAlgo processes."
+                        " 'process' uses OS processes,"
+                        " 'thread' uses OS threads.")
     parser.add_argument("-v", "--version", action="version", version=__version__)
     parser.add_argument("file",
                         help="DistAlgo source file to run.")
