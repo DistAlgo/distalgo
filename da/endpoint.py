@@ -45,9 +45,10 @@ MAX_RETRY = 10
 
 class ChannelCaps:
     """An enum of channel capabilities."""
-    FIFO = 1
-    RELIABLE = 2
-    INTERHOST = 4
+    FIFO         = 1
+    RELIABLE     = 2
+    INTERHOST    = 4
+    BROADCAST    = 8
     RELIABLEFIFO = FIFO | RELIABLE
 
 TransportTypes = []
@@ -116,6 +117,7 @@ class TransportManager:
         """Returns the first transport instance satisfying `flags`, or None if
         no transport satisfies `flags`.
         """
+        flags &= ~(ChannelCaps.BROADCAST)
         for tr in self.transports:
             if (flags & tr.capabilities) == 0:
                 return tr

@@ -53,21 +53,22 @@ class Command(enum.Enum):
     """An enum of process commands.
 
     """
-    Start     = 1
-    Setup     = 2
-    Config    = 3
-    End       = 5
-    New       = 6
-    Resolve   = 7
-    StartAck  = 11
-    SetupAck  = 12
-    ConfigAck = 13
-    EndAck    = 15
-    NewAck    = 16
-    Message   = 20
-    RPC       = 30
-    RPCReply  = 31
-    Sentinel  = 40
+    Start      = 1
+    Setup      = 2
+    Config     = 3
+    End        = 5
+    New        = 6
+    Resolve    = 7
+    StartAck   = 11
+    SetupAck   = 12
+    ConfigAck  = 13
+    EndAck     = 15
+    NewAck     = 16
+    ResolveAck = 17
+    Message    = 20
+    RPC        = 30
+    RPCReply   = 31
+    Sentinel   = 40
 
 _config_object = dict()
 
@@ -177,8 +178,8 @@ class DistProcess():
                                                cmdtype=Command.StartAck.value)
         self._cmd_SetupAck = functools.partial(self.__cmd_handle_Ack,
                                                cmdtype=Command.SetupAck.value)
-        self._cmd_Resolve = functools.partial(self.__cmd_handle_Ack,
-                                              cmdtype=Command.Resolve.value)
+        self._cmd_ResolveAck = functools.partial(self.__cmd_handle_Ack,
+                                                 cmdtype=Command.ResolveAck.value)
         self._cmd_RPCReply = functools.partial(self.__cmd_handle_Ack,
                                                cmdtype=Command.RPCReply.value)
 
@@ -435,18 +436,23 @@ class DistProcess():
         elif isinstance(name, ProcessId):
             return name
         seqno = self.__create_cmd_seqno()
-        self.__register_async_event(Command.Resolve, seqno)
+        self.__register_async_event(Command.ResolveAck, seqno)
         dest = ProcessId.lookup_or_register_callback(
-            name, functools.partial(self.__resolve_callback, seqno=seqno))
+            name, functools.partial(self.__resolve_callback,
+                                    src=self._id, seqno=seqno))
         if dest is None:
-            res = self.__sync_async_event(Command.Resolve, seqno, self._id)
+            if not self.__procimpl.is_node():
+                self.__send(Command.Resolve, message=(name, seqno),
+                            to=self.__procimpl._nodeid,
+                            flags=ChannelCaps.RELIABLEFIFO)
+            res = self.__sync_async_event(Command.ResolveAck, seqno, self._id)
             dest = res[self._id]
         else:
-            self.__deregister_async_event(Command.Resolve, seqno)
+            self.__deregister_async_event(Command.ResolveAck, seqno)
         return dest
 
-    def __resolve_callback(self, pid, seqno):
-        self.__send(Command.Resolve, message=(seqno, pid), to=self._id)
+    def __resolve_callback(self, pid, src, seqno):
+        self.__send(Command.ResolveAck, message=(seqno, pid), to=src)
 
     def __send(self, msgtype, message, to, flags=None, **params):
         """Internal send.
@@ -725,6 +731,14 @@ class DistProcess():
         except ValueError:
             self._log.warning("Corrupted 'Config' command: %r", args)
 
+    def _cmd_Resolve(self, src, args):
+        name, seqno = args
+        pid = ProcessId.lookup_or_register_callback(
+            name, functools.partial(self.__resolve_callback,
+                                    src=src, seqno=seqno))
+        if pid is not None:
+            self.__send(Command.ResolveAck, message=(seqno, pid), to=src)
+
     def _cmd_Message(self, peer_id, message):
         if self.__fails('receive'):
             self._log.warning(
@@ -831,9 +845,13 @@ class Router(threading.Thread):
         if not hasattr(self.local, 'buf') or self.local.buf is None:
             self.local.buf = bytearray(endpoint.MAX_PAYLOAD_SIZE)
 
+        if flags & ChannelCaps.BROADCAST:
+            payload = (src, None, mesg)
+        else:
+            payload = (src, dest, mesg)
         wrapper = common.BufferIOWrapper(self.local.buf)
         try:
-            pickle.dump((src, dest, mesg), wrapper)
+            pickle.dump(payload, wrapper)
         except OSError as e:
             self.log.error(
                 "** Outgoing message object too big to fit in buffer, dropped.")
@@ -845,6 +863,8 @@ class Router(threading.Thread):
 
     def _dispatch(self, src, dest, payload, params=dict(), flags=0):
         if dest in self.local_procs:
+            if flags & ChannelCaps.BROADCAST:
+                return True
             self.log.debug("Local forward from %s to %s: %r", src, dest, payload)
             try:
                 # Only needs to copy if message is from local to local:
@@ -856,7 +876,7 @@ class Router(threading.Thread):
                 self.log.warning("Failed to deliver to local process %s: %r",
                                  dest, e)
                 return False
-        else:
+        elif dest is not None:
             return self._send_remote(src, dest, payload, params, flags)
 
     def mesgloop(self):
@@ -961,21 +981,27 @@ class ProcessContainer:
 
     def spawn(self, pcls, names, parent, props, seqno=None, container='process'):
         children = []
-        if container == 'process':
-            spawn_1 = self._spawn_process
-        elif container == 'thread':
-            spawn_1 = self._spawn_thread
-        else:
+        spawn_1 = getattr(self, '_spawn_' + container, None)
+        if spawn_1 is None:
             self._log.error("Invalid process container: %r", container)
             return children
+        newnamed = []
         for name in names:
             if not isinstance(name, str):
                 name = ""
             cid = spawn_1(pcls, name, parent, props, seqno)
             if cid is not None:
                 children.append(cid)
+                if len(name) > 0:
+                    newnamed.append(cid)
         self._log.debug("%d instances of %s created.",
                         len(children), pcls.__name__)
+        if len(newnamed) > 0 and not self.is_node():
+            # Propagate names to node
+            self.router.send(src=self.dapid, dest=self._nodeid,
+                             mesg=newnamed, params=dict(),
+                             flags=(ChannelCaps.RELIABLEFIFO |
+                                    ChannelCaps.BROADCAST))
         return children
 
     def __str__(self):
