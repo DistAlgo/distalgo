@@ -214,12 +214,17 @@ class ProcessId(namedtuple("_ProcessId",
                         # cached id is more recent than the new one, so use the
                         # cached entry:
                         obj = entry
+                    elif obj.uid != entry.uid:
+                        log.warning("Process name '%s' reassigned from %s "
+                                    "to %s.", name,
+                                    ProcessId._full_form_(entry),
+                                    ProcessId._full_form_(obj))
                 if entry != obj:
                     ProcessId._named[name] = obj
-                if isinstance(entry, list):
-                    for callback in entry:
-                        assert callable(callback)
-                        callback(obj)
+            if type(entry) is list:
+                for callback in entry:
+                    assert callable(callback)
+                    callback(obj)
         return obj
 
     @staticmethod
@@ -319,6 +324,9 @@ class ProcessId(namedtuple("_ProcessId",
         return fmt.format(self)
 
     __str__ = __repr__ = _short_form_
+
+    def __deepcopy__(self, memo):
+        return self
 
 ####################
 
