@@ -66,6 +66,7 @@ class Command(enum.Enum):
     NewAck    = 16
     Message   = 20
     RPC       = 30
+    RPCReply  = 31
     Sentinel  = 40
 
 _config_object = dict()
@@ -178,6 +179,8 @@ class DistProcess():
                                                cmdtype=Command.SetupAck.value)
         self._cmd_Resolve = functools.partial(self.__cmd_handle_Ack,
                                               cmdtype=Command.Resolve.value)
+        self._cmd_RPCReply = functools.partial(self.__cmd_handle_Ack,
+                                               cmdtype=Command.RPCReply.value)
 
         for cmdname in Command.__members__:
             handlername = '_cmd_' + cmdname
@@ -218,11 +221,12 @@ class DistProcess():
             return default
 
     @builtin
-    def new(self, pcls, args=None, num=None, method=None, **props):
+    def new(self, pcls, args=None, num=None, at=None, method=None, **props):
         if not issubclass(pcls, DistProcess):
             self._log.error("Can not create non-DistProcess classes.")
             return set()
 
+        at = self.resolve(at)
         iterator = []
         if num is None:
             iterator = range(1)
@@ -239,8 +243,20 @@ class DistProcess():
         self._log.debug("Creating instances of %s using '%s'", pcls, method)
         seqno = self.__create_cmd_seqno()
         self.__register_async_event(Command.NewAck, seqno)
-        children = self.__procimpl.spawn(pcls, iterator, self._id, props, seqno,
-                                         container=method)
+        if at is not None and at != self._id:
+            self.__register_async_event(Command.RPCReply, seqno)
+            if self.__send(Command.New,
+                           message=(pcls, iterator, method, seqno, props),
+                           to=at,
+                           flags=ChannelCaps.RELIABLEFIFO):
+                res = self.__sync_async_event(Command.RPCReply, seqno, at)
+                children = res[at]
+            else:
+                self.__deregister_async_event(Command.RPCReply, seqno)
+                children = []
+        else:
+            children = self.__procimpl.spawn(pcls, iterator, self._id, props,
+                                             seqno, container=method)
         self.__sync_async_event(Command.NewAck, seqno, children)
         self._log.debug("%d instances of %s created.", len(children), pcls)
 
@@ -250,7 +266,8 @@ class DistProcess():
                 if self._setup(cid, args, seqno=seqno):
                     tmp.append(cid)
                 else:
-                    self._log.warning("`setup` failed for %r, terminating.", cid)
+                    self._log.warning(
+                        "`setup` failed for %r, terminating child.", cid)
                     self.end(cid)
             children = tmp
         if num is None:
@@ -413,7 +430,9 @@ class DistProcess():
 
     @builtin
     def resolve(self, name):
-        if isinstance(name, ProcessId):
+        if name is None:
+            return None
+        elif isinstance(name, ProcessId):
             return name
         seqno = self.__create_cmd_seqno()
         self.__register_async_event(Command.Resolve, seqno)
@@ -645,6 +664,16 @@ class DistProcess():
             self._log.error(
                 "Exception while processing message %r: %r", message, e)
         return False
+
+    def _cmd_New(self, src, args):
+        pcls, num, method, seqno, props = args
+        children = self.__procimpl.spawn(pcls, num,
+                                         parent=src, props=props,
+                                         seqno=seqno, container=method)
+        self.__send(msgtype=Command.RPCReply,
+                    message=(seqno, children),
+                    to=src,
+                    flags=ChannelCaps.RELIABLEFIFO)
 
     def _cmd_Start(self, src, seqno):
         if self.__running:
