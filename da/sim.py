@@ -116,6 +116,7 @@ class DistProcess():
         self.__local = threading.local()
         self.__local.timer = None
         self.__local.timer_expired = False
+        self.__local.seqcnt = 0
         self.__setup_called = False
         self.__running = False
         self.__parent = procimpl.daparent
@@ -145,7 +146,8 @@ class DistProcess():
         assert self.__messageq is not None
         self._log.debug("Delayed start.")
         if self.__newcmd_seqno is not None:
-            self.__send(msgtype=Command.NewAck, message=self.__newcmd_seqno,
+            self.__send(msgtype=Command.NewAck,
+                        message=(self.__newcmd_seqno, None),
                         to=self.__parent, flags=ChannelCaps.RELIABLEFIFO)
         self.__wait_for(lambda: self.__running)
         return self.run()
@@ -369,13 +371,8 @@ class DistProcess():
     @builtin
     def end(self, target, exit_code=1):
         """Terminate child processes."""
-        if isinstance(target, ProcessId):
-            self.__send(Command.End, exit_code, to=target,
-                        flags=ChannelCaps.RELIABLEFIFO)
-        else:
-            for t in target:
-                self.__send(Command.End, exit_code, to=t,
-                            flags=ChannelCaps.RELIABLEFIFO)
+        self.__send(Command.End, exit_code, to=target,
+                    flags=ChannelCaps.RELIABLEFIFO)
 
     @builtin
     def logical_clock(self):
@@ -418,19 +415,19 @@ class DistProcess():
     def resolve(self, name):
         if isinstance(name, ProcessId):
             return name
-        seqno = threading.current_thread().ident
+        seqno = self.__create_cmd_seqno()
         self.__register_async_event(Command.Resolve, seqno)
         dest = ProcessId.lookup_or_register_callback(
             name, functools.partial(self.__resolve_callback, seqno=seqno))
         if dest is None:
-            self.__sync_async_event(Command.Resolve, seqno, self._id)
-            dest = ProcessId.lookup(name)
+            res = self.__sync_async_event(Command.Resolve, seqno, self._id)
+            dest = res[self._id]
         else:
             self.__deregister_async_event(Command.Resolve, seqno)
         return dest
 
     def __resolve_callback(self, pid, seqno):
-        self.__send(Command.Resolve, message=seqno, to=self._id)
+        self.__send(Command.Resolve, message=(seqno, pid), to=self._id)
 
     def __send(self, msgtype, message, to, flags=None, **params):
         """Internal send.
@@ -567,7 +564,8 @@ class DistProcess():
         self.__jobq.extend(leftovers)
 
     def __create_cmd_seqno(self):
-        return time.time()
+        cnt = self.__local.seqcnt = (self.__local.seqcnt + 1) % 1024
+        return (threading.current_thread().ident << 10) | cnt
 
     def __register_async_event(self, msgtype, seqno):
         self.__async_events[msgtype.value][seqno] = list()
@@ -583,16 +581,19 @@ class DistProcess():
             remaining = set(srcs)
         container = self.__async_events[msgtype.value][seqno]
         with self.__lock:
-            remaining.difference_update(container)
-            self.__async_events[msgtype.value][seqno] = remaining
+            results = dict(container)
+            remaining.difference_update(results)
+            self.__async_events[msgtype.value][seqno] = (remaining, results)
         self.__wait_for(lambda: not remaining)
         self.__deregister_async_event(msgtype, seqno)
+        return results
 
     def __wait_for(self, predicate, timeout=None):
         while not predicate():
             self.__process_event(block=True, timeout=timeout)
 
-    def __cmd_handle_Ack(self, src, seqno, cmdtype):
+    def __cmd_handle_Ack(self, src, args, cmdtype):
+        seqno, res = args
         registered_evts = self.__async_events[cmdtype]
         with self.__lock:
             if seqno in registered_evts:
@@ -603,10 +604,11 @@ class DistProcess():
                     # `__sync_event` hasn't been called -- we don't yet know
                     # the exact set of peers to wait for, so we just aggregate
                     # all the acks:
-                    container.append(src)
+                    container.append((src, res))
                 else:
                     # Otherwise, we can just mark the peer off the list:
-                    container.discard(src)
+                    container[0].discard(src)
+                    container[1][src] = res
 
     def __process_event(self, block, timeout=None):
         """Retrieves and processes one pending event.
@@ -654,7 +656,7 @@ class DistProcess():
                 self._log.debug("`start` command received, commencing...")
                 self.__running = True
         self.__send(msgtype=Command.StartAck,
-                    message=seqno,
+                    message=(seqno, None),
                     to=src,
                     flags=ChannelCaps.RELIABLEFIFO)
 
@@ -679,7 +681,7 @@ class DistProcess():
             except Exception as e:
                 self._log.error("Exception during setup(%r): %r", args, e)
         self.__send(msgtype=Command.SetupAck,
-                    message=seqno,
+                    message=(seqno, True),
                     to=src,
                     flags=ChannelCaps.RELIABLEFIFO)
 
