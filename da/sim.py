@@ -58,6 +58,7 @@ class Command(enum.Enum):
     Config    = 3
     End       = 5
     New       = 6
+    Resolve   = 7
     StartAck  = 11
     SetupAck  = 12
     ConfigAck = 13
@@ -173,6 +174,8 @@ class DistProcess():
                                                cmdtype=Command.StartAck.value)
         self._cmd_SetupAck = functools.partial(self.__cmd_handle_Ack,
                                                cmdtype=Command.SetupAck.value)
+        self._cmd_Resolve = functools.partial(self.__cmd_handle_Ack,
+                                              cmdtype=Command.Resolve.value)
 
         for cmdname in Command.__members__:
             handlername = '_cmd_' + cmdname
@@ -411,6 +414,24 @@ class DistProcess():
         self.__register_async_event(Command.EndAck, seqno=0)
         self.__sync_async_event(Command.EndAck, seqno=0, srcs=self._id)
 
+    @builtin
+    def resolve(self, name):
+        if isinstance(name, ProcessId):
+            return name
+        seqno = threading.current_thread().ident
+        self.__register_async_event(Command.Resolve, seqno)
+        dest = ProcessId.lookup_or_register_callback(
+            name, functools.partial(self.__resolve_callback, seqno=seqno))
+        if dest is None:
+            self.__sync_async_event(Command.Resolve, seqno, self._id)
+            dest = ProcessId.lookup(name)
+        else:
+            self.__deregister_async_event(Command.Resolve, seqno)
+        return dest
+
+    def __resolve_callback(self, pid, seqno):
+        self.__send(Command.Resolve, message=seqno, to=self._id)
+
     def __send(self, msgtype, message, to, flags=None, **params):
         """Internal send.
 
@@ -424,15 +445,18 @@ class DistProcess():
             flags = self.__default_flags
         protocol_message = (msgtype, message)
         res = True
-        if type(to) is ProcessId:
-            res = self.__router.send(self._id, to, protocol_message,
-                                     params, flags)
+        if isinstance(to, ProcessId) or isinstance(to, str):
+            target = [to]
         else:
-            # 'to' must be a collection of `ProcessId`s:
-            for t in to:
-                if not self.__router.send(self._id, t, protocol_message,
-                                          params, flags):
-                    res = False
+            # 'to' must be an iterable of `ProcessId`s:
+            target = to
+        for dest in target:
+            if isinstance(dest, str):
+                # This is a process name, try to resolve to an id
+                dest = self.resolve(dest)
+            if not self.__router.send(self._id, dest, protocol_message,
+                                      params, flags):
+                res = False
         return res
 
     def _timer_start(self):
@@ -798,7 +822,8 @@ class Router(threading.Thread):
                 self.local_procs[dest].append((src, payload))
                 return True
             except Exception as e:
-                self.log.warning("Failed to deliver to local process %s.", dest)
+                self.log.warning("Failed to deliver to local process %s: %r",
+                                 dest, e)
                 return False
         else:
             return self._send_remote(src, dest, payload, params, flags)

@@ -199,8 +199,46 @@ class ProcessId(namedtuple("_ProcessId",
 
     """
     __slots__ = ()
-    pid_counter = 0
-    lock = threading.Lock()
+    _pid_counter = 0
+    _lock = threading.Lock()
+    _named = dict()
+
+    def __new__(cls, uid, seqno, clsname, name, nodename, hostname, transports):
+        obj = super().__new__(cls, uid, seqno, clsname, name, nodename, hostname,
+                              transports)
+        if len(name) > 0:
+            with ProcessId._lock:
+                entry = ProcessId._named.get(name, None)
+                if isinstance(entry, ProcessId):
+                    if obj < entry:
+                        # cached id is more recent than the new one, so use the
+                        # cached entry:
+                        obj = entry
+                if entry != obj:
+                    ProcessId._named[name] = obj
+                if isinstance(entry, list):
+                    for callback in entry:
+                        assert callable(callback)
+                        callback(obj)
+        return obj
+
+    @staticmethod
+    def lookup(name):
+        return ProcessId._named.get(name, None)
+
+    @staticmethod
+    def lookup_or_register_callback(name, callback):
+        with ProcessId._lock:
+            if name not in ProcessId._named:
+                ProcessId._named[name] = [callback]
+                return None
+            else:
+                pid = ProcessId._named[name]
+                if type(pid) is list:
+                    pid.append(callback)
+                    return None
+                else:
+                    return pid
 
     @staticmethod
     def gen_uid(hostname, pid):
@@ -214,9 +252,9 @@ class ProcessId(namedtuple("_ProcessId",
         # 16 bits of os pid
         pid %= 0xffff
         # 10 bit thread-local counter
-        with ProcessId.lock:
-            ProcessId.pid_counter = (ProcessId.pid_counter + 1) % 1024
-        return (tstamp << 42) | (hh << 26) | (pid << 10) | ProcessId.pid_counter
+        with ProcessId._lock:
+            cnt = ProcessId._pid_counter = (ProcessId._pid_counter + 1) % 1024
+        return (tstamp << 42) | (hh << 26) | (pid << 10) | cnt
 
     @classmethod
     def _create(idcls, pcls, transports, name=""):
@@ -617,7 +655,7 @@ class frozendict(dict):
     def __repr__(self):
         return "frozendict(%s)" % dict.__repr__(self)
 
-BuiltinImmutables = {int, float, complex, tuple, str, bytes, frozenset}
+BuiltinImmutables = [int, float, complex, tuple, str, bytes, frozenset]
 
 def freeze(obj):
     """Return a hashable version of `obj`.
