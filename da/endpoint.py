@@ -128,6 +128,7 @@ class TransportException(Exception): pass
 class NoAvailablePortsException(TransportException): pass
 class NoTargetTransportException(TransportException): pass
 class InvalidTransportStateException(TransportException): pass
+class PacketSizeExceededException(TransportException): pass
 
 class Transport:
     """Represents a type of communication channel for sending of data.
@@ -161,7 +162,7 @@ class Transport:
         DistAlgo process id.
 
         """
-        return False
+        pass
 
     def setname(self, name):
         self._name = name
@@ -279,7 +280,7 @@ class UdpTransport(SocketTransport):
             self.worker = None
         self._log.debug("Transport stopped.")
 
-    def send(self, chunk, dest, wait=0.01, **rest):
+    def send(self, chunk, dest, wait=0.01, retries=MAX_RETRY, **rest):
         if self.conn is None:
             raise InvalidTransportStateException(
                 "Invalid transport state for sending.")
@@ -288,7 +289,7 @@ class UdpTransport(SocketTransport):
             self._log.warning("Data size exceeded maximum buffer size!"
                               " Outgoing packet dropped.")
             self._log.debug("Dropped packet: %s", chunk)
-            return False
+            raise PacketSizeExceededException()
         else:
             target = self.address_from_id(dest)
             if target is None:
@@ -297,17 +298,17 @@ class UdpTransport(SocketTransport):
             while True:
                 try:
                     if self.conn.sendto(chunk, target) == len(chunk):
-                        return True
+                        return
                     else:
-                        raise socket.error("Unable to send full chunk.")
+                        raise TransportException("Unable to send full chunk.")
                 except PermissionError as e:
                     # The 'conntrack' module of iptables will cause UDP `sendto`
                     # to return `EPERM` if it's sending too fast:
                     self._log.debug("Packet to %s dropped by iptables, "
                                     "reduce send rate.", target)
                     cnt += 1
-                    if cnt >= MAX_RETRY:
-                        return False
+                    if cnt >= retries:
+                        raise TransportException("Packet blocked by OS.") from e
                     else:
                         time.sleep(wait)
 
@@ -468,53 +469,53 @@ class TcpTransport(SocketTransport):
         target = self.address_from_id(dest)
         if target is None:
             raise NoTargetTransportException(
-                "Process %s does not have TCP transport!", dest)
+                "Process {} does not have TCP transport!".format(dest))
 
         retry = 1
         saved = conn = None
         with self.lock:
             saved = conn = self.cache.get(target)
-        while True:
-            try:
-                if conn is None:
-                    conn = self._connect(target)
-                l = len(chunk)
-                header = int(l).to_bytes(HEADER_SIZE, BYTEORDER)
-                self._send_1((header, chunk), conn, target)
-                break
-            except ConnectionRefusedError:
-                if (not retry_refused_connections) or retry > retries:
-                    self._log.warning(
-                        "Sending to %s: connection refused at address %s, perhaps "
-                        "the target process has terminated?", dest, target)
-                    break
-            except socket.error:
-                if conn is not None:
-                    conn.close()
-                    conn = None
-                if retry > retries:
-                    self._log.warning(
-                        "Sending to %s: max retries reached, abort.", dest)
-                    break
-                else:
-                    self._log.debug("Sending to %s: failed on %dth try.",
-                                    dest, retry)
-            retry += 1
-            time.sleep(wait)
-
-        if conn is not None:
-            if saved != conn:
-                with self.lock:
-                    self.cache[target] = conn
-                self.selector.register(conn, selectors.EVENT_READ,
-                                       (self._receive_1,
-                                        AuxConnectionData(target)))
-            return True
-        else:
-            if target in self.cache:
-                with self.lock:
-                    del self.cache[target]
-            return False
+        try:
+            while True:
+                try:
+                    if conn is None:
+                        conn = self._connect(target)
+                    l = len(chunk)
+                    header = int(l).to_bytes(HEADER_SIZE, BYTEORDER)
+                    self._send_1((header, chunk), conn, target)
+                    return
+                except ConnectionRefusedError as e:
+                    if (not retry_refused_connections) or retry > retries:
+                        self._log.warning(
+                            "Sending to %s: connection refused at address %s, "
+                            " perhaps the target process has terminated?",
+                            dest, target)
+                        raise TransportException() from e
+                except socket.error as e:
+                    if conn is not None:
+                        conn.close()
+                        conn = None
+                    if retry > retries:
+                        self._log.warning(
+                            "Sending to %s: max retries reached, abort.", dest)
+                        raise TransportException() from e
+                    else:
+                        self._log.debug("Sending to %s: failed on %dth try.",
+                                        dest, retry)
+                retry += 1
+                time.sleep(wait)
+        finally:
+            if conn is not None:
+                if saved != conn:
+                    with self.lock:
+                        self.cache[target] = conn
+                    self.selector.register(conn, selectors.EVENT_READ,
+                                           (self._receive_1,
+                                            AuxConnectionData(target)))
+            else:
+                if target in self.cache:
+                    with self.lock:
+                        del self.cache[target]
 
     def _send_1(self, data, conn, target):
         msglen = sum(len(chunk) for chunk in data)

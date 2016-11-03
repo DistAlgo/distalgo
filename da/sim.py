@@ -788,6 +788,9 @@ class DistProcess():
 
     __str__ = __repr__
 
+class RoutingException(Exception): pass
+class NoAvailableTransportException(RoutingException): pass
+class MessageTooBigException(RoutingException): pass
 class Router(threading.Thread):
     """The router thread.
 
@@ -827,7 +830,7 @@ class Router(threading.Thread):
         except KeyboardInterrupt:
             self.log.debug("Received KeyboardInterrupt, stopping.")
 
-    def send(self, src, dest, mesg, params, flags=0):
+    def send(self, src, dest, mesg, params=dict(), flags=0):
         return self._dispatch(src, dest, mesg, params, flags)
 
     def _send_remote(self, src, dest, mesg, params, flags):
@@ -840,8 +843,7 @@ class Router(threading.Thread):
             flags |= ChannelCaps.INTERHOST
         transport = self.endpoint.get_transport(flags)
         if transport is None:
-            self.log.error("** No suitable transport for sending to %s!", dest)
-            return False
+            raise NoAvailableTransportException()
         if not hasattr(self.local, 'buf') or self.local.buf is None:
             self.local.buf = bytearray(endpoint.MAX_PAYLOAD_SIZE)
 
@@ -853,13 +855,12 @@ class Router(threading.Thread):
         try:
             pickle.dump(payload, wrapper)
         except OSError as e:
-            self.log.error(
+            raise MessageTooBigException(
                 "** Outgoing message object too big to fit in buffer, dropped.")
-            return False
         self.log.debug("** Forwarding %r(%d bytes) to %s with flags=%d using %s.",
                        mesg, wrapper.fptr, dest, flags, transport)
         with memoryview(self.local.buf)[0:wrapper.fptr] as chunk:
-            return transport.send(chunk, dest, **params)
+            transport.send(chunk, dest, **params)
 
     def _dispatch(self, src, dest, payload, params=dict(), flags=0):
         if dest in self.local_procs:
@@ -877,7 +878,12 @@ class Router(threading.Thread):
                                  dest, e)
                 return False
         elif dest is not None:
-            return self._send_remote(src, dest, payload, params, flags)
+            try:
+                self._send_remote(src, dest, payload, params, flags)
+                return True
+            except Exception as e:
+                self.log.error("Could not send message due to: %r", e)
+                return False
 
     def mesgloop(self):
         while True:
@@ -888,7 +894,6 @@ class Router(threading.Thread):
                 self._dispatch(src, dest, mesg)
             except ValueError as e:
                 self.log.warning("Dropped invalid message: %r", chunk)
-                continue
 
 class ProcessContainer:
     """An abstract base class for process implementations.
@@ -998,8 +1003,7 @@ class ProcessContainer:
                         len(children), pcls.__name__)
         if len(newnamed) > 0 and not self.is_node():
             # Propagate names to node
-            self.router.send(src=self.dapid, dest=self._nodeid,
-                             mesg=newnamed, params=dict(),
+            self.router.send(src=self.dapid, dest=self._nodeid, mesg=newnamed,
                              flags=(ChannelCaps.RELIABLEFIFO |
                                     ChannelCaps.BROADCAST))
         return children
