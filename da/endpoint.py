@@ -49,6 +49,13 @@ class ChannelCaps:
     BROADCAST    = 8
     RELIABLEFIFO = FIFO | RELIABLE
 
+class TransportException(Exception): pass
+class BindingException(Exception): pass
+class NoAvailablePortsException(BindingException): pass
+class NoTargetTransportException(TransportException): pass
+class InvalidTransportStateException(TransportException): pass
+class PacketSizeExceededException(TransportException): pass
+
 TransportTypes = []
 
 class TransportManager:
@@ -56,35 +63,39 @@ class TransportManager:
 
     """
     def __init__(self):
+        self.log = logger.getChild(self.__class__.__qualname__)
         self.queue = WaitableQueue()
-        self.transports = tuple(cls(self.queue) for cls in TransportTypes)
+        self.transports = tuple(cls(queue=self.queue) for cls in TransportTypes)
         self.started = False
 
     @property
     def transport_addresses(self):
         return tuple(t.address for t in self.transports)
 
-    def initialize(self):
+    def initialize(self, **params):
         """Initialize all transports.
 
         """
-        logger.debug("TransportManager: initializing...")
+        self.log.debug("Initializing...")
         total = len(TransportTypes)
         cnt = 0
         for transport in self.transports:
             try:
-                transport.initialize()
+                transport.initialize(**params)
                 cnt += 1
             except Exception as err:
-                logger.error("Failed to initialize transport %s: %r",
-                             transport, err)
-        logger.debug("TransportManager: %d/%d transports initialized.", cnt, total)
+                self.log.error("Failed to initialize transport %s: %r",
+                               transport, err)
+        if cnt != total:
+            raise TransportException(
+                "Initialization failed for {}/{} transports.".format(
+                    (total - cnt), total))
 
     def start(self):
         """Start all transports.
 
         """
-        logger.debug("TransportManager: starting...")
+        self.log.debug("Starting...")
         total = len(TransportTypes)
         cnt = 0
         for transport in self.transports:
@@ -92,14 +103,17 @@ class TransportManager:
                 transport.start()
                 cnt += 1
             except Exception as err:
-                logger.error("Failed to start transport %s: %r", transport, err)
-        logger.debug("TransportManager: %d/%d transports started.", cnt, total)
+                self.log.error("Failed to start transport %s: %r", transport, err)
+        if cnt != total:
+            raise TransportException(
+                "Start failed for {}/{} transports.".format(
+                    (total - cnt), total))
 
     def close(self):
         """Shut down all transports.
 
         """
-        logger.debug("TransportManager: stopping...")
+        self.log.debug("Stopping...")
         total = len(TransportTypes)
         cnt = 0
         for transport in self.transports:
@@ -107,9 +121,9 @@ class TransportManager:
                 transport.close()
                 cnt += 1
             except Exception as err:
-                logger.warning("Exception when stopping transport %s: %r",
-                               transport, err)
-        logger.debug("TransportManager: %d/%d transports stopped.", cnt, total)
+                self.log.warning("Exception when stopping transport %s: %r",
+                                 transport, err)
+        self.log.debug("%d/%d transports stopped.", cnt, total)
 
     def get_transport(self, flags):
         """Returns the first transport instance satisfying `flags`, or None if
@@ -122,12 +136,6 @@ class TransportManager:
         return None
 
 
-class TransportException(Exception): pass
-class NoAvailablePortsException(TransportException): pass
-class NoTargetTransportException(TransportException): pass
-class InvalidTransportStateException(TransportException): pass
-class PacketSizeExceededException(TransportException): pass
-
 class Transport:
     """Represents a type of communication channel for sending of data.
 
@@ -139,7 +147,12 @@ class Transport:
         super().__init__()
         self._log = logger.getChild(self.__class__.__qualname__)
         self.queue = queue
-        self.hostname = get_runtime_option('hostname')
+        self.hostname = None
+
+    def initialize(self, hostname=None, **params):
+        if hostname is None:
+            hostname = get_runtime_option('hostname')
+        self.hostname = hostname
 
     def start(self):
         """Starts the transport.
@@ -199,11 +212,43 @@ class SocketTransport(Transport):
 
     """
     capabilities = ~(ChannelCaps.INTERHOST)
-    def __init__(self, queue, port=None):
+    def __init__(self, queue):
         super().__init__(queue)
-        self.port = port
+        self.port = None
         self.conn = None
         self.worker = None
+        self.buffer_size = 0
+
+    def initialize(self, port=None, strict=False, linear=False,
+                   retries=MAX_RETRY, **rest):
+        super().initialize(**rest)
+        self.port = port
+        if self.port is None:
+            if not strict:
+                self.port = random.randint(MIN_TCP_PORT, MAX_TCP_PORT)
+            else:
+                raise NoAvailablePortsException("Port number not specified!")
+        self.buffer_size = get_runtime_option('message_buffer_size')
+        address = None
+        retry = 1
+        assert self.conn is not None
+        while True:
+            address = (self.hostname, self.port)
+            try:
+                self.conn.bind(address)
+                break
+            except socket.error as e:
+                address = None
+                if not strict and retry < retries:
+                    if linear:
+                        self.port += 1
+                    else:
+                        self.port = random.randint(MIN_TCP_PORT, MAX_TCP_PORT)
+                    retry += 1
+                else:
+                    raise BindingException(
+                        "Failed to bind to an available port.") from e
+        self._log.debug("Transport initialized at address %s", address)
 
     @property
     def address(self):
@@ -225,33 +270,19 @@ class UdpTransport(SocketTransport):
 
     """
     capabilities = ~(ChannelCaps.INTERHOST)
-    def __init__(self, queue, port=None):
-        super().__init__(queue, port)
+    def __init__(self, queue):
+        super().__init__(queue)
 
-    def initialize(self):
-        address = None
-        if self.port is None:
-            self.port = random.randint(MIN_UDP_PORT, MAX_UDP_PORT)
-        self.conn = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.conn.set_inheritable(True)
-        for _ in range(MAX_RETRY):
-            address = (self.hostname, self.port)
-            try:
-                self.conn.bind(address)
-                break
-            except socket.error:
-                address = None
-                self.port = random.randint(MIN_UDP_PORT, MAX_UDP_PORT)
-
-        if address is None:
-            self._log.error(
-                "Failed to bind to an available port after %d attempts, aborted.",
-                MAX_RETRY)
-            self.conn.close()
+    def initialize(self, **params):
+        try:
+            self.conn = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.conn.set_inheritable(True)
+            super().initialize(**params)
+        except Exception as e:
+            if self.conn is not None:
+                self.conn.close()
             self.conn = None
-            raise NoAvailablePortsException()
-        self.buffer_size = get_runtime_option('message_buffer_size')
-        self._log.debug("Transport initialized at address: %s", address)
+            raise e
 
     def start(self):
         if self.conn is None:
@@ -361,35 +392,21 @@ class TcpTransport(SocketTransport):
     capabilities = ~((ChannelCaps.FIFO) |
                      (ChannelCaps.RELIABLE) |
                      (ChannelCaps.INTERHOST))
-    def __init__(self, queue, port=None, strict=False):
-        super().__init__(queue, port)
+    def __init__(self, queue):
+        super().__init__(queue)
         self.cache = None
         self.lock = threading.Lock()
         self.selector = None
 
-    def initialize(self):
-        self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        if self.port is None:
-            self.port = random.randint(MIN_TCP_PORT, MAX_TCP_PORT)
-        address = None
-        for _ in range(MAX_RETRY):
-            address = (self.hostname, self.port)
-            try:
-                self.conn.bind(address)
-                break
-            except socket.error:
-                address = None
-                self.port = random.randint(MIN_TCP_PORT, MAX_TCP_PORT)
-
-        if address is None:
-            self._log.error(
-                "Failed to bind to an available port after %d attempts, aborted.",
-                MAX_RETRY)
-            self.conn.close()
+    def initialize(self, **params):
+        try:
+            self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            super().initialize(**params)
+        except Exception as e:
+            if self.conn is not None:
+                self.conn.close()
             self.conn = None
-            raise NoAvailablePortsException()
-        self.buffer_size = get_runtime_option('message_buffer_size')
-        self._log.debug("Transport initialized at address %s", address)
+            raise e
 
     def start(self):
         if self.conn is None:

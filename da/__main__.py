@@ -92,10 +92,15 @@ def parseArgs():
                         "defaults to source module name + '_inc'. ")
     parser.add_argument("-H", "--hostname", default='localhost',
                         help="hostname for binding network sockets, "
-                        "defaults to 'localhost'. ")
-    parser.add_argument("-N", "--nodename", default="",
-                        help="hostname for binding network sockets, "
-                        "defaults to 'localhost'. ")
+                        "defaults to 'localhost'. This option is ignored "
+                        "if '--nodename' is not set.")
+    parser.add_argument("-p", "--port", type=int, default=None,
+                        help="port number for binding network sockets. "
+                        "Default is bind to any random available port. "
+                        "This option is ignored if '--nodename' is not set.")
+    parser.add_argument("-n", "--nodename", default="",
+                        help="mnemonic name for this DistAlgo node process. "
+                        "Default is no name. ")
     parser.add_argument("--cookie", default=None,
                         help="a string for authentication of peers. "
                         "All peer processes participating in message passing "

@@ -44,6 +44,7 @@ from .common import api, deprecated, get_runtime_option, ProcessId
 DISTPY_SUFFIXES = [".da", ""]
 PYTHON_SUFFIX = ".py"
 NODECLS = "Node_"
+DEFAULT_MASTER_PORT = 15000
 
 CONSOLE_LOG_FORMAT = \
     '[%(relativeCreated)d] %(name)s%(daPid)s:%(levelname)s: %(message)s'
@@ -171,20 +172,31 @@ def entrypoint():
     common.sysinit()
 
     # Start main program
-    niters = get_runtime_option('iterations')
     sys.argv = [target] + get_runtime_option('args')
+    nodename = get_runtime_option('nodename')
+    niters = get_runtime_option('iterations')
+    strict = linear = False
+    hostname = None
+    port = None
+    if len(nodename) > 0:
+        linear = True
+        hostname = get_runtime_option('hostname')
+        port = get_runtime_option('port')
+        if port is None:
+            port = DEFAULT_MASTER_PORT
+        else:
+            strict = True
     try:
         trman = endpoint.TransportManager()
-        trman.initialize()
-        log.info("Node initialized at %s:%d.",
-                 get_runtime_option('hostname'), trman.transport_addresses[0])
-        log.info("Starting program %s...", target)
-        nodename = get_runtime_option('nodename')
+        trman.initialize(hostname=hostname, port=port,
+                         strict=strict, linear=linear)
         nid = ProcessId._create(pcls=module.Node_,
                                 transports=trman.transport_addresses,
                                 name=nodename)
         common._set_node(nid)
-        log.debug("Node has id %r", nid)
+        log.info("Node %s initialized at %s:%d.", nid,
+                 get_runtime_option('hostname'), trman.transport_addresses[0])
+        log.info("Starting program %s...", target)
         for i in range(0, niters):
             log.info("Running iteration %d ...", (i+1))
 
@@ -201,6 +213,8 @@ def entrypoint():
             log.info("Main process terminated.")
             del nodeimpl
 
+    except endpoint.TransportException as e:
+        log.error("Transport initialization failed due to: %r", e)
     except KeyboardInterrupt as e:
         log.info("Received keyboard interrupt.")
     except Exception as e:
