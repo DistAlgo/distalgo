@@ -798,15 +798,17 @@ class Router(threading.Thread):
     object to the target process' event queue.
 
     """
-    def __init__(self, endpoint):
+    def __init__(self, transport_manager, bootstrap=False):
         threading.Thread.__init__(self)
         self.log = logging.getLogger(__name__) \
                           .getChild(self.__class__.__qualname__)
         self.daemon = True
-        self.endpoint = endpoint
-        self.incomingq = endpoint.queue
+        self.do_bootstrap = bootstrap
+        self.endpoint = transport_manager
+        self.incomingq = transport_manager.queue
         self.hostname = get_runtime_option('hostname')
-        self.num_waiting = 0
+        self.payload_size = get_runtime_option('message_buffer_size') - \
+                            endpoint.HEADER_SIZE
         self.local_procs = dict()
         self.local = threading.local()
         self.local.buf = None
@@ -845,7 +847,7 @@ class Router(threading.Thread):
         if transport is None:
             raise NoAvailableTransportException()
         if not hasattr(self.local, 'buf') or self.local.buf is None:
-            self.local.buf = bytearray(endpoint.MAX_PAYLOAD_SIZE)
+            self.local.buf = bytearray(self.payload_size)
 
         if flags & ChannelCaps.BROADCAST:
             payload = (src, None, mesg)

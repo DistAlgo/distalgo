@@ -37,9 +37,7 @@ from .common import get_runtime_option, LRU, WaitableQueue
 
 logger = logging.getLogger(__name__)
 
-MAX_MESSAGE_SIZE = 4 * 1024
 HEADER_SIZE = 8
-MAX_PAYLOAD_SIZE = MAX_MESSAGE_SIZE - HEADER_SIZE
 BYTEORDER = 'big'
 MAX_RETRY = 10
 
@@ -220,7 +218,6 @@ class SocketTransport(Transport):
 
 MIN_UDP_PORT = 10000
 MAX_UDP_PORT = 40000
-MAX_UDP_BUFSIZE = 32 * 1024
 
 @transport
 class UdpTransport(SocketTransport):
@@ -253,7 +250,7 @@ class UdpTransport(SocketTransport):
             self.conn.close()
             self.conn = None
             raise NoAvailablePortsException()
-
+        self.buffer_size = get_runtime_option('message_buffer_size')
         self._log.debug("Transport initialized at address: %s", address)
 
     def start(self):
@@ -285,7 +282,7 @@ class UdpTransport(SocketTransport):
             raise InvalidTransportStateException(
                 "Invalid transport state for sending.")
 
-        if len(chunk) > MAX_UDP_BUFSIZE:
+        if len(chunk) > self.buffer_size:
             self._log.warning("Data size exceeded maximum buffer size!"
                               " Outgoing packet dropped.")
             self._log.debug("Dropped packet: %s", chunk)
@@ -319,7 +316,7 @@ class UdpTransport(SocketTransport):
 
         try:
             while True:
-                chunk, _, flags, remote= self.conn.recvmsg(MAX_UDP_BUFSIZE)
+                chunk, _, flags, remote= self.conn.recvmsg(self.buffer_size)
                 if not chunk:
                     # XXX: zero length packet == closed socket??
                     self._log.debug("Transport closed, terminating receive loop.")
@@ -349,9 +346,9 @@ class AuxConnectionData:
     """Auxiliary data associated with each TCP connection.
 
     """
-    def __init__(self, peername):
+    def __init__(self, peername, message_size):
         self.peername = peername
-        self.buf = bytearray(MAX_MESSAGE_SIZE * 2)
+        self.buf = bytearray(message_size * 2)
         self.view = memoryview(self.buf)
         self.lastptr = 0
         self.freeptr = 0
@@ -391,7 +388,7 @@ class TcpTransport(SocketTransport):
             self.conn.close()
             self.conn = None
             raise NoAvailablePortsException()
-
+        self.buffer_size = get_runtime_option('message_buffer_size')
         self._log.debug("Transport initialized at address %s", address)
 
     def start(self):
@@ -434,7 +431,8 @@ class TcpTransport(SocketTransport):
         with self.lock:
             self.cache[addr] = conn
         self.selector.register(conn, selectors.EVENT_READ,
-                               (self._receive_1, AuxConnectionData(addr)))
+                               (self._receive_1,
+                                AuxConnectionData(addr, self.buffer_size)))
 
     def _connect(self, target):
         self._log.debug("Initiating connection to %s.", target)
@@ -509,9 +507,10 @@ class TcpTransport(SocketTransport):
                 if saved != conn:
                     with self.lock:
                         self.cache[target] = conn
-                    self.selector.register(conn, selectors.EVENT_READ,
-                                           (self._receive_1,
-                                            AuxConnectionData(target)))
+                    self.selector.register(
+                        conn, selectors.EVENT_READ,
+                        (self._receive_1,
+                         AuxConnectionData(target, self.buffer_size)))
             else:
                 if target in self.cache:
                     with self.lock:

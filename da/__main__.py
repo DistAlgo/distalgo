@@ -102,8 +102,11 @@ def parseArgs():
                         "must have matching cookies. "
                         "Defaults to the content of '${HOME}/.da.cookie'. ")
     parser.add_argument('--message-buffer-size', type=int, default=(4 * 1024),
-                        help="Size in bytes of send and receive buffers used by "
-                        "transports. Default value is 4096.")
+                        help="size in bytes of the buffers used to serialize "
+                        "messages. The serialized(pickled) size of any DistAlgo "
+                        "message must be smaller than value in order for the "
+                        "system to be able to send it "
+                        "across address space boundaries. Default value is 4KB.")
     parser.add_argument("-r", "--recompile", dest="recompile",
                         help="force recompile DistAlgo source file. ",
                         action="store_true", default=False)
