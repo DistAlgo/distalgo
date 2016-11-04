@@ -696,7 +696,7 @@ class DistProcess():
                     flags=ChannelCaps.RELIABLEFIFO)
 
     def _cmd_End(self, src, args):
-        if src == self.__parent:
+        if src == self.__parent or src == self.__procimpl._nodeid:
             self._log.debug("`End(%r)` command received, terminating..", args)
             self.exit(args)
         else:
@@ -791,6 +791,8 @@ class DistProcess():
 class RoutingException(Exception): pass
 class NoAvailableTransportException(RoutingException): pass
 class MessageTooBigException(RoutingException): pass
+class InvalidRouterStateException(RoutingException): pass
+
 class Router(threading.Thread):
     """The router thread.
 
@@ -803,6 +805,7 @@ class Router(threading.Thread):
         self.log = logging.getLogger(__name__) \
                           .getChild(self.__class__.__qualname__)
         self.daemon = True
+        self.running = False
         self.do_bootstrap = bootstrap
         self.endpoint = transport_manager
         self.incomingq = transport_manager.queue
@@ -812,25 +815,43 @@ class Router(threading.Thread):
         self.local_procs = dict()
         self.local = threading.local()
         self.local.buf = None
+        self.lock = threading.Lock()
 
     def register_local_process(self, pid):
-        if pid in self.local_procs:
-            self.log.warning("Registering duplicate process: %s.", pid)
-        self.local_procs[pid] = common.WaitableQueue()
-        self.log.debug("Process %s registered.", pid)
+        if self.running:
+            with self.lock:
+                if pid in self.local_procs:
+                    self.log.warning("Registering duplicate process: %s.", pid)
+                self.local_procs[pid] = common.WaitableQueue()
+            self.log.debug("Process %s registered.", pid)
+        else:
+            raise InvalidRouterStateException("Router not running.")
 
     def deregister_local_process(self, pid):
-        if pid in self.local_procs:
-            del self.local_procs[pid]
+        if self.running:
+            with self.lock:
+                if pid in self.local_procs:
+                    del self.local_procs[pid]
+
+    def terminate_local_processes(self):
+        with self.lock:
+            for mq in self.local_procs.values():
+                mq.append((common.pid_of_node(), (Command.End, 1)))
 
     def get_queue_for_process(self, pid):
         return self.local_procs.get(pid, None)
 
     def run(self):
         try:
+            self.running = True
             self.mesgloop()
-        except KeyboardInterrupt:
-            self.log.debug("Received KeyboardInterrupt, stopping.")
+        except Exception as e:
+            self.log.debug("Unhandled exception: %r.", e)
+        self.terminate_local_processes()
+
+    def stop(self):
+        self.running = False
+        self.terminate_local_processes()
 
     def send(self, src, dest, mesg, params=dict(), flags=0):
         return self._dispatch(src, dest, mesg, params, flags)
@@ -873,7 +894,11 @@ class Router(threading.Thread):
                 # Only needs to copy if message is from local to local:
                 if src in self.local_procs:
                     payload = copy.deepcopy(payload)
-                self.local_procs[dest].append((src, payload))
+                queue = self.local_procs.get(dest, None)
+                # This extra test is needed in case the destination process
+                # terminated and de-registered itself:
+                if queue is not None:
+                    queue.append((src, payload))
                 return True
             except Exception as e:
                 self.log.warning("Failed to deliver to local process %s: %r",
@@ -888,13 +913,13 @@ class Router(threading.Thread):
                 return False
 
     def mesgloop(self):
-        while True:
+        while self.running:
             try:
                 transport, chunk, remote = self.incomingq.pop(block=True)
                 src, dest, mesg = pickle.loads(chunk)
                 chunk = None
                 self._dispatch(src, dest, mesg)
-            except ValueError as e:
+            except (ValueError, pickle.UnpicklingError) as e:
                 self.log.warning("Dropped invalid message: %r", chunk)
 
 class ProcessContainer:
@@ -922,9 +947,15 @@ class ProcessContainer:
         self.endpoint = transport_manager
 
     def start_router(self):
-        self.endpoint.start()
-        self.router = Router(self.endpoint)
-        self.router.start()
+        if self.router is None:
+            self.endpoint.start()
+            self.router = Router(self.endpoint, bootstrap=self.is_node())
+            self.router.start()
+
+    def end(self):
+        if self.router is not None:
+            self.router.stop()
+            self.endpoint.close()
 
     def is_node(self):
         return self.dapid == common.pid_of_node()
@@ -1010,10 +1041,6 @@ class ProcessContainer:
                                     ChannelCaps.BROADCAST))
         return children
 
-    def __str__(self):
-        return "{0}<{1}>".format(self.__class__.__qualname__, str(self.pid))
-
-
 class OSProcessContainer(ProcessContainer, multiprocessing.Process):
     """An implementation of processes using OS process.
 
@@ -1061,9 +1088,12 @@ class OSProcessContainer(ProcessContainer, multiprocessing.Process):
         except DistProcessExit as e:
             self._log.debug("Caught %r, exiting gracefully.", e)
             return e.exit_code
+        except RoutingException as e:
+            self._log.debug("Caught %r.", e)
+            return 2
         except KeyboardInterrupt as e:
             self._log.debug("Received KeyboardInterrupt, exiting")
-            return 2
+            return 1
         except Exception as e:
             sys.stderr.write("Unexpected error at process %s:%r"% (str(self), e))
             traceback.print_tb(e.__traceback__)
@@ -1084,8 +1114,7 @@ class OSThreadContainer(ProcessContainer, threading.Thread):
         if len(self.name) == 0:
             self.name = str(self.pid)
         try:
-            if self.router is None:
-                self.start_router()
+            self.start_router()
             self.router.register_local_process(self.dapid)
             self._daobj = self._dacls(self, self._properties)
             self._log.debug("Process object initialized.")
@@ -1098,13 +1127,16 @@ class OSThreadContainer(ProcessContainer, threading.Thread):
         except DistProcessExit as e:
             self._log.debug("Caught %r, exiting gracefully.", e)
             return e.exit_code
+        except RoutingException as e:
+            self._log.debug("Caught %r.", e)
+            return 2
         except KeyboardInterrupt as e:
             self._log.debug("Received KeyboardInterrupt, exiting")
-            return 2
+            return 1
         except Exception as e:
             sys.stderr.write("Unexpected error at process %s:%r"% (str(self), e))
             traceback.print_tb(e.__traceback__)
-            return 3
+            return 5
         finally:
             if self.router is not None:
                 self.router.deregister_local_process(self.dapid)

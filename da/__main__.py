@@ -150,7 +150,7 @@ def libmain():
     """
     args = parseArgs()
     initialize_runtime_options(args.__dict__)
-    entrypoint()
+    return entrypoint()
 
 def die(mesg = None):
     if mesg != None:
@@ -158,4 +158,4 @@ def die(mesg = None):
     sys.exit(1)
 
 if __name__ == '__main__':
-    libmain()
+    sys.exit(libmain())

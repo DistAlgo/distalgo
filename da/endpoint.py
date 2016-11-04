@@ -250,6 +250,20 @@ class SocketTransport(Transport):
                         "Failed to bind to an available port.") from e
         self._log.debug("Transport initialized at address %s", address)
 
+    def close(self):
+        if self.conn is None:
+            self._log.warning("Already stopped.")
+        else:
+            try:
+                self.conn.close()
+            except OSError:
+                pass
+            finally:
+                self.conn = None
+        # No need to care about the worker thread since it's a daemon:
+        self.worker = None
+        self._log.debug("Transport stopped.")
+
     @property
     def address(self):
         return self.port
@@ -294,19 +308,7 @@ class UdpTransport(SocketTransport):
         self._log.debug("Transport started.")
 
     def close(self):
-        if self.conn is None:
-            self._log.warning("Already stopped.")
-        else:
-            try:
-                self.conn.close()
-            except OSError:
-                pass
-            finally:
-                self.conn = None
-        if self.worker is not None:
-            self.worker.join()
-            self.worker = None
-        self._log.debug("Transport stopped.")
+        super().close()
 
     def send(self, chunk, dest, wait=0.01, retries=MAX_RETRY, **rest):
         if self.conn is None:
@@ -427,18 +429,8 @@ class TcpTransport(SocketTransport):
     def close(self):
         if self.selector is not None:
             self.selector.close()
-        if self.conn is not None:
-            try:
-                self.conn.close()
-            except OSError:
-                pass
-            finally:
-                self.conn = None
-        if self.worker is not None:
-            self.worker.join()
-            self.worker = None
+        super().close()
         self.cache = None
-        self._log.debug("Transport stopped.")
 
     def _accept(self, conn, auxdata):
         conn, addr = self.conn.accept()
@@ -546,22 +538,24 @@ class TcpTransport(SocketTransport):
         if self.conn is None:
             raise InvalidTransportStateException(
                 "Invalid transport state for receiving.")
-
-        while True:
-            events = self.selector.select()
-            for key, mask in events:
-                callback, aux = key.data
-                try:
-                    callback(key.fileobj, aux)
-                except socket.error as e:
-                    if key.fileobj is self.conn:
-                        self._log.error("socket.error on listener: %r", e)
-                        break
-                    else:
-                        self._log.debug(
-                            "socket.error when receiving from %s: %r",
-                            aux.peername, e)
-                        self._cleanup(key.fileobj, aux.peername)
+        try:
+            while True:
+                events = self.selector.select()
+                for key, mask in events:
+                    callback, aux = key.data
+                    try:
+                        callback(key.fileobj, aux)
+                    except socket.error as e:
+                        if key.fileobj is self.conn:
+                            self._log.error("socket.error on listener: %r", e)
+                            break
+                        else:
+                            self._log.debug(
+                                "socket.error when receiving from %s: %r",
+                                aux.peername, e)
+                            self._cleanup(key.fileobj, aux.peername)
+        except Exception as e:
+            self._log.debug("(recvmesgs): caught exception %r", e)
 
     def _receive_1(self, conn, aux):
         buf = aux.buf

@@ -38,6 +38,7 @@ import traceback
 import multiprocessing
 import os.path
 
+from sys import stderr
 from . import common, sim, endpoint
 from .common import api, deprecated, get_runtime_option, ProcessId
 
@@ -45,6 +46,7 @@ DISTPY_SUFFIXES = [".da", ""]
 PYTHON_SUFFIX = ".py"
 NODECLS = "Node_"
 DEFAULT_MASTER_PORT = 15000
+ASYNC_TIMEOUT = 10
 
 CONSOLE_LOG_FORMAT = \
     '[%(relativeCreated)d] %(name)s%(daPid)s:%(levelname)s: %(message)s'
@@ -178,6 +180,7 @@ def entrypoint():
     strict = linear = False
     hostname = None
     port = None
+    nodeimpl = None
     if len(nodename) > 0:
         linear = True
         hostname = get_runtime_option('hostname')
@@ -210,17 +213,36 @@ def entrypoint():
             log.info("Waiting for remaining child processes to terminate..."
                      "(Press \"Ctrl-C\" to force kill)")
             nodeimpl.join()
+            nodeimpl = None
             log.info("Main process terminated.")
-            del nodeimpl
+        return 0
 
     except endpoint.TransportException as e:
         log.error("Transport initialization failed due to: %r", e)
+        stderr.write("System failed to start. \n")
+        return 5
     except KeyboardInterrupt as e:
-        log.info("Received keyboard interrupt.")
+        log.warning("Received keyboard interrupt. ")
+        if nodeimpl is not None:
+            stderr.write("Terminating node.")
+            nodeimpl.end()
+            t = 0
+            while nodeimpl.is_alive() and t < ASYNC_TIMEOUT:
+                stderr.write(".")
+                t += 1
+                nodeimpl.join(timeout=1)
+        if nodeimpl is not None and nodeimpl.is_alive():
+            stderr.write("\nNode did not terminate gracefully, "
+                         "some zombie child processes may be present.\n")
+            return 2
+        else:
+            stderr.write("\nNode terminated. Goodbye!\n")
+            return 1
     except Exception as e:
         err_info = sys.exc_info()
         log.error("Caught unexpected global exception: %r", e)
         traceback.print_tb(err_info[2])
+        return 4
 
 @api
 def nameof(pid):
@@ -229,5 +251,5 @@ def nameof(pid):
 
 def die(mesg = None):
     if mesg != None:
-        sys.stderr.write(mesg + "\n")
+        stderr.write(mesg + "\n")
     sys.exit(1)
