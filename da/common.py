@@ -63,6 +63,7 @@ log = logging.getLogger(__name__)
 
 api_registry = dict()
 builtin_registry = dict()
+internal_registry = dict()
 
 class InvalidStateException(RuntimeError): pass
 
@@ -256,7 +257,7 @@ class ProcessId(namedtuple("_ProcessId",
         hh = int(hash(hostname)) & 0xffff
         # 16 bits of os pid
         pid %= 0xffff
-        # 10 bit thread-local counter
+        # 10 bit global counter
         with ProcessId._lock:
             cnt = ProcessId._pid_counter = (ProcessId._pid_counter + 1) % 1024
         return (tstamp << 42) | (hh << 26) | (pid << 10) | cnt
@@ -324,6 +325,9 @@ class ProcessId(namedtuple("_ProcessId",
         return fmt.format(self)
 
     __str__ = __repr__ = _short_form_
+
+    def __copy__(self):
+        return self
 
     def __deepcopy__(self, memo):
         return self
@@ -394,19 +398,29 @@ def api(func):
     return _func_impl
 
 def builtin(func):
-    """Declare 'func' as DistPy builtin.
+    """Declare `func` as DistAlgo builtin.
 
     Builtins are instance methods of da.DistProcess, and must be called with
     the process instance as first argument (self).
 
     """
-    global builtin_registry
     funame = func.__name__
     if builtin_registry.get(funame) is not None:
         return builtin_registry[funame]
     else:
         builtin_registry[funame] = func
         return func
+
+def internal(func):
+    """Declare `func` as `DistProcess` internal implementation.
+
+    This gives the compiler a hint to prevent user code from unintentionally
+    overriding an internal function.
+
+    """
+    funame = func.__name__
+    internal_registry[funame] = func
+    return func
 
 class Namespace(object):
     pass

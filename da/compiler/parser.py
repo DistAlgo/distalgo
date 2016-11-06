@@ -22,11 +22,13 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-import builtins
 import sys
-from ast import *
+import builtins
 
-from da import common, api
+from ast import *
+from collections import abc
+
+from da import common
 from da.compiler import dast
 from da.compiler.utils import printe, printw, printd, Namespace
 
@@ -191,9 +193,9 @@ KnownUpdateMethods = {
 }
 
 ValidResetTypes = {"Received", "Sent", ""}
-ApiMethods = set(common.api_registry.keys())
-ApiMethods.add('import_da')     # 'import_da' is a special method
-BuiltinMethods = set(common.builtin_registry.keys())
+ApiMethods = frozenset(common.api_registry.keys())
+BuiltinMethods = frozenset(common.builtin_registry.keys())
+InternalMethods = frozenset(common.internal_registry.keys())
 PythonBuiltins = dir(builtins)
 NodeProcName = "Node_"
 
@@ -884,6 +886,11 @@ class Parser(NodeVisitor):
         if (self.current_process is None or
                 node.name not in {KW_SENT_EVENT, KW_RECV_EVENT}):
             # This is a normal method
+            if self.current_parent is self.current_process:
+                # Check for name conflict with internal methods:
+                if node.name in InternalMethods:
+                    self.error("Function name %r conflicts with DistAlgo "
+                               "internals." % node.name, node)
             n = self.current_scope.add_name(node.name)
             s = self.create_stmt(dast.Function, node,
                                  params={"name" : node.name})
@@ -1041,7 +1048,8 @@ class Parser(NodeVisitor):
                    keywords={}, optional_keywords={}):
         if not (isinstance(node, Call) and
                 isinstance(node.func, Name) and
-                (((isinstance(names, set) or isinstance(names, dict)) and
+                (((isinstance(names, abc.Set) or
+                   isinstance(names, abc.Mapping)) and
                   node.func.id in names) or
                  node.func.id == names)):
             return False
