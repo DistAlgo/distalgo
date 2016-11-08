@@ -303,8 +303,9 @@ class UdpTransport(SocketTransport):
             raise InvalidTransportStateException(
                 "Transport has not been initialized!")
 
-        self.worker = threading.Thread(target=self.recvmesgs, daemon=True)
-        self.worker.start()
+        if self.worker is None or not self.worker.is_alive():
+            self.worker = threading.Thread(target=self.recvmesgs, daemon=True)
+            self.worker.start()
         self._log.debug("Transport started.")
 
     def close(self):
@@ -362,10 +363,12 @@ class UdpTransport(SocketTransport):
                     self.queue.append((self.__class__.slot_index, chunk, remote))
         except socket.error as e:
             self._log.warning("socket.error occured, terminating receive loop.")
+        except AttributeError as e:
+            self._log.debug("Terminating receive loop due to %r", e)
 
     @property
     def started(self):
-        return self.worker is not None
+        return self.conn is not None
 
 
 # TCP Implementation:
@@ -422,8 +425,9 @@ class TcpTransport(SocketTransport):
         self.selector = selectors.DefaultSelector()
         self.selector.register(self.conn, selectors.EVENT_READ,
                                (self._accept, None))
-        self.worker = threading.Thread(target=self.recvmesgs, daemon=True)
-        self.worker.start()
+        if self.worker is None or not self.worker.is_alive():
+            self.worker = threading.Thread(target=self.recvmesgs, daemon=True)
+            self.worker.start()
         self._log.debug("Transport started.")
 
     def close(self):
