@@ -26,10 +26,11 @@ import sys
 import logging
 import argparse
 
-__version__ = "1.0.0rc1"
+from . import common
+from .common import initialize_runtime_options
+from .api import entrypoint, DEFAULT_MASTER_PORT
 
-from da.common import initialize_runtime_options
-from da.api import entrypoint, DEFAULT_MASTER_PORT
+__version__ = common.__version__
 
 if hasattr(sys, '_real_argv'):
     sys.argv[0] = sys._real_argv

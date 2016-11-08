@@ -37,6 +37,13 @@ from collections import abc, deque, namedtuple
 from inspect import signature, Parameter
 from functools import wraps
 
+MAJOR_VERSION = 1
+MINOR_VERSION = 0
+PATCH_VERSION = 0
+PRERELEASE_VERSION = "rc1"
+__version__ = "{}.{}.{}-{}".format(MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION,
+                                   PRERELEASE_VERSION)
+
 INCOQ_MODULE_NAME = "incoq.mars.runtime"
 CONSOLE_LOG_FORMAT = \
     '[%(relativeCreated)d] %(name)s<%(processName)s>:%(levelname)s: %(message)s'
@@ -81,6 +88,14 @@ def set_runtime_option(key, value):
         raise InvalidStateException("DistAlgo is not initialized.")
 
     GlobalOptions[key] = value
+
+def _version_as_bytes():
+    """Return a 4-byte representation of the version.
+    """
+    prerelease = sum(ord(c) for c in PRERELEASE_VERSION) % 256
+    return (((MAJOR_VERSION & 0xff) << 24) | ((MINOR_VERSION & 0xff) << 16) |
+            ((PATCH_VERSION & 0xff) << 8) | prerelease).to_bytes(4, 'big')
+VERSION_BYTES = _version_as_bytes()
 
 def initialize_runtime_options(configs):
     global GlobalOptions

@@ -28,13 +28,12 @@ import time
 import argparse
 
 import da
-from da.tools.unparse import Unparser
 
 from da.compiler.parser import Parser, daast_from_file
 from da.compiler.pygen import PythonGenerator
 from da.compiler.pseudo import DastUnparser
 from da.compiler.incgen import gen_inc_module
-from da.compiler.utils import is_valid_debug_level, set_debug_level, to_source
+from da.compiler.utils import is_valid_debug_level, set_debug_level, to_source, to_file
 
 # DistAlgo filename suffix
 DA_SUFFIX = "da"
@@ -171,7 +170,7 @@ def dafile_to_pyfile(args):
             outname = purename + ".py"
         with open(outname, "w") as outfd:
             global OutputSize
-            OutputSize += Unparser(pyast, outfd).counter
+            OutputSize += to_file(pyast, outfd)
             stderr.write("Written compiled file %s.\n"% outname)
         return 0
     else:
@@ -222,10 +221,10 @@ def dafile_to_incfiles(args):
         global OutputSize
         inc, ast = gen_inc_module(daast, args, filename=incname)
         with open(outname, "w") as outfd:
-            OutputSize += Unparser(ast, outfd).counter
+            OutputSize += to_file(ast, outfd)
             stderr.write("Written compiled file %s.\n"% outname)
         with open(incname, "w") as outfd:
-            OutputSize += Unparser(inc, outfd).counter
+            OutputSize += to_file(inc, outfd)
             stderr.write("Written interface file %s.\n" % incname)
         return 0
     else:
