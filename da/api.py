@@ -46,7 +46,8 @@ DISTPY_SUFFIXES = [".da", ""]
 PYTHON_SUFFIX = ".py"
 NODECLS = "Node_"
 DEFAULT_MASTER_PORT = 15000
-ASYNC_TIMEOUT = 10
+ASYNC_TIMEOUT = 5
+PORT_RANGE = 10
 
 CONSOLE_LOG_FORMAT = \
     '[%(relativeCreated)d] %(name)s%(daPid)s:%(levelname)s: %(message)s'
@@ -140,8 +141,61 @@ def import_da(name, from_dir=None, compiler_args=[]):
     common.setup_logging_for_module(name, CONSOLE_LOG_FORMAT, FILE_LOG_FORMAT)
     return moduleobj
 
+def _parse_address(straddr):
+    assert isinstance(straddr, str)
+    components = straddr.split(':')
+    if len(components) > 2:
+        raise ValueError("Invalid address: {}".format(straddr))
+    elif len(components) == 0:
+        return "", None
+    elif len(components) == 1:
+        return components[0], None
+    else:
+        try:
+            return components[0], int(components[1])
+        except ValueError as e:
+            raise ValueError("Invalid port number: {}".format(components[1]))
+
+def _bootstrap_node(cls, nodename, trman):
+    router = None
+    is_master = True
+    hostname = get_runtime_option('hostname')
+    port = get_runtime_option('port')
+    rhost, rport = _parse_address(get_runtime_option('peer'))
+    if len(rhost) > 0:
+        is_master = False
+    if port is None:
+        port = DEFAULT_MASTER_PORT
+        strict = False
+        if is_master:
+            try:
+                trman.initialize(hostname=hostname, port=port, strict=True)
+            except endpoint.TransportException as e:
+                log.debug("Binding attempt to %d failed: %r", port, e)
+                trman.close()
+                is_master = False
+    else:
+        strict = True
+    if not trman.initialized:
+        trman.initialize(hostname=hostname, port=port, strict=strict)
+    nid = ProcessId._create(pcls=cls,
+                            transports=trman.transport_addresses,
+                            name=nodename)
+    common._set_node(nid)
+    if not is_master:
+        if rhost is None:
+            rhost = hostname
+        if rport is None:
+            rport = DEFAULT_MASTER_PORT
+        trman.start()
+        router = sim.Router(trman)
+        router.bootstrap_node(rhost, range(rport, rport+1),
+                              timeout=ASYNC_TIMEOUT)
+        router.start()
+    return router
+
 def entrypoint():
-    """Entry point when running DistAlgo as the main module.
+    """Entry point for running DistAlgo as the main module.
 
     """
     startmeth = get_runtime_option('start_method')
@@ -177,28 +231,22 @@ def entrypoint():
     sys.argv = [target] + get_runtime_option('args')
     nodename = get_runtime_option('nodename')
     niters = get_runtime_option('iterations')
-    strict = linear = False
-    hostname = None
-    port = None
     nodeimpl = None
-    if len(nodename) > 0:
-        linear = True
-        hostname = get_runtime_option('hostname')
-        port = get_runtime_option('port')
-        if port is None:
-            port = DEFAULT_MASTER_PORT
-        else:
-            strict = True
+    router = None
     try:
         trman = endpoint.TransportManager()
-        trman.initialize(hostname=hostname, port=port,
-                         strict=strict, linear=linear)
-        nid = ProcessId._create(pcls=module.Node_,
-                                transports=trman.transport_addresses,
-                                name=nodename)
-        common._set_node(nid)
-        log.info("Node %s initialized at %s:%d.", nid,
-                 get_runtime_option('hostname'), trman.transport_addresses[0])
+        if len(nodename) > 0:
+            router = _bootstrap_node(module.Node_, nodename, trman)
+            nid = common.pid_of_node()
+        else:
+            trman.initialize()
+            nid = ProcessId._create(pcls=module.Node_,
+                                    transports=trman.transport_addresses,
+                                    name=nodename)
+            common._set_node(nid)
+
+        log.info("%s initialized at %s:(%s).", nid,
+                 get_runtime_option('hostname'), trman.transport_addresses_str)
         log.info("Starting program %s...", target)
         for i in range(0, niters):
             log.info("Running iteration %d ...", (i+1))
@@ -207,9 +255,9 @@ def entrypoint():
                                              transport_manager=trman,
                                              process_id=nid,
                                              parent_id=nid,
-                                             process_name=nodename)
+                                             process_name=nodename,
+                                             router=router)
             nodeimpl.start()
-
             log.info("Waiting for remaining child processes to terminate..."
                      "(Press \"Ctrl-C\" to force kill)")
             nodeimpl.join()
@@ -217,14 +265,14 @@ def entrypoint():
             log.info("Main process terminated.")
         return 0
 
-    except endpoint.TransportException as e:
+    except (endpoint.TransportException, sim.RoutingException) as e:
         log.error("Transport initialization failed due to: %r", e)
         stderr.write("System failed to start. \n")
         return 5
     except KeyboardInterrupt as e:
         log.warning("Received keyboard interrupt. ")
         if nodeimpl is not None:
-            stderr.write("Terminating node.")
+            stderr.write("Terminating node...")
             nodeimpl.end()
             t = 0
             while nodeimpl.is_alive() and t < ASYNC_TIMEOUT:

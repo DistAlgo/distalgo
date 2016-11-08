@@ -39,7 +39,7 @@ import collections
 import multiprocessing
 
 from . import common, pattern, endpoint
-from .common import builtin, ProcessId, get_runtime_option
+from .common import builtin, internal, ProcessId, get_runtime_option
 from .endpoint import ChannelCaps
 
 logger = logging.getLogger(__name__)
@@ -59,12 +59,16 @@ class Command(enum.Enum):
     End        = 5
     New        = 6
     Resolve    = 7
+    NodeJoin   = 8
+    NodeLeave  = 9
     StartAck   = 11
     SetupAck   = 12
     ConfigAck  = 13
     EndAck     = 15
     NewAck     = 16
     ResolveAck = 17
+    NodeAck    = 18
+    NodePing   = 19
     Message    = 20
     RPC        = 30
     RPCReply   = 31
@@ -75,22 +79,18 @@ _config_object = dict()
 class DistProcess():
     """Abstract base class for DistAlgo processes.
 
-    Each instance of this class enbodies the runtime activities of a DistAlgo
-    process in a distributed system. Each process is uniquely identified by a
-    two-ary tuple (address, port), where 'address' is the name or IP of the
-    host machine and 'port' is an integer corresponding to the port number on
-    which this process listens for incoming messages from other DistAlgo
-    processes. Messages exchanged between DistAlgo processes are instances of
-    `DistMessage`.
+    Each instance of this class enbodies the runtime state and activities of a
+    DistAlgo process in a distributed system. Each process is uniquely
+    identified by a `ProcessId` object. Messages exchanged between DistAlgo
+    processes can be any picklable Python object.
 
-    DistAlgo processes can spawn more processes by calling `new`. Any
-    DistProcess can send messages to any other DistProcess, given that it knows
-    the unique id of the target process. However, the terminal is shared between
-    all processes spawned from that terminal. This includes the stdout, stdin,
-    and stderr streams. In addition, each DistProcess also maintains a TCP
-    connection to the master control node (the first node started in a
-    distributed system) where DistAlgo commands are passed (see
-    `distalgo.runtime.proto`).
+    DistAlgo processes can spawn more processes by calling `new`. The process
+    that called `new` is known as the parent process of the newly spawned
+    processes. Any DistProcess can send messages to any other DistProcess, given
+    that it knows the `ProcessId` of the target process. However, only the
+    parent process can `end` a child process. The terminal is shared between all
+    processes spawned from that terminal, which includes the stdout, stdin, and
+    stderr streams.
 
     Concrete subclasses of `DistProcess` must define the methods:
 
@@ -105,7 +105,7 @@ class DistProcess():
     """
     def __init__(self, procimpl, props):
         self.__procimpl = procimpl
-        self._id = procimpl.dapid
+        self.__id = procimpl.dapid
         self._log = logging.LoggerAdapter(
             logging.getLogger(self.__class__.__module__)
             .getChild(self.__class__.__qualname__), {'daPid' : self._id})
@@ -122,7 +122,7 @@ class DistProcess():
         self.__setup_called = False
         self.__running = False
         self.__parent = procimpl.daparent
-        self.__init_dispatch_table()
+        self._init_dispatch_table()
         self.__init_config()
 
         self._state = common.Namespace()
@@ -144,14 +144,20 @@ class DistProcess():
         """
         pass
 
+    @property
+    @internal
+    def _id(self):
+        return self.__id
+
+    @internal
     def _delayed_start(self):
         assert self.__messageq is not None
         self._log.debug("Delayed start.")
         if self.__newcmd_seqno is not None:
-            self.__send(msgtype=Command.NewAck,
+            self._send1(msgtype=Command.NewAck,
                         message=(self.__newcmd_seqno, None),
                         to=self.__parent, flags=ChannelCaps.RELIABLEFIFO)
-        self.__wait_for(lambda: self.__running)
+        self._wait_for(lambda: self.__running)
         return self.run()
 
     def __init_config(self):
@@ -166,22 +172,18 @@ class DistProcess():
         else:
             self._logical_clock = None
 
-    def __init_dispatch_table(self):
+    AckCommands = [Command.NewAck, Command.EndAck, Command.StartAck,
+                   Command.SetupAck, Command.ResolveAck, Command.RPCReply]
+    @internal
+    def _init_dispatch_table(self):
         self.__command_dispatch_table = [None] * Command.Sentinel.value
         self.__async_events = [None] * Command.Sentinel.value
 
-        self._cmd_NewAck = functools.partial(self.__cmd_handle_Ack,
-                                             cmdtype=Command.NewAck.value)
-        self._cmd_EndAck = functools.partial(self.__cmd_handle_Ack,
-                                             cmdtype=Command.EndAck.value)
-        self._cmd_StartAck = functools.partial(self.__cmd_handle_Ack,
-                                               cmdtype=Command.StartAck.value)
-        self._cmd_SetupAck = functools.partial(self.__cmd_handle_Ack,
-                                               cmdtype=Command.SetupAck.value)
-        self._cmd_ResolveAck = functools.partial(self.__cmd_handle_Ack,
-                                                 cmdtype=Command.ResolveAck.value)
-        self._cmd_RPCReply = functools.partial(self.__cmd_handle_Ack,
-                                               cmdtype=Command.RPCReply.value)
+        for ack in self.__class__.AckCommands:
+            handlername = '_cmd_' + ack.name
+            setattr(self, handlername,
+                    functools.partial(self.__cmd_handle_Ack,
+                                      cmdtype=ack.value))
 
         for cmdname in Command.__members__:
             handlername = '_cmd_' + cmdname
@@ -242,23 +244,23 @@ class DistProcess():
             method = get_runtime_option('default_proc_impl')
 
         self._log.debug("Creating instances of %s using '%s'", pcls, method)
-        seqno = self.__create_cmd_seqno()
-        self.__register_async_event(Command.NewAck, seqno)
+        seqno = self._create_cmd_seqno()
+        self._register_async_event(Command.NewAck, seqno)
         if at is not None and at != self._id:
-            self.__register_async_event(Command.RPCReply, seqno)
-            if self.__send(Command.New,
+            self._register_async_event(Command.RPCReply, seqno)
+            if self._send1(Command.New,
                            message=(pcls, iterator, method, seqno, props),
                            to=at,
                            flags=ChannelCaps.RELIABLEFIFO):
-                res = self.__sync_async_event(Command.RPCReply, seqno, at)
+                res = self._sync_async_event(Command.RPCReply, seqno, at)
                 children = res[at]
             else:
-                self.__deregister_async_event(Command.RPCReply, seqno)
+                self._deregister_async_event(Command.RPCReply, seqno)
                 children = []
         else:
             children = self.__procimpl.spawn(pcls, iterator, self._id, props,
                                              seqno, container=method)
-        self.__sync_async_event(Command.NewAck, seqno, children)
+        self._sync_async_event(Command.NewAck, seqno, children)
         self._log.debug("%d instances of %s created.", len(children), pcls)
 
         if args is not None:
@@ -276,40 +278,42 @@ class DistProcess():
         else:
             return set(children)
 
+    @internal
     def _setup(self, procs, args, seqno=None):
         res = True
         if seqno is None:
-            seqno = self.__create_cmd_seqno()
-        self.__register_async_event(msgtype=Command.SetupAck, seqno=seqno)
-        if self.__send(msgtype=Command.Setup,
+            seqno = self._create_cmd_seqno()
+        self._register_async_event(msgtype=Command.SetupAck, seqno=seqno)
+        if self._send1(msgtype=Command.Setup,
                        message=(seqno, args),
                        to=procs,
                        flags=ChannelCaps.RELIABLEFIFO,
                        retry_refused_connections=True):
-            self.__sync_async_event(msgtype=Command.SetupAck,
+            self._sync_async_event(msgtype=Command.SetupAck,
                                     seqno=seqno,
                                     srcs=procs)
         else:
             res = False
-            self.__deregister_async_event(msgtype=Command.SetupAck,
+            self._deregister_async_event(msgtype=Command.SetupAck,
                                           seqno=seqno)
         return res
 
+    @internal
     def _start(self, procs, args=None):
         res = True
-        seqno = self.__create_cmd_seqno()
+        seqno = self._create_cmd_seqno()
         if args is not None:
             if not self._setup(procs, args, seqno=seqno):
                 return False
-        self.__register_async_event(msgtype=Command.StartAck, seqno=seqno)
-        if self.__send(msgtype=Command.Start, message=seqno, to=procs,
+        self._register_async_event(msgtype=Command.StartAck, seqno=seqno)
+        if self._send1(msgtype=Command.Start, message=seqno, to=procs,
                        flags=ChannelCaps.RELIABLEFIFO):
-            self.__sync_async_event(msgtype=Command.StartAck,
+            self._sync_async_event(msgtype=Command.StartAck,
                                     seqno=seqno,
                                     srcs=procs)
         else:
             res = False
-            self.__deregister_async_event(msgtype=Command.StartAck,
+            self._deregister_async_event(msgtype=Command.StartAck,
                                           seqno=seqno)
         return res
 
@@ -389,7 +393,7 @@ class DistProcess():
     @builtin
     def end(self, target, exit_code=1):
         """Terminate child processes."""
-        self.__send(Command.End, exit_code, to=target,
+        self._send1(Command.End, exit_code, to=target,
                     flags=ChannelCaps.RELIABLEFIFO)
 
     @builtin
@@ -416,7 +420,7 @@ class DistProcess():
         flags = None
         if channel is not None:
             flags = self.__get_channel_flags(channel)
-        res = self.__send(msgtype=Command.Message,
+        res = self._send1(msgtype=Command.Message,
                           message=(self._logical_clock, message),
                           to=to,
                           flags=flags)
@@ -426,8 +430,8 @@ class DistProcess():
 
     @builtin
     def hanged(self):
-        self.__register_async_event(Command.EndAck, seqno=0)
-        self.__sync_async_event(Command.EndAck, seqno=0, srcs=self._id)
+        self._register_async_event(Command.EndAck, seqno=0)
+        self._sync_async_event(Command.EndAck, seqno=0, srcs=self._id)
 
     @builtin
     def resolve(self, name):
@@ -435,26 +439,29 @@ class DistProcess():
             return None
         elif isinstance(name, ProcessId):
             return name
-        seqno = self.__create_cmd_seqno()
-        self.__register_async_event(Command.ResolveAck, seqno)
+        seqno = self._create_cmd_seqno()
+        self._register_async_event(Command.ResolveAck, seqno)
         dest = ProcessId.lookup_or_register_callback(
-            name, functools.partial(self.__resolve_callback,
+            name, functools.partial(self._resolve_callback,
                                     src=self._id, seqno=seqno))
         if dest is None:
+            self._log.info("Waiting to resolve name %r...", name)
             if not self.__procimpl.is_node():
-                self.__send(Command.Resolve, message=(name, seqno),
+                self._send1(Command.Resolve, message=(name, seqno),
                             to=self.__procimpl._nodeid,
                             flags=ChannelCaps.RELIABLEFIFO)
-            res = self.__sync_async_event(Command.ResolveAck, seqno, self._id)
+            res = self._sync_async_event(Command.ResolveAck, seqno, self._id)
             dest = res[self._id]
         else:
-            self.__deregister_async_event(Command.ResolveAck, seqno)
+            self._deregister_async_event(Command.ResolveAck, seqno)
         return dest
 
-    def __resolve_callback(self, pid, src, seqno):
-        self.__send(Command.ResolveAck, message=(seqno, pid), to=src)
+    @internal
+    def _resolve_callback(self, pid, src, seqno):
+        self._send1(Command.ResolveAck, message=(seqno, pid), to=src)
 
-    def __send(self, msgtype, message, to, flags=None, **params):
+    @internal
+    def _send1(self, msgtype, message, to, flags=None, **params):
         """Internal send.
 
         Pack the message and forward to router.
@@ -481,14 +488,17 @@ class DistProcess():
                 res = False
         return res
 
+    @internal
     def _timer_start(self):
         self.__local.timer = time.time()
         self.__local.timer_expired = False
 
+    @internal
     def _timer_end(self):
         self.__local.timer = None
 
     @property
+    @internal
     def _timer_expired(self):
         return self.__local.timer_expired
 
@@ -499,6 +509,7 @@ class DistProcess():
             return True
         return False
 
+    @internal
     def _label(self, name, block=False, timeout=None):
         """This simulates the controlled "label" mechanism.
 
@@ -588,18 +599,22 @@ class DistProcess():
                 leftovers.append((handler, args))
         self.__jobq.extend(leftovers)
 
-    def __create_cmd_seqno(self):
+    @internal
+    def _create_cmd_seqno(self):
         cnt = self.__local.seqcnt = (self.__local.seqcnt + 1) % 1024
         return (threading.current_thread().ident << 10) | cnt
 
-    def __register_async_event(self, msgtype, seqno):
+    @internal
+    def _register_async_event(self, msgtype, seqno):
         self.__async_events[msgtype.value][seqno] = list()
 
-    def __deregister_async_event(self, msgtype, seqno):
+    @internal
+    def _deregister_async_event(self, msgtype, seqno):
         with self.__lock:
             del self.__async_events[msgtype.value][seqno]
 
-    def __sync_async_event(self, msgtype, seqno, srcs):
+    @internal
+    def _sync_async_event(self, msgtype, seqno, srcs):
         if isinstance(srcs, ProcessId):
             remaining = {srcs}
         else:
@@ -609,11 +624,12 @@ class DistProcess():
             results = dict(container)
             remaining.difference_update(results)
             self.__async_events[msgtype.value][seqno] = (remaining, results)
-        self.__wait_for(lambda: not remaining)
-        self.__deregister_async_event(msgtype, seqno)
+        self._wait_for(lambda: not remaining)
+        self._deregister_async_event(msgtype, seqno)
         return results
 
-    def __wait_for(self, predicate, timeout=None):
+    @internal
+    def _wait_for(self, predicate, timeout=None):
         while not predicate():
             self.__process_event(block=True, timeout=timeout)
 
@@ -664,23 +680,30 @@ class DistProcess():
 
         try:
             src, (cmd, args) = message
-            self.__command_dispatch_table[cmd.value](src, args)
-            return True
+            handler = self.__command_dispatch_table[cmd.value]
+            if handler is None:
+                self._log.warning("No handler for %r.", message)
+                return False
+            else:
+                handler(src, args)
+                return True
         except Exception as e:
             self._log.error(
                 "Exception while processing message %r: %r", message, e)
         return False
 
+    @internal
     def _cmd_New(self, src, args):
         pcls, num, method, seqno, props = args
         children = self.__procimpl.spawn(pcls, num,
                                          parent=src, props=props,
                                          seqno=seqno, container=method)
-        self.__send(msgtype=Command.RPCReply,
+        self._send1(msgtype=Command.RPCReply,
                     message=(seqno, children),
                     to=src,
                     flags=ChannelCaps.RELIABLEFIFO)
 
+    @internal
     def _cmd_Start(self, src, seqno):
         if self.__running:
             self._log.warning("Process already started but got `start` again.")
@@ -690,11 +713,12 @@ class DistProcess():
             else:
                 self._log.debug("`start` command received, commencing...")
                 self.__running = True
-        self.__send(msgtype=Command.StartAck,
+        self._send1(msgtype=Command.StartAck,
                     message=(seqno, None),
                     to=src,
                     flags=ChannelCaps.RELIABLEFIFO)
 
+    @internal
     def _cmd_End(self, src, args):
         if src == self.__parent or src == self.__procimpl._nodeid:
             self._log.debug("`End(%r)` command received, terminating..", args)
@@ -703,6 +727,7 @@ class DistProcess():
             self._log.warning("Ignoring `End(%r)` command from non-parent(%r)!",
                               args, src)
 
+    @internal
     def _cmd_Setup(self, src, args):
         seqno, realargs = args
         if self.__setup_called:
@@ -715,11 +740,12 @@ class DistProcess():
                 self._log.debug("`setup` complete.")
             except Exception as e:
                 self._log.error("Exception during setup(%r): %r", args, e)
-        self.__send(msgtype=Command.SetupAck,
+        self._send1(msgtype=Command.SetupAck,
                     message=(seqno, True),
                     to=src,
                     flags=ChannelCaps.RELIABLEFIFO)
 
+    @internal
     def _cmd_Config(self, src, args):
         try:
             key, val = args
@@ -731,14 +757,16 @@ class DistProcess():
         except ValueError:
             self._log.warning("Corrupted 'Config' command: %r", args)
 
+    @internal
     def _cmd_Resolve(self, src, args):
         name, seqno = args
         pid = ProcessId.lookup_or_register_callback(
-            name, functools.partial(self.__resolve_callback,
+            name, functools.partial(self._resolve_callback,
                                     src=src, seqno=seqno))
         if pid is not None:
-            self.__send(Command.ResolveAck, message=(seqno, pid), to=src)
+            self._send1(Command.ResolveAck, message=(seqno, pid), to=src)
 
+    @internal
     def _cmd_Message(self, peer_id, message):
         if self.__fails('receive'):
             self._log.warning(
@@ -783,15 +811,81 @@ class DistProcess():
                     self.__jobq.append((h, copy.deepcopy(bindings)))
 
     def __repr__(self):
-        res = "<process {0._id}#{0.__procimpl}>"
-        return res.format(self)
+        res = "<process {}#{}>"
+        return res.format(self._id, self.__procimpl)
 
     __str__ = __repr__
 
+class NodeProcess(DistProcess):
+
+    AckCommands = DistProcess.AckCommands + [Command.NodeAck]
+
+    def __init__(self, procimpl, props):
+        super().__init__(procimpl, props)
+        self._router = procimpl.router
+        self._nodes = set()
+        if self._router.bootstrap_peer is not None:
+            self._nodes.add(self._router.bootstrap_peer)
+
+    def bootstrap(self):
+        seqno = self._create_cmd_seqno()
+        self._register_async_event(Command.NodeAck, seqno)
+        if self._send1(Command.NodeJoin,
+                       message=seqno,
+                       to=self._nodes,
+                       flags=ChannelCaps.RELIABLEFIFO):
+            res = self._sync_async_event(Command.NodeAck, seqno, self._nodes)
+            self._log.debug("Bootstrap success.")
+        else:
+            self._deregister_async_event(Command.NodeAck, seqno)
+            self._log.error("Bootstrap failed! Unable to join existing network.")
+
+    @internal
+    def _resolve_callback(self, pid, src, seqno):
+        super()._resolve_callback(pid, src, seqno)
+        # propagate name:
+        self._send1(Command.NodePing, message=(seqno, pid), to=self._nodes)
+
+    @internal
+    def _cmd_NodeJoin(self, src, seqno):
+        self._send1(Command.NodeAck,
+                    message=(seqno, self._nodes),
+                    to=src,
+                    flags=ChannelCaps.RELIABLEFIFO)
+        self._nodes.add(src)
+
+    @internal
+    def _cmd_NodeLeave(self, src, args):
+        self._log.debug("%s terminated.", src)
+        self._nodes.discard(src)
+
+    @internal
+    def _cmd_NodePing(self, src, args):
+        self._log.debug("%s is alive.", src)
+        self._nodes.add(src)
+
+    def _delayed_start(self):
+        if len(self._nodes) > 0:
+            self.bootstrap()
+        if hasattr(self, 'run'):
+            return self.run()
+        else:
+            self.hanged()
+
 class RoutingException(Exception): pass
+class BootstrapException(RoutingException): pass
 class NoAvailableTransportException(RoutingException): pass
 class MessageTooBigException(RoutingException): pass
+class InvalidMessageException(RoutingException): pass
 class InvalidRouterStateException(RoutingException): pass
+
+class RouterCommands(enum.Enum):
+    """Control messages for the router."""
+    HELLO    = 1
+    PING     = 2
+    BYE      = 3
+    ACK      = 4
+    SENTINEL = 10
 
 class Router(threading.Thread):
     """The router thread.
@@ -800,13 +894,13 @@ class Router(threading.Thread):
     object to the target process' event queue.
 
     """
-    def __init__(self, transport_manager, bootstrap=False):
+    def __init__(self, transport_manager):
         threading.Thread.__init__(self)
         self.log = logging.getLogger(__name__) \
                           .getChild(self.__class__.__qualname__)
         self.daemon = True
         self.running = False
-        self.do_bootstrap = bootstrap
+        self.bootstrap_peer = None
         self.endpoint = transport_manager
         self.incomingq = transport_manager.queue
         self.hostname = get_runtime_option('hostname')
@@ -816,6 +910,7 @@ class Router(threading.Thread):
         self.local = threading.local()
         self.local.buf = None
         self.lock = threading.Lock()
+        self._init_dispatch_table()
 
     def register_local_process(self, pid):
         if self.running:
@@ -841,10 +936,75 @@ class Router(threading.Thread):
     def get_queue_for_process(self, pid):
         return self.local_procs.get(pid, None)
 
+    def bootstrap_node(self, hostname, portrange, timeout=None):
+        """Bootstrap the node.
+
+        This function implements bootstrapping at the router level. The
+        responsibility of `bootstrap_node` is to obtain the process id of a
+        single existing node process, which is stored into
+        `self.bootstrap_peer`. The rest will then be handled at the node level.
+
+        """
+        nid = common.pid_of_node()
+        hellocmd = (RouterCommands.HELLO, ProcessId.all_named_ids())
+        for port in portrange:
+            dummyid = ProcessId(uid=0, seqno=1, clsname='_Dummy', name='',
+                                nodename='', hostname=hostname,
+                                transports=\
+                                tuple(port for _ in range(len(nid.transports))))
+            self.log.debug("Dummy id: %r", dummyid)
+            for transport in self.endpoint.transports:
+                try:
+                    self._send_remote(src=nid,
+                                      dest=dummyid,
+                                      mesg=hellocmd,
+                                      transport=transport,
+                                      flags=ChannelCaps.BROADCAST)
+                    self.mesgloop(until=(lambda: self.bootstrap_peer),
+                                  timeout=timeout)
+                    if self.bootstrap_peer is not None and \
+                       self.bootstrap_peer != common.pid_of_node():
+                        self.log.info("Bootstrap succeeded using %s.", transport)
+                        return
+                    else:
+                        self.bootstrap_peer = None
+                except Exception as e:
+                    self.log.debug("Bootstrap attempt to %s:%d with %r failed "
+                                   ": %r", hostname, port, transport, e)
+        if self.bootstrap_peer is None:
+            raise BootstrapException("Unable to contact a peer node.")
+
+    def _init_dispatch_table(self):
+        self._dispatch_table = [None] * RouterCommands.SENTINEL.value
+        for cmdname, cmd in RouterCommands.__members__.items():
+            handlername = '_cmd_' + cmdname.casefold()
+            if hasattr(self, handlername):
+                self._dispatch_table[cmd.value] = getattr(self, handlername)
+
+    def _cmd_hello(self, src, args):
+        self.log.debug("HELLO from %r", src)
+        self._send_remote(src=None,
+                          dest=src,
+                          mesg=(RouterCommands.ACK,
+                                (common.pid_of_node(),
+                                 ProcessId.all_named_ids())),
+                          flags=(ChannelCaps.BROADCAST |
+                                 ChannelCaps.RELIABLEFIFO))
+
+    def _cmd_ack(self, src, args):
+        self.bootstrap_peer, _ = args
+
+    def _cmd_ping(self, src, args):
+        self.log.debug("Pinged from %r: %r", src, args)
+
+    def _cmd_bye(self, src, args):
+        self.log.debug("%r signed off.", src)
+        ProcessId.drop_entry(src)
+
     def run(self):
         try:
             self.running = True
-            self.mesgloop()
+            self.mesgloop(until=(lambda: False))
         except Exception as e:
             self.log.debug("Unhandled exception: %r.", e)
         self.terminate_local_processes()
@@ -856,7 +1016,7 @@ class Router(threading.Thread):
     def send(self, src, dest, mesg, params=dict(), flags=0):
         return self._dispatch(src, dest, mesg, params, flags)
 
-    def _send_remote(self, src, dest, mesg, params, flags):
+    def _send_remote(self, src, dest, mesg, flags=0, transport=None, **params):
         """Forward `mesg` to remote process `dest`.
 
         """
@@ -877,6 +1037,9 @@ class Router(threading.Thread):
         wrapper = common.BufferIOWrapper(self.local.buf)
         try:
             pickle.dump(payload, wrapper)
+        except TypeError as e:
+            raise InvalidMessageException("Error pickling {}.".format(payload)) \
+                from e
         except OSError as e:
             raise MessageTooBigException(
                 "** Outgoing message object too big to fit in buffer, dropped.")
@@ -906,21 +1069,46 @@ class Router(threading.Thread):
                 return False
         elif dest is not None:
             try:
-                self._send_remote(src, dest, payload, params, flags)
+                self._send_remote(src, dest, payload, flags, **params)
                 return True
             except Exception as e:
                 self.log.error("Could not send message due to: %r", e)
                 return False
-
-    def mesgloop(self):
-        while self.running:
+        else:
+            # This is a router message
             try:
-                transport, chunk, remote = self.incomingq.pop(block=True)
+                cmd, args = payload
+                self._dispatch_table[cmd.value](src, args)
+                return True
+            except Exception as e:
+                self.log.warning(
+                    "Caught exception while processing router message from "
+                    "%s(%r): %r", src, payload, e)
+                traceback.print_tb(e.__traceback__)
+                return False
+
+    def mesgloop(self, until, timeout=None):
+        if timeout is not None:
+            start = time.time()
+            timeleft = timeout
+        else:
+            timeleft = None
+        while True:
+            try:
+                transport, chunk, remote = self.incomingq.pop(block=True,
+                                                              timeout=timeleft)
                 src, dest, mesg = pickle.loads(chunk)
                 chunk = None
                 self._dispatch(src, dest, mesg)
             except (ValueError, pickle.UnpicklingError) as e:
                 self.log.warning("Dropped invalid message: %r", chunk)
+            if until():
+                break
+            if timeout is not None:
+                timeleft = timeout - (time.time() - start)
+                if timeleft <= 0:
+                    break
+
 
 class ProcessContainer:
     """An abstract base class for process implementations.
@@ -949,7 +1137,7 @@ class ProcessContainer:
     def start_router(self):
         if self.router is None:
             self.endpoint.start()
-            self.router = Router(self.endpoint, bootstrap=self.is_node())
+            self.router = Router(self.endpoint)
             self.router.start()
 
     def end(self):
@@ -1036,7 +1224,8 @@ class ProcessContainer:
                         len(children), pcls.__name__)
         if len(newnamed) > 0 and not self.is_node():
             # Propagate names to node
-            self.router.send(src=self.dapid, dest=self._nodeid, mesg=newnamed,
+            self.router.send(src=self.dapid, dest=self._nodeid,
+                             mesg=(RouterCommands.PING, newnamed),
                              flags=(ChannelCaps.RELIABLEFIFO |
                                     ChannelCaps.BROADCAST))
         return children
@@ -1080,10 +1269,7 @@ class OSProcessContainer(ProcessContainer, multiprocessing.Process):
             self._daobj = self._dacls(self, self._properties)
             self._log.debug("Process object initialized.")
 
-            if self.is_node():
-                return self._daobj.run()
-            else:
-                return self._daobj._delayed_start()
+            return self._daobj._delayed_start()
 
         except DistProcessExit as e:
             self._log.debug("Caught %r, exiting gracefully.", e)
@@ -1097,6 +1283,8 @@ class OSProcessContainer(ProcessContainer, multiprocessing.Process):
         except Exception as e:
             sys.stderr.write("Unexpected error at process %s:%r"% (str(self), e))
             traceback.print_tb(e.__traceback__)
+        finally:
+            self.end()
 
 class OSThreadContainer(ProcessContainer, threading.Thread):
     """An implementation of processes using OS threads.
@@ -1119,10 +1307,7 @@ class OSThreadContainer(ProcessContainer, threading.Thread):
             self._daobj = self._dacls(self, self._properties)
             self._log.debug("Process object initialized.")
 
-            if self.is_node():
-                return self._daobj.run()
-            else:
-                return self._daobj._delayed_start()
+            return self._daobj._delayed_start()
 
         except DistProcessExit as e:
             self._log.debug("Caught %r, exiting gracefully.", e)

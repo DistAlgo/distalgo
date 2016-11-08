@@ -453,7 +453,10 @@ class PythonGenerator(NodeVisitor):
         cd = ClassDef()
         cd.name = node.name
         cd.bases = self.bases(node.bases)
-        cd.bases.append(pyAttr("da", "DistProcess"))
+        if node is node.immediate_container_of_type(dast.Program).nodecls:
+            cd.bases.append(pyAttr("da", "NodeProcess"))
+        else:
+            cd.bases.append(pyAttr("da", "DistProcess"))
         if node.ast is not None:
             # ########################################
             # TODO: just pass these through until we figure out a use for them:

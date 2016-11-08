@@ -203,6 +203,7 @@ class ProcessId(namedtuple("_ProcessId",
     _pid_counter = 0
     _lock = threading.Lock()
     _named = dict()
+    _callbacks = dict()
 
     def __new__(cls, uid, seqno, clsname, name, nodename, hostname, transports):
         obj = super().__new__(cls, uid, seqno, clsname, name, nodename, hostname,
@@ -210,6 +211,7 @@ class ProcessId(namedtuple("_ProcessId",
         if len(name) > 0:
             with ProcessId._lock:
                 entry = ProcessId._named.get(name, None)
+                callbacks = ProcessId._callbacks.get(name, None)
                 if isinstance(entry, ProcessId):
                     if obj < entry:
                         # cached id is more recent than the new one, so use the
@@ -222,8 +224,10 @@ class ProcessId(namedtuple("_ProcessId",
                                     ProcessId._full_form_(obj))
                 if entry != obj:
                     ProcessId._named[name] = obj
-            if type(entry) is list:
-                for callback in entry:
+                if callbacks is not None:
+                    del ProcessId._callbacks[name]
+            if type(callbacks) is list:
+                for callback in callbacks:
                     assert callable(callback)
                     callback(obj)
         return obj
@@ -236,15 +240,24 @@ class ProcessId(namedtuple("_ProcessId",
     def lookup_or_register_callback(name, callback):
         with ProcessId._lock:
             if name not in ProcessId._named:
-                ProcessId._named[name] = [callback]
+                if name not in ProcessId._callbacks:
+                    ProcessId._callbacks[name] = [callback]
+                else:
+                    ProcessId._callbacks[name].append(callback)
                 return None
             else:
-                pid = ProcessId._named[name]
-                if type(pid) is list:
-                    pid.append(callback)
-                    return None
-                else:
-                    return pid
+                return ProcessId._named[name]
+
+    @staticmethod
+    def all_named_ids():
+        with ProcessId._lock:
+            return list(ProcessId._named.values())
+
+    @staticmethod
+    def drop_entry(nid):
+        with ProcessId._lock:
+            if nid.name in ProcessId._named:
+                del ProcessId._named[nid.name]
 
     @staticmethod
     def gen_uid(hostname, pid):
@@ -282,7 +295,7 @@ class ProcessId(namedtuple("_ProcessId",
         This form is more suitable for use in output strings.
 
         """
-        if len(self.nodename) > 0:
+        if len(self.nodename) > 0 and self.nodename != self.name:
             if len(self.name) > 0:
                 return "<{0.clsname}:{0.name}@{0.nodename}>".format(self)
             else:
@@ -301,7 +314,7 @@ class ProcessId(namedtuple("_ProcessId",
         This form is more suitable for use in output strings.
 
         """
-        if len(self.nodename) > 0:
+        if len(self.nodename) > 0 and self.nodename != self.name:
             if len(self.name) > 0:
                 return "<{0.clsname}:{0.name}@{0.nodename}>".format(self)
             else:

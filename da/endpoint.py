@@ -66,11 +66,17 @@ class TransportManager:
         self.log = logger.getChild(self.__class__.__qualname__)
         self.queue = WaitableQueue()
         self.transports = tuple(cls(queue=self.queue) for cls in TransportTypes)
+        self.initialized = False
         self.started = False
 
     @property
     def transport_addresses(self):
         return tuple(t.address for t in self.transports)
+
+    @property
+    def transport_addresses_str(self):
+        return ", ".join(["{}={}".format(tr.__class__.__name__, tr.address)
+                        for tr in self.transports])
 
     def initialize(self, **params):
         """Initialize all transports.
@@ -84,12 +90,14 @@ class TransportManager:
                 transport.initialize(**params)
                 cnt += 1
             except Exception as err:
-                self.log.error("Failed to initialize transport %s: %r",
+                self.log.debug("Failed to initialize transport %s: %r",
                                transport, err)
         if cnt != total:
             raise TransportException(
                 "Initialization failed for {}/{} transports.".format(
                     (total - cnt), total))
+        else:
+            self.initialized = True
 
     def start(self):
         """Start all transports.
@@ -108,6 +116,8 @@ class TransportManager:
             raise TransportException(
                 "Start failed for {}/{} transports.".format(
                     (total - cnt), total))
+        else:
+            self.started = True
 
     def close(self):
         """Shut down all transports.
@@ -123,6 +133,8 @@ class TransportManager:
             except Exception as err:
                 self.log.warning("Exception when stopping transport %s: %r",
                                  transport, err)
+        self.started = False
+        self.initialized = False
         self.log.debug("%d/%d transports stopped.", cnt, total)
 
     def get_transport(self, flags):
@@ -252,7 +264,7 @@ class SocketTransport(Transport):
 
     def close(self):
         if self.conn is None:
-            self._log.warning("Already stopped.")
+            self._log.debug("Already stopped.")
         else:
             try:
                 self.conn.close()
@@ -361,9 +373,7 @@ class UdpTransport(SocketTransport):
                     self._log.debug("No data received. ")
                 else:
                     self.queue.append((self.__class__.slot_index, chunk, remote))
-        except socket.error as e:
-            self._log.warning("socket.error occured, terminating receive loop.")
-        except AttributeError as e:
+        except (socket.error, AttributeError) as e:
             self._log.debug("Terminating receive loop due to %r", e)
 
     @property
@@ -403,10 +413,12 @@ class TcpTransport(SocketTransport):
         self.lock = threading.Lock()
         self.selector = None
 
-    def initialize(self, **params):
+    def initialize(self, strict=False, **params):
         try:
             self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            super().initialize(**params)
+            if strict and not get_runtime_option('tcp_dont_reuse_addr'):
+                self.conn.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            super().initialize(strict=strict, **params)
         except Exception as e:
             if self.conn is not None:
                 self.conn.close()

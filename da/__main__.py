@@ -29,7 +29,7 @@ import argparse
 __version__ = "1.0.0rc1"
 
 from da.common import initialize_runtime_options
-from da.api import entrypoint
+from da.api import entrypoint, DEFAULT_MASTER_PORT
 
 if hasattr(sys, '_real_argv'):
     sys.argv[0] = sys._real_argv
@@ -101,7 +101,14 @@ def parseArgs():
     parser.add_argument("-n", "--nodename", default="",
                         help="mnemonic name for this DistAlgo node process. "
                         "Default is no name. ")
-    parser.add_argument("--cookie", default=None,
+    parser.add_argument("-R", "--peer", default="",
+                        help="address of an existing node, used for bootstrapping "
+                        "this node. An address should be of the "
+                        "form HOSTNAME[:PORT], where 'PORT' defaults to {} "
+                        "if omitted. "
+                        "This option is ignored if '--nodename' is not set."
+                        .format(DEFAULT_MASTER_PORT))
+    parser.add_argument("--cookie", type=bytes, default=None,
                         help="a string for authentication of peers. "
                         "All peer processes participating in message passing "
                         "must have matching cookies. "
@@ -112,6 +119,10 @@ def parseArgs():
                         "message must be smaller than value in order for the "
                         "system to be able to send it "
                         "across address space boundaries. Default value is 4KB.")
+    parser.add_argument("--tcp-dont-reuse-addr",
+                        help="if set, the system will not bind to TCP ports "
+                        "that are in the 'TIME_WAIT' state. ",
+                        action="store_true", default=False)
     parser.add_argument("-r", "--recompile", dest="recompile",
                         help="force recompile DistAlgo source file. ",
                         action="store_true", default=False)
