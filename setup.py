@@ -2,9 +2,10 @@ from distutils.core import setup
 
 import da
 
-setup(name = "DistAlgo",
+setup(name = "pyDistAlgo",
       version = da.__version__,
       url = "https://github.com/DistAlgo/distalgo",
+      description = "A high-level language for distributed algorithms.",
       author = "bolin",
       author_email = "bolin@cs.stonybrook.edu",
       classifiers = [
