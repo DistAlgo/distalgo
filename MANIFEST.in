@@ -3,9 +3,4 @@ include doc/*
 include README.md
 include setup.py
 include LICENSE
-recursive-include da *.py
-recursive-include examples/lamutex *.da
-recursive-include examples/2pcommit *.da
-recursive-include examples/pingpong *.da
-recursive-include examples/lapaxos *.da
-recursive-include examples/vrpaxos *.da
+recursive-include da *.py *.da
