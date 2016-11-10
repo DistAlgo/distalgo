@@ -150,6 +150,7 @@ def setup_logging_for_module(modulename,
     rootlog.handlers = []       # Clear all handlers
 
     if not GlobalOptions['no_log']:
+        rootlog.propagate = False
         rootlog.setLevel(logging.DEBUG)
         consoleformatter = logging.Formatter(consolefmt)
         consolelvl = logging._nameToLevel[GlobalOptions['logconsolelevel'].upper()]

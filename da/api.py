@@ -148,7 +148,8 @@ def _load_cookie():
     authkey = get_runtime_option('cookie')
     if authkey is None:
         try:
-            with open("~/.da.cookie", "r") as fd:
+            fname = os.path.expanduser("~/.da.cookie")
+            with open(fname, "r") as fd:
                 authkey = fd.read(80).encode()
         except OSError:
             pass
@@ -209,6 +210,26 @@ def _bootstrap_node(cls, nodename, trman, authkey):
         router.start()
     return router
 
+def _load_main_module():
+    target = get_runtime_option('file')
+    compiler_args = get_runtime_option('compiler_flags').split()
+    if target is not None:
+        source_dir = os.path.dirname(target)
+        basename = strip_suffix(os.path.basename(target))
+        if not os.access(target, os.R_OK):
+            die("Can not access source file %s" % target)
+        sys.path.insert(0, source_dir)
+        module = import_da(basename,
+                           from_dir=source_dir,
+                           compiler_args=compiler_args)
+        sys.argv = [target] + get_runtime_option('args')
+    else:
+        module_args = get_runtime_option('module')
+        module_name = module_args[0]
+        module = import_da(module_name, compiler_args=compiler_args)
+        sys.argv = ['__main__'] + module_args[1:]
+    return module
+
 def entrypoint():
     """Entry point for running DistAlgo as the main module.
 
@@ -216,18 +237,8 @@ def entrypoint():
     startmeth = get_runtime_option('start_method')
     if startmeth != multiprocessing.get_start_method(allow_none=True):
         multiprocessing.set_start_method(startmeth)
-    target = get_runtime_option('file')
-    source_dir = os.path.dirname(target)
-    basename = strip_suffix(os.path.basename(target))
-    compiler_args = get_runtime_option('compiler_flags').split()
-    if not os.access(target, os.R_OK):
-        die("Can not access source file %s" % target)
-
-    sys.path.insert(0, source_dir)
     try:
-        module = import_da(basename,
-                           from_dir=source_dir,
-                           compiler_args=compiler_args)
+        module = _load_main_module()
     except ImportError as e:
         die("ImportError: " + str(e))
 
@@ -243,7 +254,6 @@ def entrypoint():
     common.sysinit()
 
     # Start main program
-    sys.argv = [target] + get_runtime_option('args')
     nodename = get_runtime_option('nodename')
     niters = get_runtime_option('iterations')
     authkey = _load_cookie()
@@ -263,7 +273,7 @@ def entrypoint():
 
         log.info("%s initialized at %s:(%s).", nid,
                  get_runtime_option('hostname'), trman.transport_addresses_str)
-        log.info("Starting program %s...", target)
+        log.info("Starting program %s...", module)
         for i in range(0, niters):
             log.info("Running iteration %d ...", (i+1))
 

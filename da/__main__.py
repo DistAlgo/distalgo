@@ -88,7 +88,7 @@ def parseArgs():
                         "against results from this module. Any mismatch will "
                         "raise IntrumentationError. Defaults to no control "
                         "module.")
-    parser.add_argument("-m", "--inc-module-name",
+    parser.add_argument("--inc-module-name",
                         help="name of the incrementalized interface module, "
                         "defaults to source module name + '_inc'. ")
     parser.add_argument("-H", "--hostname", default='localhost',
@@ -144,7 +144,13 @@ def parseArgs():
                         " 'process' uses OS processes,"
                         " 'thread' uses OS threads.")
     parser.add_argument("-v", "--version", action="version", version=__version__)
-    parser.add_argument("file",
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("-m", "--module", default=None, nargs='+',
+                        help="name of a DistAlgo module that will be run as "
+                       "the main module. If this argument is specified, "
+                       "all command line options after this point will be "
+                       "passed to the specified module in `sys.argv`.")
+    group.add_argument("file", nargs='?',
                         help="DistAlgo source file to run.")
     parser.add_argument("args", nargs=argparse.REMAINDER,
                         help="arguments passed to program in sys.argv[1:].")
