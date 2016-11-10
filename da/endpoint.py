@@ -343,7 +343,7 @@ class UdpTransport(SocketTransport):
         else:
             return (common.VERSION_BYTES, DIGEST_HOLDER, chunk)
 
-    def _verify_packet(self, chunk):
+    def _verify_packet(self, chunk, addr):
         if chunk[:4] != common.VERSION_BYTES:
             raise VersionMismatchException("wrong version: {}".format(chunk[:4]))
         if self.authkey is not None:
@@ -352,7 +352,12 @@ class UdpTransport(SocketTransport):
                 digest = hmac.new(self.authkey, data, 'md5').digest()
                 if digest != chunk[4:self.data_offset]:
                     raise AuthenticationException(
-                        "wrong digest: {}".format(chunk[4:self.data_offset]))
+                        "wrong digest from {}: {}"
+                        .format(addr, chunk[4:self.data_offset]))
+        else:
+            if chunk[4:self.data_offset] != DIGEST_HOLDER:
+                raise AuthenticationException('{} requires a cookie.'
+                                              .format(addr))
 
     def send(self, chunk, dest, wait=0.01, retries=MAX_RETRY, **rest):
         if self.conn is None:
@@ -406,7 +411,7 @@ class UdpTransport(SocketTransport):
                     self._log.debug("No data received. ")
                 else:
                     try:
-                        self._verify_packet(chunk)
+                        self._verify_packet(chunk, remote)
                         self.queue.append((self.__class__, chunk, remote))
                     except TransportException as e:
                         self._log.warning("Packet from %s dropped due to: %r",
