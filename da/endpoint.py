@@ -22,6 +22,7 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+import os
 import sys
 import enum
 import time
@@ -33,13 +34,14 @@ import selectors
 import multiprocessing
 from collections import namedtuple
 
+from . import common
 from .common import get_runtime_option, LRU, WaitableQueue
 
 logger = logging.getLogger(__name__)
 
 HEADER_SIZE = 8
 BYTEORDER = 'big'
-MAX_RETRY = 10
+MAX_RETRY = 3
 
 class ChannelCaps:
     """An enum of channel capabilities."""
@@ -50,7 +52,9 @@ class ChannelCaps:
     RELIABLEFIFO = FIFO | RELIABLE
 
 class TransportException(Exception): pass
-class BindingException(Exception): pass
+class VersionMismatchException(TransportException): pass
+class AuthenticationException(TransportException): pass
+class BindingException(TransportException): pass
 class NoAvailablePortsException(BindingException): pass
 class NoTargetTransportException(TransportException): pass
 class InvalidTransportStateException(TransportException): pass
@@ -68,6 +72,7 @@ class TransportManager:
         self.transports = tuple(cls(queue=self.queue) for cls in TransportTypes)
         self.initialized = False
         self.started = False
+        self.authkey = None
 
     @property
     def transport_addresses(self):
@@ -78,7 +83,7 @@ class TransportManager:
         return ", ".join(["{}={}".format(tr.__class__.__name__, tr.address)
                         for tr in self.transports])
 
-    def initialize(self, **params):
+    def initialize(self, authkey=None, **params):
         """Initialize all transports.
 
         """
@@ -87,7 +92,7 @@ class TransportManager:
         cnt = 0
         for transport in self.transports:
             try:
-                transport.initialize(**params)
+                transport.initialize(authkey=authkey, **params)
                 cnt += 1
             except Exception as err:
                 self.log.debug("Failed to initialize transport %s: %r",
@@ -98,6 +103,7 @@ class TransportManager:
                     (total - cnt), total))
         else:
             self.initialized = True
+            self.authkey = authkey
 
     def start(self):
         """Start all transports.
@@ -227,14 +233,16 @@ class SocketTransport(Transport):
     def __init__(self, queue):
         super().__init__(queue)
         self.port = None
+        self.authkey = None
         self.conn = None
         self.worker = None
         self.buffer_size = 0
 
     def initialize(self, port=None, strict=False, linear=False,
-                   retries=MAX_RETRY, **rest):
+                   retries=MAX_RETRY, authkey=None, **rest):
         super().initialize(**rest)
         self.port = port
+        self.authkey = authkey
         if self.port is None:
             if not strict:
                 self.port = random.randint(MIN_TCP_PORT, MAX_TCP_PORT)
@@ -289,6 +297,8 @@ class SocketTransport(Transport):
 
 MIN_UDP_PORT = 10000
 MAX_UDP_PORT = 40000
+DIGEST_LENGTH = 16
+DIGEST_HOLDER = b'0' * DIGEST_LENGTH
 
 @transport
 class UdpTransport(SocketTransport):
@@ -296,6 +306,8 @@ class UdpTransport(SocketTransport):
 
     """
     capabilities = ~(ChannelCaps.INTERHOST)
+    data_offset = 4 + DIGEST_LENGTH
+
     def __init__(self, queue):
         super().__init__(queue)
 
@@ -323,6 +335,25 @@ class UdpTransport(SocketTransport):
     def close(self):
         super().close()
 
+    def _packet_from(self, chunk):
+        if self.authkey is not None:
+            import hmac
+            digest = hmac.new(self.authkey, chunk, 'md5').digest()
+            return (common.VERSION_BYTES, digest, chunk)
+        else:
+            return (common.VERSION_BYTES, DIGEST_HOLDER, chunk)
+
+    def _verify_packet(self, chunk):
+        if chunk[:4] != common.VERSION_BYTES:
+            raise VersionMismatchException("wrong version: {}".format(chunk[:4]))
+        if self.authkey is not None:
+            with memoryview(chunk)[self.data_offset:] as data:
+                import hmac
+                digest = hmac.new(self.authkey, data, 'md5').digest()
+                if digest != chunk[4:self.data_offset]:
+                    raise AuthenticationException(
+                        "wrong digest: {}".format(chunk[4:self.data_offset]))
+
     def send(self, chunk, dest, wait=0.01, retries=MAX_RETRY, **rest):
         if self.conn is None:
             raise InvalidTransportStateException(
@@ -337,10 +368,12 @@ class UdpTransport(SocketTransport):
             target = self.address_from_id(dest)
             if target is None:
                 raise NoTargetTransportException()
+            packet = self._packet_from(chunk)
+            packet_size = sum(len(e) for e in packet)
             cnt = 0
             while True:
                 try:
-                    if self.conn.sendto(chunk, target) == len(chunk):
+                    if self.conn.sendmsg(packet, [], 0, target) == packet_size:
                         return
                     else:
                         raise TransportException("Unable to send full chunk.")
@@ -372,7 +405,12 @@ class UdpTransport(SocketTransport):
                 elif flags & socket.MSG_ERRQUEUE:
                     self._log.debug("No data received. ")
                 else:
-                    self.queue.append((self.__class__.slot_index, chunk, remote))
+                    try:
+                        self._verify_packet(chunk)
+                        self.queue.append((self.__class__, chunk, remote))
+                    except TransportException as e:
+                        self._log.warning("Packet from %s dropped due to: %r",
+                                          remote, e)
         except (socket.error, AttributeError) as e:
             self._log.debug("Terminating receive loop due to %r", e)
 
@@ -388,16 +426,34 @@ MAX_TCP_CONN = 200
 MIN_TCP_PORT = 10000
 MAX_TCP_PORT = 40000
 
+#
+# Authentication stuff
+#
+
+MESSAGE_LENGTH = 20
+
+KEY_CHALLENGE = b'#KY#'
+VER_CHALLENGE = b'#VR#'
+WELCOME = b'#WELCOME#'
+FAILURE = b'#FAILURE#'
+
 class AuxConnectionData:
     """Auxiliary data associated with each TCP connection.
 
     """
-    def __init__(self, peername, message_size):
+    def __init__(self, peername, message_size, digest=None, provision=False):
         self.peername = peername
-        self.buf = bytearray(message_size * 2)
+        self.message_size = message_size
+        self.digest = digest
+        if provision:
+            self.provision()
+
+    def provision(self):
+        self.buf = bytearray(self.message_size * 2)
         self.view = memoryview(self.buf)
         self.lastptr = 0
         self.freeptr = 0
+
 
 @transport
 class TcpTransport(SocketTransport):
@@ -407,6 +463,8 @@ class TcpTransport(SocketTransport):
     capabilities = ~((ChannelCaps.FIFO) |
                      (ChannelCaps.RELIABLE) |
                      (ChannelCaps.INTERHOST))
+    data_offset = 0
+
     def __init__(self, queue):
         super().__init__(queue)
         self.cache = None
@@ -431,7 +489,6 @@ class TcpTransport(SocketTransport):
                 "Transport has not been initialized!")
 
         self.conn.listen(MAX_TCP_BACKLOG)
-        # self.conn.setblocking(False)
         self.conn.settimeout(5)
         self.cache = dict()
         self.selector = selectors.DefaultSelector()
@@ -448,22 +505,91 @@ class TcpTransport(SocketTransport):
         super().close()
         self.cache = None
 
+    def _deliver_challenge(self, conn, addr):
+        digest = None
+        if self.authkey is not None:
+            import hmac
+            message = os.urandom(MESSAGE_LENGTH)
+            self._send_1((KEY_CHALLENGE, common.VERSION_BYTES, message),
+                         conn, addr)
+            digest = hmac.new(self.authkey, message, 'md5').digest()
+        else:
+            self._send_1((VER_CHALLENGE, common.VERSION_BYTES), conn, addr)
+        return digest
+
+    def _verify_challenge(self, conn, auxdata):
+        addr = auxdata.peername
+        self.selector.unregister(conn)
+        message = conn.recv(256)
+        if self.authkey is not None:
+            if message != auxdata.digest:
+                self._send_1((FAILURE,), conn, addr)
+                raise AuthenticationException(
+                    'Digest from {0.peername} was wrong.'.format(auxdata))
+        else:
+            if message == KEY_CHALLENGE:
+                raise AuthenticationException(
+                    '{0.peername} requires a cookie.'.format(auxdata))
+            if message != VER_CHALLENGE:
+                raise VersionMismatchException(
+                    'Version from {0.peername} is different.'.format(auxdata))
+        self._send_1((WELCOME,), conn, addr)
+        if auxdata.peername in self.cache:
+            self._log.warning("Double connection from %s!", auxdata.peername)
+        with self.lock:
+            self.cache[auxdata.peername] = conn
+        auxdata.provision()
+        self.selector.register(conn, selectors.EVENT_READ,
+                               (self._receive_1, auxdata))
+
+    def _answer_challenge(self, conn, addr):
+        message = conn.recv(256)
+        self._log.debug("=========answering %r", message)
+        if self.authkey is not None:
+            import hmac
+            if message[:len(KEY_CHALLENGE)] != KEY_CHALLENGE:
+                self._send_1((KEY_CHALLENGE,), conn, addr)
+                raise AuthenticationException('{} has no cookie.'.
+                                              format(addr))
+            if message[len(KEY_CHALLENGE):len(KEY_CHALLENGE)+4] != \
+               common.VERSION_BYTES:
+                raise VersionMismatchException('Version at {} is different.'.
+                                               format(addr))
+            message = message[len(KEY_CHALLENGE)+4:]
+            digest = hmac.new(self.authkey, message, 'md5').digest()
+            self._send_1((digest,), conn, addr)
+        else:
+            if message[:len(KEY_CHALLENGE)] == KEY_CHALLENGE:
+                self._send_1((KEY_CHALLENGE,), conn, addr)
+                raise AuthenticationException('{} requires a cookie.'.
+                                              format(addr))
+            elif message != VER_CHALLENGE + common.VERSION_BYTES:
+                self._send_1((FAILURE,), conn, addr)
+                raise VersionMismatchException('Version at {} is different.'.
+                                               format(addr))
+            else:
+                self._send_1((VER_CHALLENGE,), conn, addr)
+        response = conn.recv(256)
+        if response != WELCOME:
+            raise AuthenticationException('digest was rejected by {}.'.
+                                          format(addr))
+
     def _accept(self, conn, auxdata):
         conn, addr = self.conn.accept()
         self._log.debug("Accepted connection from %s.", addr)
-        if addr in self.cache:
-            self._log.warning("Double connection from %s!", addr)
-        with self.lock:
-            self.cache[addr] = conn
+        digest = self._deliver_challenge(conn, auxdata)
         self.selector.register(conn, selectors.EVENT_READ,
-                               (self._receive_1,
-                                AuxConnectionData(addr, self.buffer_size)))
+                               (self._verify_challenge,
+                                AuxConnectionData(addr,
+                                                  self.buffer_size,
+                                                  digest)))
 
     def _connect(self, target):
         self._log.debug("Initiating connection to %s.", target)
         conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        conn.settimeout(3)
+        conn.settimeout(5)
         conn.connect(target)
+        self._answer_challenge(conn, target)
         self._log.debug("Connection to %s established.", target)
         return conn
 
@@ -471,9 +597,7 @@ class TcpTransport(SocketTransport):
         self._log.debug("Cleanup connection to %s.", remote)
         try:
             self.selector.unregister(conn)
-        except KeyError:
-            pass
-        except ValueError:
+        except (KeyError, ValueError):
             pass
         if remote in self.cache:
             with self.lock:
@@ -513,18 +637,19 @@ class TcpTransport(SocketTransport):
                             "Sending to %s: connection refused at address %s, "
                             " perhaps the target process has terminated?",
                             dest, target)
-                        raise TransportException() from e
-                except socket.error as e:
+                        raise TransportException(
+                            'connection refused by %s' % target) from e
+                except (socket.error, socket.timeout) as e:
                     if conn is not None:
                         conn.close()
                         conn = None
                     if retry > retries:
                         self._log.warning(
-                            "Sending to %s: max retries reached, abort.", dest)
-                        raise TransportException() from e
+                            "Sending to %s: max retries reached, abort.", target)
+                        raise TransportException('max retries reached.') from e
                     else:
-                        self._log.debug("Sending to %s: failed on %dth try.",
-                                        dest, retry)
+                        self._log.debug("Sending to %s failed on %dth try: %r",
+                                        dest, retry, e)
                 retry += 1
                 time.sleep(wait)
         finally:
@@ -535,13 +660,14 @@ class TcpTransport(SocketTransport):
                     self.selector.register(
                         conn, selectors.EVENT_READ,
                         (self._receive_1,
-                         AuxConnectionData(target, self.buffer_size)))
+                         AuxConnectionData(target, self.buffer_size,
+                                           provision=True)))
             else:
                 if target in self.cache:
                     with self.lock:
                         del self.cache[target]
 
-    def _send_1(self, data, conn, target):
+    def _send_1(self, data, conn, target=None):
         msglen = sum(len(chunk) for chunk in data)
         sent = conn.sendmsg(data)
         if sent != msglen:
@@ -561,6 +687,11 @@ class TcpTransport(SocketTransport):
                     callback, aux = key.data
                     try:
                         callback(key.fileobj, aux)
+                    except TransportException as e:
+                        self._log.warning("Exception when handling %s: %r",
+                                          aux.peername, e)
+                        if key.fileobj is not self.conn:
+                            self._cleanup(key.fileobj, aux.peername)
                     except socket.error as e:
                         if key.fileobj is self.conn:
                             self._log.error("socket.error on listener: %r", e)
@@ -603,7 +734,7 @@ class TcpTransport(SocketTransport):
             if psize > 0:
                 if pend <= datalen:
                     chunk = bytes(view[pstart:pend])
-                    self.queue.append((self.__class__.slot_index, chunk, remote))
+                    self.queue.append((self.__class__, chunk, remote))
                     cnt += 1
                 else:
                     break
@@ -621,3 +752,4 @@ class TcpTransport(SocketTransport):
             else:
                 aux.lastptr = fptr
                 aux.freeptr = datalen
+

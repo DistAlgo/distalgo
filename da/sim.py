@@ -954,6 +954,7 @@ class Router(threading.Thread):
                                 tuple(port for _ in range(len(nid.transports))))
             self.log.debug("Dummy id: %r", dummyid)
             for transport in self.endpoint.transports:
+                self.log.debug("Attempting bootstrap using %r...", transport)
                 try:
                     self._send_remote(src=nid,
                                       dest=dummyid,
@@ -967,8 +968,14 @@ class Router(threading.Thread):
                         self.log.info("Bootstrap succeeded using %s.", transport)
                         return
                     else:
+                        self.log.debug(
+                            "Bootstrap attempt to %s:%d with %r timed out. ",
+                            hostname, port, transport)
                         self.bootstrap_peer = None
-                except Exception as e:
+                except endpoint.AuthenticationException as e:
+                    # Abort immediately:
+                    raise e
+                except endpoint.TransportException as e:
                     self.log.debug("Bootstrap attempt to %s:%d with %r failed "
                                    ": %r", hostname, port, transport, e)
         if self.bootstrap_peer is None:
@@ -1024,7 +1031,8 @@ class Router(threading.Thread):
                        mesg, dest, flags)
         if dest.hostname != self.hostname:
             flags |= ChannelCaps.INTERHOST
-        transport = self.endpoint.get_transport(flags)
+        if transport is None:
+            transport = self.endpoint.get_transport(flags)
         if transport is None:
             raise NoAvailableTransportException()
         if not hasattr(self.local, 'buf') or self.local.buf is None:
@@ -1084,7 +1092,6 @@ class Router(threading.Thread):
                 self.log.warning(
                     "Caught exception while processing router message from "
                     "%s(%r): %r", src, payload, e)
-                traceback.print_tb(e.__traceback__)
                 return False
 
     def mesgloop(self, until, timeout=None):
@@ -1097,9 +1104,13 @@ class Router(threading.Thread):
             try:
                 transport, chunk, remote = self.incomingq.pop(block=True,
                                                               timeout=timeleft)
+                if transport.data_offset > 0:
+                    chunk = memoryview(chunk)[transport.data_offset:]
                 src, dest, mesg = pickle.loads(chunk)
                 chunk = None
                 self._dispatch(src, dest, mesg)
+            except common.QueueEmpty:
+                pass
             except (ValueError, pickle.UnpicklingError) as e:
                 self.log.warning("Dropped invalid message: %r", chunk)
             if until():
@@ -1154,7 +1165,7 @@ class ProcessContainer:
         cid = None
         try:
             trman = endpoint.TransportManager()
-            trman.initialize()
+            trman.initialize(authkey=self.endpoint.authkey)
             cid = ProcessId._create(pcls, trman.transport_addresses, name)
             p = OSProcessContainer(process_class=pcls,
                                    transport_manager=trman,

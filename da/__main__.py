@@ -109,7 +109,7 @@ def parseArgs():
                         "if omitted. "
                         "This option is ignored if '--nodename' is not set."
                         .format(DEFAULT_MASTER_PORT))
-    parser.add_argument("--cookie", type=bytes, default=None,
+    parser.add_argument("--cookie", default=None,
                         help="a string for authentication of peers. "
                         "All peer processes participating in message passing "
                         "must have matching cookies. "
@@ -151,6 +151,8 @@ def parseArgs():
 
     args = parser.parse_args()
     args.config = dict(parseConfig(item) for item in args.config)
+    if args.cookie is not None:
+        args.cookie = args.cookie.encode()
     return args
 
 def libmain():

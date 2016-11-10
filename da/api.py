@@ -144,6 +144,16 @@ def import_da(name, from_dir=None, compiler_args=[]):
     common.setup_logging_for_module(name, CONSOLE_LOG_FORMAT, FILE_LOG_FORMAT)
     return moduleobj
 
+def _load_cookie():
+    authkey = get_runtime_option('cookie')
+    if authkey is None:
+        try:
+            with open("~/.da.cookie", "r") as fd:
+                authkey = fd.read(80).encode()
+        except OSError:
+            pass
+    return authkey
+
 def _parse_address(straddr):
     assert isinstance(straddr, str)
     components = straddr.split(':')
@@ -159,7 +169,7 @@ def _parse_address(straddr):
         except ValueError as e:
             raise ValueError("Invalid port number: {}".format(components[1]))
 
-def _bootstrap_node(cls, nodename, trman):
+def _bootstrap_node(cls, nodename, trman, authkey):
     router = None
     is_master = True
     hostname = get_runtime_option('hostname')
@@ -172,7 +182,8 @@ def _bootstrap_node(cls, nodename, trman):
         strict = False
         if is_master:
             try:
-                trman.initialize(hostname=hostname, port=port, strict=True)
+                trman.initialize(hostname=hostname, port=port, strict=True,
+                                 authkey=authkey)
             except endpoint.TransportException as e:
                 log.debug("Binding attempt to %d failed: %r", port, e)
                 trman.close()
@@ -180,13 +191,14 @@ def _bootstrap_node(cls, nodename, trman):
     else:
         strict = True
     if not trman.initialized:
-        trman.initialize(hostname=hostname, port=port, strict=strict)
+        trman.initialize(hostname=hostname, port=port, strict=strict,
+                         authkey=authkey)
     nid = ProcessId._create(pcls=cls,
                             transports=trman.transport_addresses,
                             name=nodename)
     common._set_node(nid)
     if not is_master:
-        if rhost is None:
+        if len(rhost) == 0:
             rhost = hostname
         if rport is None:
             rport = DEFAULT_MASTER_PORT
@@ -234,15 +246,16 @@ def entrypoint():
     sys.argv = [target] + get_runtime_option('args')
     nodename = get_runtime_option('nodename')
     niters = get_runtime_option('iterations')
+    authkey = _load_cookie()
     nodeimpl = None
     router = None
     try:
         trman = endpoint.TransportManager()
         if len(nodename) > 0:
-            router = _bootstrap_node(module.Node_, nodename, trman)
+            router = _bootstrap_node(module.Node_, nodename, trman, authkey)
             nid = common.pid_of_node()
         else:
-            trman.initialize()
+            trman.initialize(authkey=authkey)
             nid = ProcessId._create(pcls=module.Node_,
                                     transports=trman.transport_addresses,
                                     name=nodename)
