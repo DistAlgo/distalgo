@@ -902,7 +902,6 @@ class Router(threading.Thread):
         self.running = False
         self.bootstrap_peer = None
         self.endpoint = transport_manager
-        self.incomingq = transport_manager.queue
         self.hostname = get_runtime_option('hostname')
         self.payload_size = get_runtime_option('message_buffer_size') - \
                             endpoint.HEADER_SIZE
@@ -1095,6 +1094,7 @@ class Router(threading.Thread):
                 return False
 
     def mesgloop(self, until, timeout=None):
+        incomingq = self.endpoint.queue
         if timeout is not None:
             start = time.time()
             timeleft = timeout
@@ -1102,8 +1102,8 @@ class Router(threading.Thread):
             timeleft = None
         while True:
             try:
-                transport, chunk, remote = self.incomingq.pop(block=True,
-                                                              timeout=timeleft)
+                transport, chunk, remote = incomingq.pop(block=True,
+                                                         timeout=timeleft)
                 if transport.data_offset > 0:
                     chunk = memoryview(chunk)[transport.data_offset:]
                 src, dest, mesg = pickle.loads(chunk)
@@ -1136,7 +1136,6 @@ class ProcessContainer:
         self._daobj = None
         self._nodeid = common.pid_of_node()
         self._properties = props if props is not None else dict()
-        self._lock = threading.Lock()
         self.dapid = process_id
         self.daparent = parent_id
         self.router = router
@@ -1144,6 +1143,10 @@ class ProcessContainer:
         if len(process_name) > 0:
             self.name = process_name
         self.endpoint = transport_manager
+        if multiprocessing.get_start_method() == 'spawn':
+            setattr(self, '_spawn_process', self._spawn_process_spawn)
+        else:
+            setattr(self, '_spawn_process', self._spawn_process_fork)
 
     def start_router(self):
         if self.router is None:
@@ -1159,13 +1162,51 @@ class ProcessContainer:
     def is_node(self):
         return self.dapid == common.pid_of_node()
 
-    def _spawn_process(self, pcls, name, parent, props, seqno=None):
+    def _spawn_process_spawn(self, pcls, name, parent, props, seqno=None):
+        trman = None
+        p = None
+        cid = None
+        parent_pipe = child_pipe = None
+        try:
+            trman = endpoint.TransportManager(cookie=self.endpoint.authkey)
+            trman.initialize()
+            cid = ProcessId._create(pcls, trman.transport_addresses, name)
+            parent_pipe, child_pipe = multiprocessing.Pipe()
+            p = OSProcessContainer(process_class=pcls,
+                                   transport_manager=trman,
+                                   process_id=cid,
+                                   parent_id=parent,
+                                   process_name=name,
+                                   cmd_seqno=seqno,
+                                   pipe=child_pipe,
+                                   **props)
+            p.start()
+            child_pipe.close()
+            trman.serialize(parent_pipe, p.pid)
+            assert parent_pipe.recv() == 'done'
+            if not p.is_alive():
+                self._log.error("%r terminated prematurely.", cid)
+                cid = None
+        except Exception as e:
+            cid = None
+            self._log.error("Failed to create instance (%s) of %s: %r",
+                            name, pcls, e)
+            if p is not None and p.is_alive():
+                p.terminate()
+        finally:
+            if trman is not None:
+                trman.close()
+            if parent_pipe:
+                parent_pipe.close()
+        return cid
+
+    def _spawn_process_fork(self, pcls, name, parent, props, seqno=None):
         trman = None
         p = None
         cid = None
         try:
-            trman = endpoint.TransportManager()
-            trman.initialize(authkey=self.endpoint.authkey)
+            trman = endpoint.TransportManager(cookie=self.endpoint.authkey)
+            trman.initialize()
             cid = ProcessId._create(pcls, trman.transport_addresses, name)
             p = OSProcessContainer(process_class=pcls,
                                    transport_manager=trman,
@@ -1183,7 +1224,7 @@ class ProcessContainer:
             cid = None
             self._log.error("Failed to create instance (%s) of %s: %r",
                             name, pcls, e)
-            if p is not None:
+            if p is not None and p.is_alive():
                 p.terminate()
         finally:
             if trman is not None:
@@ -1246,11 +1287,13 @@ class OSProcessContainer(ProcessContainer, multiprocessing.Process):
 
     """
     def __init__(self, process_class, transport_manager, process_id, parent_id,
-                 process_name="", cmd_seqno=None, daemon=False, **rest):
+                 process_name="", cmd_seqno=None, daemon=False, pipe=None,
+                 **rest):
         super().__init__(process_class, transport_manager, process_id,
                          parent_id, process_name, cmd_seqno, rest)
         self.daemon = daemon
         if multiprocessing.get_start_method() == 'spawn':
+            self.pipe = pipe
             self._rtopts = (common.GlobalOptions, common.GlobalConfig)
 
     def _sighandler(self, signum, frame):
@@ -1266,14 +1309,19 @@ class OSProcessContainer(ProcessContainer, multiprocessing.Process):
         if len(self.name) == 0:
             self.name = str(self.pid)
         try:
+            signal.signal(signal.SIGTERM, self._sighandler)
+            signal.signal(signal.SIGUSR1, self._debug_handler)
+
             if multiprocessing.get_start_method() == 'spawn':
                 common._restore_runtime_options(self._rtopts)
                 common._set_node(self._nodeid)
                 common.set_runtime_option('this_module_name',
                                           self.__class__.__module__)
                 common.sysinit()
-            signal.signal(signal.SIGTERM, self._sighandler)
-            signal.signal(signal.SIGUSR1, self._debug_handler)
+                common._restore_module_logging()
+                assert self.pipe is not None
+                self.endpoint.initialize(pipe=self.pipe)
+                del self.pipe
 
             self.start_router()
             self.router.register_local_process(self.dapid)

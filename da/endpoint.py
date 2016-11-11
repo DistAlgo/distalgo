@@ -66,13 +66,24 @@ class TransportManager:
     """Manages all DistAlgo transports within a process.
 
     """
-    def __init__(self):
-        self.log = logger.getChild(self.__class__.__qualname__)
-        self.queue = WaitableQueue()
-        self.transports = tuple(cls(queue=self.queue) for cls in TransportTypes)
+    log = None
+
+    def __init__(self, cookie=None):
+        self.queue = None
+        self.transports = []
         self.initialized = False
         self.started = False
-        self.authkey = None
+        self.authkey = cookie
+        if self.__class__.log is None:
+            self.__class__.log = logger.getChild(self.__class__.__qualname__)
+
+    def __getstate__(self):
+        return (self.initialized, self.started, self.authkey)
+
+    def __setstate__(self, state):
+        self.initialized, self.started, self.authkey = state
+        if self.__class__.log is None:
+            self.__class__.log = logger.getChild(self.__class__.__qualname__)
 
     @property
     def transport_addresses(self):
@@ -83,38 +94,43 @@ class TransportManager:
         return ", ".join(["{}={}".format(tr.__class__.__name__, tr.address)
                         for tr in self.transports])
 
-    def initialize(self, authkey=None, **params):
+    def initialize(self, pipe=None, **params):
         """Initialize all transports.
 
         """
         self.log.debug("Initializing...")
         total = len(TransportTypes)
+        self.transports = tuple(cls(self.authkey) for cls in TransportTypes)
         cnt = 0
         for transport in self.transports:
             try:
-                transport.initialize(authkey=authkey, **params)
+                if pipe is not None:
+                    assert pipe.recv() is transport.__class__
+                transport.initialize(pipe=pipe, **params)
                 cnt += 1
             except Exception as err:
                 self.log.debug("Failed to initialize transport %s: %r",
                                transport, err)
+        if pipe:
+            pipe.send('done')
         if cnt != total:
             raise TransportException(
                 "Initialization failed for {}/{} transports.".format(
                     (total - cnt), total))
         else:
             self.initialized = True
-            self.authkey = authkey
 
     def start(self):
         """Start all transports.
 
         """
         self.log.debug("Starting...")
+        self.queue = WaitableQueue()
         total = len(TransportTypes)
         cnt = 0
         for transport in self.transports:
             try:
-                transport.start()
+                transport.start(self.queue)
                 cnt += 1
             except Exception as err:
                 self.log.error("Failed to start transport %s: %r", transport, err)
@@ -143,6 +159,13 @@ class TransportManager:
         self.initialized = False
         self.log.debug("%d/%d transports stopped.", cnt, total)
 
+    def serialize(self, pipe, pid):
+        """Sends all transports to child process.
+        """
+        for transport in self.transports:
+            pipe.send(transport.__class__)
+            transport.serialize(pipe, pid)
+
     def get_transport(self, flags):
         """Returns the first transport instance satisfying `flags`, or None if
         no transport satisfies `flags`.
@@ -161,22 +184,23 @@ class Transport:
 
     """
     slot_index = 0
-    def __init__(self, queue):
+    def __init__(self, authkey):
         super().__init__()
         self._log = logger.getChild(self.__class__.__qualname__)
-        self.queue = queue
+        self.queue = None
         self.hostname = None
+        self.authkey = authkey
 
     def initialize(self, hostname=None, **params):
         if hostname is None:
             hostname = get_runtime_option('hostname')
         self.hostname = hostname
 
-    def start(self):
+    def start(self, queue):
         """Starts the transport.
 
         """
-        pass
+        self.queue = queue
 
     def close(self):
         """Stops the transport and clean up resources.
@@ -223,15 +247,15 @@ def transport(cls):
     """
     cls.slot_index = len(TransportTypes)
     TransportTypes.append(cls)
-
+    return cls
 
 class SocketTransport(Transport):
     """Base class for socket-based transports.
 
     """
     capabilities = ~(ChannelCaps.INTERHOST)
-    def __init__(self, queue):
-        super().__init__(queue)
+    def __init__(self, authkey):
+        super().__init__(authkey)
         self.port = None
         self.authkey = None
         self.conn = None
@@ -239,19 +263,23 @@ class SocketTransport(Transport):
         self.buffer_size = 0
 
     def initialize(self, port=None, strict=False, linear=False,
-                   retries=MAX_RETRY, authkey=None, **rest):
+                   retries=MAX_RETRY, **rest):
         super().initialize(**rest)
+        self.buffer_size = get_runtime_option('message_buffer_size')
+        assert self.conn is not None
+        _, bound_port = self.conn.getsockname()
+        if bound_port != 0:
+            # We've already inherited the socket from the parent
+            self.port = bound_port
+            return
         self.port = port
-        self.authkey = authkey
         if self.port is None:
             if not strict:
                 self.port = random.randint(MIN_TCP_PORT, MAX_TCP_PORT)
             else:
                 raise NoAvailablePortsException("Port number not specified!")
-        self.buffer_size = get_runtime_option('message_buffer_size')
         address = None
         retry = 1
-        assert self.conn is not None
         while True:
             address = (self.hostname, self.port)
             try:
@@ -269,6 +297,10 @@ class SocketTransport(Transport):
                     raise BindingException(
                         "Failed to bind to an available port.") from e
         self._log.debug("Transport initialized at address %s", address)
+
+    def serialize(self, pipe, pid):
+        from multiprocessing.reduction import send_handle
+        send_handle(pipe, self.conn.fileno(), pid)
 
     def close(self):
         if self.conn is None:
@@ -308,13 +340,18 @@ class UdpTransport(SocketTransport):
     capabilities = ~(ChannelCaps.INTERHOST)
     data_offset = 4 + DIGEST_LENGTH
 
-    def __init__(self, queue):
-        super().__init__(queue)
+    def __init__(self, authkey):
+        super().__init__(authkey)
 
-    def initialize(self, **params):
+    def initialize(self, pipe=None, **params):
         try:
-            self.conn = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.conn.set_inheritable(True)
+            if pipe is None:
+                self.conn = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                self.conn.set_inheritable(True)
+            else:
+                from multiprocessing.reduction import recv_handle
+                self.conn = socket.fromfd(recv_handle(pipe),
+                                          socket.AF_INET, socket.SOCK_DGRAM)
             super().initialize(**params)
         except Exception as e:
             if self.conn is not None:
@@ -322,11 +359,11 @@ class UdpTransport(SocketTransport):
             self.conn = None
             raise e
 
-    def start(self):
+    def start(self, queue):
         if self.conn is None:
             raise InvalidTransportStateException(
                 "Transport has not been initialized!")
-
+        self.queue = queue
         if self.worker is None or not self.worker.is_alive():
             self.worker = threading.Thread(target=self.recvmesgs, daemon=True)
             self.worker.start()
@@ -470,17 +507,22 @@ class TcpTransport(SocketTransport):
                      (ChannelCaps.INTERHOST))
     data_offset = 0
 
-    def __init__(self, queue):
-        super().__init__(queue)
+    def __init__(self, authkey):
+        super().__init__(authkey)
         self.cache = None
-        self.lock = threading.Lock()
+        self.lock = None
         self.selector = None
 
-    def initialize(self, strict=False, **params):
+    def initialize(self, strict=False, pipe=None, **params):
         try:
-            self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            if strict and not get_runtime_option('tcp_dont_reuse_addr'):
-                self.conn.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            if pipe is None:
+                self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                if strict and not get_runtime_option('tcp_dont_reuse_addr'):
+                    self.conn.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            else:
+                from multiprocessing.reduction import recv_handle
+                self.conn = socket.fromfd(recv_handle(pipe),
+                                          socket.AF_INET, socket.SOCK_STREAM)
             super().initialize(strict=strict, **params)
         except Exception as e:
             if self.conn is not None:
@@ -488,11 +530,12 @@ class TcpTransport(SocketTransport):
             self.conn = None
             raise e
 
-    def start(self):
+    def start(self, queue):
         if self.conn is None:
             raise InvalidTransportStateException(
                 "Transport has not been initialized!")
-
+        self.queue = queue
+        self.lock = threading.Lock()
         self.conn.listen(MAX_TCP_BACKLOG)
         self.conn.settimeout(5)
         self.cache = dict()
@@ -509,6 +552,8 @@ class TcpTransport(SocketTransport):
             self.selector.close()
         super().close()
         self.cache = None
+        self.lock = None
+        self.selector = None
 
     def _deliver_challenge(self, conn, addr):
         digest = None

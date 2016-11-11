@@ -170,7 +170,7 @@ def _parse_address(straddr):
         except ValueError as e:
             raise ValueError("Invalid port number: {}".format(components[1]))
 
-def _bootstrap_node(cls, nodename, trman, authkey):
+def _bootstrap_node(cls, nodename, trman):
     router = None
     is_master = True
     hostname = get_runtime_option('hostname')
@@ -183,8 +183,7 @@ def _bootstrap_node(cls, nodename, trman, authkey):
         strict = False
         if is_master:
             try:
-                trman.initialize(hostname=hostname, port=port, strict=True,
-                                 authkey=authkey)
+                trman.initialize(hostname=hostname, port=port, strict=True)
             except endpoint.TransportException as e:
                 log.debug("Binding attempt to %d failed: %r", port, e)
                 trman.close()
@@ -192,8 +191,7 @@ def _bootstrap_node(cls, nodename, trman, authkey):
     else:
         strict = True
     if not trman.initialized:
-        trman.initialize(hostname=hostname, port=port, strict=strict,
-                         authkey=authkey)
+        trman.initialize(hostname=hostname, port=port, strict=strict)
     nid = ProcessId._create(pcls=cls,
                             transports=trman.transport_addresses,
                             name=nodename)
@@ -252,20 +250,21 @@ def entrypoint():
     if get_runtime_option('inc_module_name') is None:
         common.set_runtime_option('inc_module_name', module.__name__ + "_inc")
     common.sysinit()
+    common.setup_logging_for_module("da")
 
     # Start main program
     nodename = get_runtime_option('nodename')
     niters = get_runtime_option('iterations')
-    authkey = _load_cookie()
+    cookie = _load_cookie()
     nodeimpl = None
     router = None
     try:
-        trman = endpoint.TransportManager()
+        trman = endpoint.TransportManager(cookie)
         if len(nodename) > 0:
-            router = _bootstrap_node(module.Node_, nodename, trman, authkey)
+            router = _bootstrap_node(module.Node_, nodename, trman)
             nid = common.pid_of_node()
         else:
-            trman.initialize(authkey=authkey)
+            trman.initialize()
             nid = ProcessId._create(pcls=module.Node_,
                                     transports=trman.transport_addresses,
                                     name=nodename)

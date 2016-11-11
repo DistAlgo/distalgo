@@ -129,7 +129,7 @@ def get_inc_module():
     return sys.modules[GlobalOptions['inc_module_name']]
 
 def sysinit():
-    pid_format = get_runtime_option("pid_format")
+    pid_format = get_runtime_option('pid_format')
     if pid_format == 'full':
         ProcessId.__str__ = ProcessId.__repr__ = ProcessId._full_form_
     elif pid_format == 'long':
@@ -137,8 +137,13 @@ def sysinit():
     else:
         # default is short
         pass
-    setup_logging_for_module("da")
     load_modules()
+
+def _restore_module_logging():
+    assert '_da_module_cache' in GlobalOptions
+    for modulename in GlobalOptions['_da_module_cache']:
+        consolefmt, filefmt = GlobalOptions['_da_module_cache'][modulename]
+        setup_logging_for_module(modulename, consolefmt, filefmt)
 
 def setup_logging_for_module(modulename,
                              consolefmt=CONSOLE_LOG_FORMAT,
@@ -146,6 +151,9 @@ def setup_logging_for_module(modulename,
     """Configures package level logger.
 
     """
+    if '_da_module_cache' not in GlobalOptions:
+        GlobalOptions['_da_module_cache'] = dict()
+    GlobalOptions['_da_module_cache'][modulename] = (consolefmt, filefmt)
     rootlog = logging.getLogger(modulename)
     rootlog.handlers = []       # Clear all handlers
 
