@@ -123,7 +123,7 @@ class DistProcess():
         self.__running = False
         self.__parent = procimpl.daparent
         self._init_dispatch_table()
-        self.__init_config()
+        self._init_config()
 
         self._state = common.Namespace()
         self._events = []
@@ -160,7 +160,8 @@ class DistProcess():
         self._wait_for(lambda: self.__running)
         return self.run()
 
-    def __init_config(self):
+    @internal
+    def _init_config(self):
         if self.get_config('handling', default='one').casefold() == 'all':
             self.__do_label = self.__label_all
         else:
@@ -316,24 +317,6 @@ class DistProcess():
             self._deregister_async_event(msgtype=Command.StartAck,
                                           seqno=seqno)
         return res
-
-    @builtin
-    def _config(self, **props):
-        """Set global configuration overrides.
-
-        Configurations set by this function have higher priority than those
-        declared at module and process level, but lower priority than '--config'
-        command line option. This function is only callable from the `main`
-        method of a node process and affects all processes created on that node.
-
-        """
-        common.set_global_config(props)
-        # XXX: Hack: we have to update our configurations to reflect the new
-        # settings here, but certain configuration items (such as 'clock') need
-        # to take affect from beginning of process execution (in order to affect
-        # all incoming and outgoing messages), so this might not always work as
-        # intended:
-        self.__init_config()
 
     @builtin
     def parent(self):
@@ -865,6 +848,7 @@ class NodeProcess(DistProcess):
         self._nodes.add(src)
 
     def _delayed_start(self):
+        common.set_global_config(self._config_object)
         if len(self._nodes) > 0:
             self.bootstrap()
         if hasattr(self, 'run'):
