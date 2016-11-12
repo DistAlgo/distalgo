@@ -37,6 +37,7 @@ import threading
 import traceback
 import collections
 import multiprocessing
+from itertools import chain
 
 from . import common, pattern, endpoint
 from .common import builtin, internal, ProcessId, get_runtime_option
@@ -238,7 +239,9 @@ class DistProcess():
         `method` specifies the type of implementation used to run the new
         process(es), and can be one of 'process', in which case the new
         processes will be run inside operating system processes, or 'thread' in
-        which case the processes will be run inside operating system threads.
+        which case the processes will be run inside operating system threads. If
+        method is not specified then its default value is taken from the
+        '--default_proc_impl' command line option.
 
         If both `num` and `at` are not specified, then `new` will return the
         process id of child process if successful, or None otherwise. If either
@@ -250,7 +253,11 @@ class DistProcess():
             self._log.error("Can not create non-DistProcess classes.")
             return set()
 
-        at = self.resolve(at)
+        if isinstance(at, collections.abc.Set) or \
+           isinstance(at, collections.abc.Sequence):
+            at = {self.resolve(nameorid) for nameorid in at}
+        else:
+            at = self.resolve(at)
         iterator = []
         if num is None:
             iterator = range(1)
@@ -274,7 +281,10 @@ class DistProcess():
                            to=at,
                            flags=ChannelCaps.RELIABLEFIFO):
                 res = self._sync_async_event(Command.RPCReply, seqno, at)
-                children = res[at]
+                if isinstance(at, set):
+                    children = [pid for target in at for pid in res[target]]
+                else:
+                    children = res[at]
             else:
                 self._deregister_async_event(Command.RPCReply, seqno)
                 children = []
