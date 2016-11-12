@@ -28,6 +28,7 @@ import time
 import time
 import stat
 import logging
+import socket
 import collections.abc
 import importlib
 import threading
@@ -249,6 +250,8 @@ def entrypoint():
     common.set_runtime_option('main_module_name', module.__name__)
     if get_runtime_option('inc_module_name') is None:
         common.set_runtime_option('inc_module_name', module.__name__ + "_inc")
+    hostname = socket.gethostbyname(common.get_runtime_option('hostname'))
+    common.set_runtime_option('hostname', hostname)
     common.sysinit()
     common.setup_logging_for_module("da")
 
