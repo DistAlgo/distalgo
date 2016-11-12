@@ -67,7 +67,7 @@ class Learner(process):
     def run():
         learn()
         output('terminating')
-        send(('learned', ), to=node())
+        send(('learned', ), to=nodeof(self))
 
 def main():
     nacceptors = int(sys.argv[1]) if len(sys.argv) > 1 else 3

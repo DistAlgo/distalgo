@@ -144,7 +144,7 @@ class Client(process):
             cid += 1
         await(each(cid in range(nops), has= count[cid] == len(replicas)))
         output('terminating')
-        send(('done',), to=node())
+        send(('done',), to=nodeof(self))
 
     def receive(msg= ('response', cid, result)):
         debug('### response', cid, result)

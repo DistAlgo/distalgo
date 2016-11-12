@@ -226,6 +226,26 @@ class DistProcess():
 
     @builtin
     def new(self, pcls, args=None, num=None, at=None, method=None, **props):
+        """Creates new DistAlgo processes.
+
+        `pcls` specifies the DistAlgo process class. Optional argument `args` is
+        a list of arguments that is used to call the `setup` method of the child
+        processes. Optional argument `num` specifies the number of processes to
+        create on each node. Optional argument `at` specifies the node or nodes
+        on which the new processes are to be created. If `num` is not specified
+        then it defaults to one process. If `at` is not specified then it
+        defaults to the same node as the current process. Optional argument
+        `method` specifies the type of implementation used to run the new
+        process(es), and can be one of 'process', in which case the new
+        processes will be run inside operating system processes, or 'thread' in
+        which case the processes will be run inside operating system threads.
+
+        If both `num` and `at` are not specified, then `new` will return the
+        process id of child process if successful, or None otherwise. If either
+        `num` or `at` is specified, then `new` will return a set containing the
+        process ids of the processes that was successfully created.
+
+        """
         if not issubclass(pcls, DistProcess):
             self._log.error("Can not create non-DistProcess classes.")
             return set()
@@ -319,25 +339,45 @@ class DistProcess():
         return res
 
     @builtin
-    def parent(self):
-        """Returns the id of our parent process.
+    def nameof(self, pid):
+        """Returns the process name of `pid`, if any.
 
-        The parent process is the one that called `new` to create this process.
+        """
+        assert isinstance(pid, ProcessId)
+        return pid.name
+
+    @builtin
+    def parent(self):
+        """Returns the parent process id.
+
+        The parent process is the process that called `new` to create this
+        process.
 
         """
         return self.__parent
 
     @builtin
-    def node(self):
-        """Returns the id of our node process."""
-        return self.__procimpl._nodeid
+    def nodeof(self, pid):
+        """Returns the id of the node process that's running `pid`.
+
+        """
+        assert isinstance(pid, ProcessId)
+        if self._id == pid or len(pid.nodename) == 0:
+            return self.__procimpl._nodeid
+        else:
+            return self.resolve(pid.nodename)
 
     @builtin
     def exit(self, code=0):
+        """Terminates the current process.
+
+        `code` specifies the exit code.
+
+        """
         raise DistProcessExit(code)
 
     @builtin
-    def output(self, *value, sep=' ', level=logging.INFO+1):
+    def output(self, *message, sep=' ', level=logging.INFO+1):
         """Prints arguments to the process log.
 
         Optional argument 'level' is a positive integer that specifies the
@@ -354,45 +394,73 @@ class DistProcess():
 
         """
         if level > self._log.getEffectiveLevel():
-            msg = sep.join([str(v) for v in value])
+            msg = sep.join([str(v) for v in message])
             self._log.log(level, msg)
 
     @builtin
-    def debug(self, *value, sep=' '):
-        """Prints debugging output to the process log."""
-        self.output(*value, sep, level=logging.DEBUG+1)
+    def debug(self, *message, sep=' '):
+        """Prints debugging output to the process log.
+
+        This is the same as `output` except the message is logged at the
+        'USRDBG' level.
+
+        """
+        self.output(*message, sep, level=logging.DEBUG+1)
 
     @builtin
-    def error(self, *value, sep=' '):
-        """Prints error message to the process log."""
-        self.output(*value, sep, level=logging.INFO+2)
+    def error(self, *message, sep=' '):
+        """Prints error message to the process log.
+
+        This is the same as `output` except the message is logged at the
+        'USRERR' level.
+
+        """
+        self.output(*message, sep, level=logging.INFO+2)
 
     @builtin
     def work(self):
-        """Waste some random amount of time."""
+        """Waste some random amount of time.
+
+        This suspends execution of the process for a period of 0-2 seconds.
+
+        """
         time.sleep(random.randint(0, 200) / 100)
         pass
 
     @builtin
     def end(self, target, exit_code=1):
-        """Terminate child processes."""
+        """Terminate the child processes specified by `target`.
+
+        `target` can be a process id or a set of process ids, all of which must
+        be a child process of this process.
+
+        """
         self._send1(Command.End, exit_code, to=target,
                     flags=ChannelCaps.RELIABLEFIFO)
 
     @builtin
     def logical_clock(self):
-        """Returns the current value of Lamport clock."""
+        """Returns the current value of the logical clock.
+
+        """
         return self._logical_clock
 
     @builtin
     def incr_logical_clock(self):
-        """Increment Lamport clock by 1."""
+        """Increments the logical clock.
+
+        For Lamport's clock, this increases the clock value by 1.
+
+        """
         if isinstance(self._logical_clock, int):
             self._logical_clock += 1
 
     @builtin
     def send(self, message, to, channel=None):
-        """Send DistAlgo message.
+        """Send a DistAlgo message.
+
+        `message` can be any pickle-able Python object. `to` can be a process id
+        or a set of process ids.
 
         """
         self.incr_logical_clock()
@@ -413,11 +481,20 @@ class DistProcess():
 
     @builtin
     def hanged(self):
+        """Hangs the current process.
+
+        When a process enters the 'hanged' state, its main logic and all message
+        handlers will no longer run.
+
+        """
         self._register_async_event(Command.EndAck, seqno=0)
         self._sync_async_event(Command.EndAck, seqno=0, srcs=self._id)
 
     @builtin
     def resolve(self, name):
+        """Returns the process id associated with `name`.
+
+        """
         if name is None:
             return None
         elif isinstance(name, ProcessId):

@@ -26,9 +26,9 @@ import sys
 import logging
 import argparse
 
+from .api import entrypoint, DEFAULT_MASTER_PORT
 from . import common
 from .common import initialize_runtime_options
-from .api import entrypoint, DEFAULT_MASTER_PORT
 
 __version__ = common.__version__
 
@@ -150,6 +150,9 @@ def parseArgs():
                        "the main module. If this argument is specified, "
                        "all command line options after this point will be "
                        "passed to the specified module in `sys.argv`.")
+    group.add_argument("-B", "--help-builtins", action='store_true', default=False,
+                       help="print a list of DistAlgo built-in functions and "
+                       "exit.")
     group.add_argument("file", nargs='?',
                         help="DistAlgo source file to run.")
     parser.add_argument("args", nargs=argparse.REMAINDER,
@@ -161,6 +164,15 @@ def parseArgs():
         args.cookie = args.cookie.encode()
     return args
 
+def help_builtins():
+    from inspect import signature
+    print("======= DistAlgo Builtin Functions =======\n")
+    for fname in sorted(common.builtin_registry):
+        func = common.builtin_registry[fname]
+        sig = ", ".join([arg for arg in signature(func).parameters
+                         if arg != 'self'])
+        print("{}({}):\n\t{}\n".format(fname, sig, func.__doc__))
+
 def libmain():
     """Main program entry point.
 
@@ -169,8 +181,12 @@ def libmain():
 
     """
     args = parseArgs()
-    initialize_runtime_options(args.__dict__)
-    return entrypoint()
+    if args.help_builtins:
+        help_builtins()
+        return 0
+    else:
+        initialize_runtime_options(args.__dict__)
+        return entrypoint()
 
 def die(mesg = None):
     if mesg != None:

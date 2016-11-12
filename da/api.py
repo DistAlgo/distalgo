@@ -317,11 +317,6 @@ def entrypoint():
         traceback.print_tb(err_info[2])
         return 4
 
-@api
-def nameof(pid):
-    assert isinstance(pid, ProcessId)
-    return pid.name
-
 def die(mesg = None):
     if mesg != None:
         stderr.write(mesg + "\n")
