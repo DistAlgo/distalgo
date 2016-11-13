@@ -98,7 +98,7 @@ class TransportManager:
         """Initialize all transports.
 
         """
-        self.log.debug("Initializing...")
+        self.log.debug("Initializing with key %r...", self.authkey)
         total = len(TransportTypes)
         self.transports = tuple(cls(self.authkey) for cls in TransportTypes)
         cnt = 0
@@ -257,7 +257,6 @@ class SocketTransport(Transport):
     def __init__(self, authkey):
         super().__init__(authkey)
         self.port = None
-        self.authkey = None
         self.conn = None
         self.worker = None
         self.buffer_size = 0
