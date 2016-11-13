@@ -173,39 +173,41 @@ def _parse_address(straddr):
 
 def _bootstrap_node(cls, nodename, trman):
     router = None
-    is_master = True
+    is_master = get_runtime_option('master')
     hostname = get_runtime_option('hostname')
     port = get_runtime_option('port')
-    rhost, rport = _parse_address(get_runtime_option('peer'))
-    if len(rhost) > 0:
-        is_master = False
     if port is None:
-        port = DEFAULT_MASTER_PORT
+        port = get_runtime_option('default_master_port')
         strict = False
         if is_master:
             try:
                 trman.initialize(hostname=hostname, port=port, strict=True)
             except endpoint.TransportException as e:
-                log.debug("Binding attempt to %d failed: %r", port, e)
+                log.debug("Binding attempt to port %d failed: %r", port, e)
                 trman.close()
-                is_master = False
     else:
         strict = True
     if not trman.initialized:
-        trman.initialize(hostname=hostname, port=port, strict=strict)
+        trman.initialize(hostname=hostname, port=port,
+                         strict=strict, linear=is_master)
     nid = ProcessId._create(pcls=cls,
                             transports=trman.transport_addresses,
                             name=nodename)
     common._set_node(nid)
     if not is_master:
+        rhost, rport = _parse_address(get_runtime_option('peer'))
         if len(rhost) == 0:
             rhost = hostname
         if rport is None:
-            rport = DEFAULT_MASTER_PORT
+            rport = get_runtime_option('default_master_port')
         trman.start()
         router = sim.Router(trman)
-        router.bootstrap_node(rhost, range(rport, rport+1),
-                              timeout=ASYNC_TIMEOUT)
+        try:
+            router.bootstrap_node(rhost, rport, timeout=ASYNC_TIMEOUT)
+        except sim.BootstrapException as e:
+            log.info("Bootstrapping attempt failed due to %r, "
+                     " continuing as a master node (use '--master' to "
+                     "disable bootstrapping at startup).", e)
         router.start()
     return router
 
@@ -228,6 +230,13 @@ def _load_main_module():
         module = import_da(module_name, compiler_args=compiler_args)
         sys.argv = ['__main__'] + module_args[1:]
     return module
+
+def _check_nodename():
+    nodename = get_runtime_option('nodename')
+    if not common.check_name(nodename):
+        die("'--nodename' must not contain any of the characters in {}".
+            format(common.ILLEGAL_NAME_CHARS))
+    return nodename
 
 def entrypoint():
     """Entry point for running DistAlgo as the main module.
@@ -256,11 +265,12 @@ def entrypoint():
     common.setup_logging_for_module("da")
 
     # Start main program
-    nodename = get_runtime_option('nodename')
+    nodename = _check_nodename()
     niters = get_runtime_option('iterations')
     cookie = _load_cookie()
     nodeimpl = None
     router = None
+    trman = None
     try:
         trman = endpoint.TransportManager(cookie)
         if len(nodename) > 0:
@@ -319,6 +329,9 @@ def entrypoint():
         log.error("Caught unexpected global exception: %r", e)
         traceback.print_tb(err_info[2])
         return 4
+    finally:
+        if trman is not None:
+            trman.close()
 
 def die(mesg = None):
     if mesg != None:

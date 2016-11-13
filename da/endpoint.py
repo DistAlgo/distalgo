@@ -660,7 +660,7 @@ class TcpTransport(SocketTransport):
         except OSError:
             pass
 
-    def send(self, chunk, dest, retries=MAX_RETRY, wait=0.1,
+    def send(self, chunk, dest, retries=MAX_RETRY, wait=0.05,
              retry_refused_connections=False, **rest):
         target = self.address_from_id(dest)
         if target is None:
@@ -682,23 +682,16 @@ class TcpTransport(SocketTransport):
                     return
                 except ConnectionRefusedError as e:
                     if (not retry_refused_connections) or retry > retries:
-                        self._log.warning(
-                            "Sending to %s: connection refused at address %s, "
-                            " perhaps the target process has terminated?",
-                            dest, target)
                         raise TransportException(
-                            'connection refused by %s' % target) from e
+                            'connection refused by {}'.format(target)) from e
                 except (socket.error, socket.timeout) as e:
+                    self._log.debug("Sending to %s failed on %dth try: %r",
+                                    dest, retry, e)
                     if conn is not None:
                         conn.close()
                         conn = None
                     if retry > retries:
-                        self._log.warning(
-                            "Sending to %s: max retries reached, abort.", target)
                         raise TransportException('max retries reached.') from e
-                    else:
-                        self._log.debug("Sending to %s failed on %dth try: %r",
-                                        dest, retry, e)
                 retry += 1
                 time.sleep(wait)
         finally:

@@ -40,7 +40,8 @@ import multiprocessing
 from itertools import chain
 
 from . import common, pattern, endpoint
-from .common import builtin, internal, ProcessId, get_runtime_option
+from .common import (builtin, internal, name_split_host, name_split_node,
+                     ProcessId, get_runtime_option)
 from .endpoint import ChannelCaps
 
 logger = logging.getLogger(__name__)
@@ -253,8 +254,7 @@ class DistProcess():
             self._log.error("Can not create non-DistProcess classes.")
             return set()
 
-        if isinstance(at, collections.abc.Set) or \
-           isinstance(at, collections.abc.Sequence):
+        if isinstance(at, collections.abc.Set):
             at = {self.resolve(nameorid) for nameorid in at}
         else:
             at = self.resolve(at)
@@ -509,21 +509,31 @@ class DistProcess():
             return None
         elif isinstance(name, ProcessId):
             return name
-        seqno = self._create_cmd_seqno()
-        self._register_async_event(Command.ResolveAck, seqno)
-        dest = ProcessId.lookup_or_register_callback(
-            name, functools.partial(self._resolve_callback,
-                                    src=self._id, seqno=seqno))
+        elif not isinstance(name, str):
+            self._log.error("resolve: unsupported type %r", name)
+            return None
+        fullname, host, port = name_split_host(name)
+        if fullname is None:
+            self._log.error("Malformed name: %s", name)
+            return None
+        procname, nodename = name_split_node(fullname)
+        if procname is None:
+            self._log.error("Malformed name: %s", name)
+            return None
+        dest = ProcessId.lookup((procname, nodename))
         if dest is None:
-            self._log.info("Waiting to resolve name %r...", name)
-            if not self.__procimpl.is_node():
-                self._send1(Command.Resolve, message=(name, seqno),
-                            to=self.__procimpl._nodeid,
-                            flags=ChannelCaps.RELIABLEFIFO)
-            res = self._sync_async_event(Command.ResolveAck, seqno, self._id)
-            dest = res[self._id]
-        else:
-            self._deregister_async_event(Command.ResolveAck, seqno)
+            self._log.info("Waiting to resolve name %r#%s:%s...",
+                           fullname, host, port)
+            seqno = self._create_cmd_seqno()
+            self._register_async_event(Command.ResolveAck, seqno)
+            if self._send1(Command.Resolve,
+                           message=((procname, nodename), host, port, seqno),
+                           to=self.__procimpl._nodeid,
+                           flags=ChannelCaps.RELIABLEFIFO):
+                res = self._sync_async_event(Command.ResolveAck, seqno, self._id)
+                dest = res[self._id]
+            else:
+                self._deregister_async_event(Command.ResolveAck, seqno)
         return dest
 
     @internal
@@ -828,15 +838,6 @@ class DistProcess():
             self._log.warning("Corrupted 'Config' command: %r", args)
 
     @internal
-    def _cmd_Resolve(self, src, args):
-        name, seqno = args
-        pid = ProcessId.lookup_or_register_callback(
-            name, functools.partial(self._resolve_callback,
-                                    src=src, seqno=seqno))
-        if pid is not None:
-            self._send1(Command.ResolveAck, message=(seqno, pid), to=src)
-
-    @internal
     def _cmd_Message(self, peer_id, message):
         if self.__fails('receive'):
             self._log.warning(
@@ -894,21 +895,39 @@ class NodeProcess(DistProcess):
         super().__init__(procimpl, props)
         self._router = procimpl.router
         self._nodes = set()
-        if self._router.bootstrap_peer is not None:
-            self._nodes.add(self._router.bootstrap_peer)
 
     def bootstrap(self):
+        target = self._router.bootstrap_peer
+        if target is None:
+            return
+        self._nodes.add(target)
         seqno = self._create_cmd_seqno()
         self._register_async_event(Command.NodeAck, seqno)
         if self._send1(Command.NodeJoin,
-                       message=seqno,
-                       to=self._nodes,
+                       message=(ProcessId.all_named_ids(), seqno),
+                       to=target,
                        flags=ChannelCaps.RELIABLEFIFO):
-            res = self._sync_async_event(Command.NodeAck, seqno, self._nodes)
+            res = self._sync_async_event(Command.NodeAck, seqno, target)
+            newnodes, _ = res[target]
+            self._nodes.update(newnodes)
             self._log.debug("Bootstrap success.")
         else:
             self._deregister_async_event(Command.NodeAck, seqno)
             self._log.error("Bootstrap failed! Unable to join existing network.")
+
+    @internal
+    def _cmd_Resolve(self, src, args):
+        procname, hostname, port, seqno = args
+        pid = ProcessId.lookup_or_register_callback(
+            procname, functools.partial(self._resolve_callback,
+                                        src=src, seqno=seqno))
+        if pid is not None:
+            self._send1(Command.ResolveAck, message=(seqno, pid), to=src)
+        elif hostname is not None:
+            if port is None:
+                port = get_runtime_option('default_master_port')
+            self._router.bootstrap_node(hostname, port, timeout=3)
+            self.bootstrap()
 
     @internal
     def _resolve_callback(self, pid, src, seqno):
@@ -917,9 +936,10 @@ class NodeProcess(DistProcess):
         self._send1(Command.NodePing, message=(seqno, pid), to=self._nodes)
 
     @internal
-    def _cmd_NodeJoin(self, src, seqno):
+    def _cmd_NodeJoin(self, src, args):
+        _, seqno = args
         self._send1(Command.NodeAck,
-                    message=(seqno, self._nodes),
+                    message=(seqno, (self._nodes, ProcessId.all_named_ids())),
                     to=src,
                     flags=ChannelCaps.RELIABLEFIFO)
         self._nodes.add(src)
@@ -938,10 +958,14 @@ class NodeProcess(DistProcess):
         common.set_global_config(self._config_object)
         if len(self._nodes) > 0:
             self.bootstrap()
-        if hasattr(self, 'run'):
-            return self.run()
-        else:
-            self.hanged()
+        try:
+            if hasattr(self, 'run'):
+                return self.run()
+            else:
+                self.hanged()
+        finally:
+            self._send1(Command.NodeLeave,
+                        message=self._id, to=self._nodes)
 
 class RoutingException(Exception): pass
 class BootstrapException(RoutingException): pass
@@ -1006,7 +1030,7 @@ class Router(threading.Thread):
     def get_queue_for_process(self, pid):
         return self.local_procs.get(pid, None)
 
-    def bootstrap_node(self, hostname, portrange, timeout=None):
+    def bootstrap_node(self, hostname, port, timeout=None):
         """Bootstrap the node.
 
         This function implements bootstrapping at the router level. The
@@ -1015,39 +1039,40 @@ class Router(threading.Thread):
         `self.bootstrap_peer`. The rest will then be handled at the node level.
 
         """
+        self.log.debug("boostrap_node to %s:%d...", hostname, port)
+        self.bootstrap_peer = None
         nid = common.pid_of_node()
         hellocmd = (RouterCommands.HELLO, ProcessId.all_named_ids())
-        for port in portrange:
-            dummyid = ProcessId(uid=0, seqno=1, clsname='_Dummy', name='',
-                                nodename='', hostname=hostname,
-                                transports=\
-                                tuple(port for _ in range(len(nid.transports))))
-            self.log.debug("Dummy id: %r", dummyid)
-            for transport in self.endpoint.transports:
-                self.log.debug("Attempting bootstrap using %r...", transport)
-                try:
-                    self._send_remote(src=nid,
-                                      dest=dummyid,
-                                      mesg=hellocmd,
-                                      transport=transport,
-                                      flags=ChannelCaps.BROADCAST)
-                    self.mesgloop(until=(lambda: self.bootstrap_peer),
-                                  timeout=timeout)
-                    if self.bootstrap_peer is not None and \
-                       self.bootstrap_peer != common.pid_of_node():
-                        self.log.info("Bootstrap succeeded using %s.", transport)
-                        return
-                    else:
-                        self.log.debug(
-                            "Bootstrap attempt to %s:%d with %r timed out. ",
-                            hostname, port, transport)
-                        self.bootstrap_peer = None
-                except endpoint.AuthenticationException as e:
-                    # Abort immediately:
-                    raise e
-                except endpoint.TransportException as e:
-                    self.log.debug("Bootstrap attempt to %s:%d with %r failed "
-                                   ": %r", hostname, port, transport, e)
+        dummyid = ProcessId(uid=0, seqno=1, clsname='_Dummy', name='',
+                            nodename='', hostname=hostname,
+                            transports=\
+                            tuple(port for _ in range(len(nid.transports))))
+        self.log.debug("Dummy id: %r", dummyid)
+        for transport in self.endpoint.transports:
+            self.log.debug("Attempting bootstrap using %r...", transport)
+            try:
+                self._send_remote(src=nid,
+                                  dest=dummyid,
+                                  mesg=hellocmd,
+                                  transport=transport,
+                                  flags=ChannelCaps.BROADCAST)
+                self.mesgloop(until=(lambda: self.bootstrap_peer),
+                              timeout=timeout)
+                if self.bootstrap_peer is not None and \
+                   self.bootstrap_peer != common.pid_of_node():
+                    self.log.info("Bootstrap succeeded using %s.", transport)
+                    return
+                else:
+                    self.log.debug(
+                        "Bootstrap attempt to %s:%d with %r timed out. ",
+                        hostname, port, transport)
+                    self.bootstrap_peer = None
+            except endpoint.AuthenticationException as e:
+                # Abort immediately:
+                raise e
+            except endpoint.TransportException as e:
+                self.log.debug("Bootstrap attempt to %s:%d with %r failed "
+                               ": %r", hostname, port, transport, e)
         if self.bootstrap_peer is None:
             raise BootstrapException("Unable to contact a peer node.")
 
@@ -1151,6 +1176,7 @@ class Router(threading.Thread):
                 return True
             except Exception as e:
                 self.log.error("Could not send message due to: %r", e)
+                self.log.debug("Send failed: ", exc_info=1)
                 return False
         else:
             # This is a router message
@@ -1162,6 +1188,7 @@ class Router(threading.Thread):
                 self.log.warning(
                     "Caught exception while processing router message from "
                     "%s(%r): %r", src, payload, e)
+                self.log.debug("Router dispatch failed: ", exc_info=1)
                 return False
 
     def mesgloop(self, until, timeout=None):
@@ -1228,7 +1255,6 @@ class ProcessContainer:
     def end(self):
         if self.router is not None:
             self.router.stop()
-            self.endpoint.close()
 
     def is_node(self):
         return self.dapid == common.pid_of_node()
@@ -1338,6 +1364,10 @@ class ProcessContainer:
         for name in names:
             if not isinstance(name, str):
                 name = ""
+            elif not common.check_name(name):
+                self._log.error("Name '%s' contains an illegal character(%r).",
+                                name, common.ILLEGAL_NAME_CHARS)
+                continue
             cid = spawn_1(pcls, name, parent, props, seqno)
             if cid is not None:
                 children.append(cid)
@@ -1367,11 +1397,6 @@ class OSProcessContainer(ProcessContainer, multiprocessing.Process):
             self.pipe = pipe
             self._rtopts = (common.GlobalOptions, common.GlobalConfig)
 
-    def _sighandler(self, signum, frame):
-        for child in multiprocessing.active_children():
-            child.terminate()
-        sys.exit(0)
-
     def _debug_handler(self, sig, frame):
         self._debugger.set_trace(frame)
 
@@ -1380,9 +1405,6 @@ class OSProcessContainer(ProcessContainer, multiprocessing.Process):
         if len(self.name) == 0:
             self.name = str(self.pid)
         try:
-            signal.signal(signal.SIGTERM, self._sighandler)
-            signal.signal(signal.SIGUSR1, self._debug_handler)
-
             if multiprocessing.get_start_method() == 'spawn':
                 common._restore_runtime_options(self._rtopts)
                 common._set_node(self._nodeid)

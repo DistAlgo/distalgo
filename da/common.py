@@ -40,7 +40,7 @@ from functools import wraps
 MAJOR_VERSION = 1
 MINOR_VERSION = 0
 PATCH_VERSION = 0
-PRERELEASE_VERSION = "rc1"
+PRERELEASE_VERSION = "rc7"
 __version__ = "{}.{}.{}-{}".format(MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION,
                                    PRERELEASE_VERSION)
 
@@ -206,6 +206,45 @@ def load_modules():
 ####################
 # Process ID
 ####################
+ILLEGAL_NAME_CHARS = set('@#:')
+
+def check_name(name):
+    return not (set(name) & ILLEGAL_NAME_CHARS)
+
+def name_split_host(name):
+    """Splits `name` into 'processname', 'hostname', and 'port' components."""
+    comps = name.split('#')
+    if len(comps) == 2:
+        name, suffix = comps
+        suffix = suffix.split(':')
+        if len(suffix) > 2:
+            return (None, None, None)
+        elif len(suffix) == 2:
+            host, port = suffix
+            try:
+                return (name, host, int(port))
+            except ValueError:
+                return (None, None, None)
+        elif len(suffix) == 1:
+            return (name, suffix[0], None)
+        else:
+            return (name, None, None)
+    elif len(comps) == 1:
+        return (comps[0], None, None)
+    else:
+        return (None, None, None)
+
+def name_split_node(name):
+    """Splits `name` into 'processname', 'nodename' components."""
+    assert '#' not in name
+    comps = name.split('@')
+    if len(comps) == 2:
+        return tuple(comps)
+    elif len(comps) == 1:
+        return (comps[0], comps[0])
+    else:
+        return (None, None)
+
 class ProcessId(namedtuple("_ProcessId",
                            'uid, seqno, clsname, \
                            name, nodename, hostname, transports')):
@@ -233,23 +272,24 @@ class ProcessId(namedtuple("_ProcessId",
         obj = super().__new__(cls, uid, seqno, clsname, name, nodename, hostname,
                               transports)
         if len(name) > 0:
+            fullname = (name, nodename)
             with ProcessId._lock:
-                entry = ProcessId._named.get(name, None)
-                callbacks = ProcessId._callbacks.get(name, None)
+                entry = ProcessId._named.get(fullname, None)
+                callbacks = ProcessId._callbacks.get(fullname, None)
                 if isinstance(entry, ProcessId):
                     if obj < entry:
                         # cached id is more recent than the new one, so use the
                         # cached entry:
                         obj = entry
                     elif obj.uid != entry.uid:
-                        log.warning("Process name '%s' reassigned from %s "
-                                    "to %s.", name,
+                        log.warning("Process name '%s@%s' reassigned from %s "
+                                    "to %s.", name, nodename,
                                     ProcessId._full_form_(entry),
                                     ProcessId._full_form_(obj))
                 if entry != obj:
-                    ProcessId._named[name] = obj
+                    ProcessId._named[fullname] = obj
                 if callbacks is not None:
-                    del ProcessId._callbacks[name]
+                    del ProcessId._callbacks[fullname]
             if type(callbacks) is list:
                 for callback in callbacks:
                     assert callable(callback)

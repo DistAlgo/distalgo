@@ -105,10 +105,15 @@ def parseArgs():
     parser.add_argument("-R", "--peer", default="",
                         help="address of an existing node, used for bootstrapping "
                         "this node. An address should be of the "
-                        "form HOSTNAME[:PORT], where 'PORT' defaults to {} "
-                        "if omitted. "
-                        "This option is ignored if '--nodename' is not set."
-                        .format(DEFAULT_MASTER_PORT))
+                        "form HOSTNAME[:PORT], where 'PORT' defaults to the "
+                        "value of '--default-master-port' if omitted. "
+                        "This option is ignored if '--nodename' is not set, "
+                        "or if '--master' is set.")
+    parser.add_argument("--default-master-port", type=int, default=15000,
+                        help="default port number for connecting to remote "
+                        "nodes if the port number is not explicitly given. "
+                        "Default value is 15000. "
+                        "This option is ignored if '--nodename' is not set.")
     parser.add_argument("--cookie", default=None,
                         help="a string for authentication of peers. "
                         "All peer processes participating in message passing "
@@ -123,6 +128,10 @@ def parseArgs():
     parser.add_argument("--tcp-dont-reuse-addr",
                         help="if set, the system will not bind to TCP ports "
                         "that are in the 'TIME_WAIT' state. ",
+                        action="store_true", default=False)
+    parser.add_argument("--master",
+                        help="if set, the system will not try to bootstrap "
+                        "on startup. ",
                         action="store_true", default=False)
     parser.add_argument("-r", "--recompile", dest="recompile",
                         help="force recompile DistAlgo source file. ",
