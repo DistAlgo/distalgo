@@ -110,7 +110,7 @@ class TransportManager:
                 cnt += 1
             except Exception as err:
                 self.log.debug("Failed to initialize transport %s: %r",
-                               transport, err)
+                               transport, err, exc_info=1)
         if pipe:
             pipe.send('done')
         if cnt != total:
@@ -266,11 +266,16 @@ class SocketTransport(Transport):
         super().initialize(**rest)
         self.buffer_size = get_runtime_option('message_buffer_size')
         assert self.conn is not None
-        _, bound_port = self.conn.getsockname()
-        if bound_port != 0:
-            # We've already inherited the socket from the parent
-            self.port = bound_port
-            return
+        try:
+            _, bound_port = self.conn.getsockname()
+            if bound_port != 0:
+                # We've already inherited the socket from the parent
+                self.port = bound_port
+                return
+        except OSError as e:
+            # This is what we get on Windows if we call `getsockname()` on an
+            # unbound socket...
+            pass
         self.port = port
         if self.port is None:
             if not strict:
@@ -395,6 +400,20 @@ class UdpTransport(SocketTransport):
                 raise AuthenticationException('{} requires a cookie.'
                                               .format(addr))
 
+    def _sendmsg_nix(self, packet, target):
+        packet_size = sum(len(e) for e in packet)
+        return self.conn.sendmsg(packet, [], 0, target) == packet_size
+
+    def _sendmsg_nt(self, packet, target):
+        from itertools import chain
+        buf = bytes(chain(*packet))
+        return self.conn.sendto(buf, target) == len(buf)
+
+    if os.name == 'nt':
+        _sendmsg = _sendmsg_nt
+    else:
+        _sendmsg = _sendmsg_nix
+
     def send(self, chunk, dest, wait=0.01, retries=MAX_RETRY, **rest):
         if self.conn is None:
             raise InvalidTransportStateException(
@@ -410,11 +429,10 @@ class UdpTransport(SocketTransport):
             if target is None:
                 raise NoTargetTransportException()
             packet = self._packet_from(chunk)
-            packet_size = sum(len(e) for e in packet)
             cnt = 0
             while True:
                 try:
-                    if self.conn.sendmsg(packet, [], 0, target) == packet_size:
+                    if self._sendmsg(packet, target):
                         return
                     else:
                         raise TransportException("Unable to send full chunk.")
@@ -429,6 +447,18 @@ class UdpTransport(SocketTransport):
                     else:
                         time.sleep(wait)
 
+    def _recvmsg_nt(self):
+        chunk, remote = self.conn.recvfrom(self.buffer_size)
+        return chunk, None, 0, remote
+
+    def _recvmsg_nix(self):
+        return self.conn.recvmsg(self.buffer_size)
+
+    if os.name == 'nt':
+        _recvmsg = _recvmsg_nt
+    else:
+        _recvmsg = _recvmsg_nix
+
     def recvmesgs(self):
         if self.conn is None:
             raise InvalidTransportStateException(
@@ -436,7 +466,7 @@ class UdpTransport(SocketTransport):
 
         try:
             while True:
-                chunk, _, flags, remote= self.conn.recvmsg(self.buffer_size)
+                chunk, _, flags, remote= self._recvmsg()
                 if not chunk:
                     # XXX: zero length packet == closed socket??
                     self._log.debug("Transport closed, terminating receive loop.")
@@ -718,6 +748,14 @@ class TcpTransport(SocketTransport):
         else:
             self._log.debug("Sent %d bytes to %s.", msglen, target)
 
+    def _send_1_nt(self, data, conn, target=None):
+        from itertools import chain
+        buf = bytes(chain(*data))
+        conn.sendall(buf)
+
+    if os.name == 'nt':
+        _send_1 = _send_1_nt
+
     def recvmesgs(self):
         if self.conn is None:
             raise InvalidTransportStateException(
@@ -744,7 +782,7 @@ class TcpTransport(SocketTransport):
                                 aux.peername, e)
                             self._cleanup(key.fileobj, aux.peername)
         except Exception as e:
-            self._log.debug("(recvmesgs): caught exception %r", e)
+            self._log.debug("(recvmesgs): caught exception %r", e, exc_info=1)
 
     def _receive_1(self, conn, aux):
         buf = aux.buf
