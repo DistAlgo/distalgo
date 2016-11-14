@@ -170,9 +170,13 @@ def setup_logging_for_module(modulename,
 
         if GlobalOptions['logfile']:
             filelvl = logging._nameToLevel[GlobalOptions['logfilelevel'].upper()]
-            logfilename = GlobalOptions['logfilename'] \
-                          if GlobalOptions['logfilename'] is not None else \
+            logfilename = GlobalOptions['logfilename']
+            if logfilename is None:
+                if GlobalOptions['file'] is not None:
+                    logfilename = \
                              (os.path.basename(GlobalOptions['file']) + ".log")
+                else:
+                    logfilename = GlobalOptions['module'][0] + '.log'
             fh = logging.FileHandler(logfilename)
             formatter = logging.Formatter(filefmt)
             fh.setFormatter(formatter)
