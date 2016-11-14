@@ -329,9 +329,6 @@ def entrypoint():
         log.error("Caught unexpected global exception: %r", e)
         traceback.print_tb(err_info[2])
         return 4
-    finally:
-        if trman is not None:
-            trman.close()
 
 def die(mesg = None):
     if mesg != None:

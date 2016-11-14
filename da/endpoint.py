@@ -456,6 +456,7 @@ class UdpTransport(SocketTransport):
 
     if os.name == 'nt':
         _recvmsg = _recvmsg_nt
+        socket.MSG_ERRQUEUE = 0
     else:
         _recvmsg = _recvmsg_nix
 
