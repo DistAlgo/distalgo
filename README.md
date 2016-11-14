@@ -10,9 +10,9 @@
 
 ## Python
 
-   DistAlgo requires Python version 3.4 or higher, which can be obtained from
-   http://www.python.org. This document assumes that you use the default name
-   `python` for the Python executable.
+   DistAlgo requires Python version 3.4 or higher, which can be obtained
+   from http://www.python.org. This document assumes that your installation
+   uses the default name `python` for the Python executable.
 
    NOTE: If your system has both Python 2.x and Python 3.x installed, your
    Python executable is likely Python 2. In that case, you should replace
@@ -36,10 +36,11 @@
   DistAlgo root directory (the directory containing this file).
 
   Installation of DistAlgo is optional for running DistAlgo. You can install
-  DistAlgo by using the Python 'distutils' module, or by adding the DistAlgo
-  root directory to your `PYTHONPATH` environment variable.
+  DistAlgo by using the Python `distutils` module, by adding the DistAlgo
+  root directory to your `PYTHONPATH` environment variable, or by using the
+  Python package manager, `pip`.
 
-## Using 'distutils'
+## Using `distutils`
 
    To see full usage description, type:
 
@@ -63,9 +64,29 @@ The following command installs DistAlgo for the current user:
 
       export PYTHONPATH=<DAROOT>:${PYTHONPATH}
 
-   This takes precedence over 'distutils' installations.
+   This takes precedence over `distutils` installations.
 
   After installation, the `da` module will be available for use.
+  
+## Using `pip` to install DistAlgo
+
+   `pip` is the recommended method of installing DistAlgo. Using `pip`, you
+   do not need to manually download the DistAlgo distribution package or
+   setup environment variables, as `pip` will manage all of that for you.
+   
+   To install DistAlgo as a system-wide package:
+   
+     pip install pyDistAlgo
+     
+   This command will likely require administrator privileges.
+   
+   To install DistAlgo for the current user:
+   
+     pip install --user pyDistAlgo
+     
+   To upgrade an existing DistAlgo installation:
+   
+     pip install --upgrade [--user] pyDistAlgo
 
 ## Running DistAlgo without installation
 
@@ -129,10 +150,27 @@ The following command installs DistAlgo for the current user:
    line option will print out a list of all command line options along with
    a brief description of each option.
 
+### Running a DistAlgo module as a script
+
+   Instead of passing a path to a DistAlgo source file on the command line,
+   you can use the '-m' option to run a DistAlgo module as though it were a
+   script:
+   
+     python -m da -m <MODULE>
+     
+   The DistAlgo command line option '-m' mimics Python's own '-m' option.
+   `<MODULE>` must be a DistAlgo module in dotted form and without the '.da'
+   suffix. The source file for the module is located for using the same
+   rules that govern Python's own module loading process.
+
 ### Passing command line arguments to the DistAlgo program
 
    Command line arguments before the `<SOURCE>` argument are passed to the
-   DistAlgo runtime. Arguments after the `<SOURCE>` argument are passed to the
+   DistAlgo runtime; arguments after the `<SOURCE>` argument are passed to
+   the DistAlgo source program in the global `sys.argv` list. Alternatively,
+   if you are using the '-m' option to run a DistAlgo module, command line
+   arguments before the `-m <MODULE>` argument are passed to the DistAlgo
+   runtime; arguments after the `-m <MODULE>` argument are passed to the
    DistAlgo source program in the global `sys.argv` list.
 
    For example, the following command passes argument `-i` to the DistAlgo
@@ -160,21 +198,17 @@ The following command installs DistAlgo for the current user:
 
    The following command runs the Lamport mutual exclusion example:
 
-       python -m da <DAROOT>/examples/lamutex/orig.da
-
-   After running the above command, you should find a file
-   `<DAROOT>/examples/lamutex/orig.py` containing the generated Python code
-   for `orig.da`.
+       python -m da -m da.lib.lamutex.orig
 
    The following command runs the same program, but passes `20` to `orig.da`,
    causing the program to create 20 processes:
 
-       python -m da <DAROOT>/examples/lamutex/orig.da 20
+       python -m da -m da.lib.lamutex.orig 20
 
    The following command runs the same program, but passes `-f` to the
    runtime, causing a log file to be created for this run:
 
-       python -m da -f <DAROOT>/examples/lamutex/orig.da
+       python -m da -f -m da.lib.lamutex.orig
 
    After running the above command, you should find a file `orig.da.log` under
    the current directory.
@@ -182,4 +216,4 @@ The following command installs DistAlgo for the current user:
    The following command runs the same program, but passes `-L debug` to the
    runtime, causing debugging output to be printed to the console:
 
-       python -m da -L debug <DAROOT>/examples/lamutex/orig.da
+       python -m da -L debug -m da.lib.lamutex.orig
