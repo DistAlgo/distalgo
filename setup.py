@@ -1,3 +1,4 @@
+import setuptools
 from distutils.core import setup
 
 import da
@@ -16,4 +17,6 @@ setup(name = "pyDistAlgo",
           'Programming Language :: Python :: 3.5',
           'Topic :: Software Development :: Compilers',
       ],
-      packages = ['da', 'da.compiler', 'da.tools'])
+      packages = setuptools.find_packages(),
+      include_package_data = True
+)
