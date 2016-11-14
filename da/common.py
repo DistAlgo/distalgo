@@ -40,8 +40,8 @@ from functools import wraps
 MAJOR_VERSION = 1
 MINOR_VERSION = 0
 PATCH_VERSION = 0
-PRERELEASE_VERSION = "rc7"
-__version__ = "{}.{}.{}-{}".format(MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION,
+PRERELEASE_VERSION = ""
+__version__ = "{}.{}.{}{}".format(MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION,
                                    PRERELEASE_VERSION)
 
 INCOQ_MODULE_NAME = "incoq.mars.runtime"
