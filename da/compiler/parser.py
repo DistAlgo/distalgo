@@ -806,9 +806,9 @@ class Parser(NodeVisitor):
             else:
                 if node.kwarg.annotation is not None:
                     annotation = self.visit(node.kwarg.annotation)
-                    container.add_vararg(node.kwarg.arg, annotation)
+                    container.add_kwarg(node.kwarg.arg, annotation)
                 else:
-                    container.add_vararg(node.kwarg.arg)
+                    container.add_kwarg(node.kwarg.arg)
         for kwarg, val in zip(node.kwonlyargs, node.kw_defaults):
             if val is not None:
                 val = self.visit(val)
