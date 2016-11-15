@@ -602,8 +602,11 @@ class Unparser:
                 self.dispatch(t.kwarg.annotation)
 
     def _keyword(self, t):
-        self.write(t.arg)
-        self.write("=")
+        if t.arg is None:
+            self.write("**")
+        else:
+            self.write(t.arg)
+            self.write("=")
         self.dispatch(t.value)
 
     def _Lambda(self, t):
