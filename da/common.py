@@ -217,7 +217,7 @@ def check_name(name):
 
 def name_split_host(name):
     """Splits `name` into 'processname', 'hostname', and 'port' components."""
-    comps = name.split('#')
+    comps = name.split('@')
     if len(comps) == 2:
         name, suffix = comps
         suffix = suffix.split(':')
@@ -241,7 +241,7 @@ def name_split_host(name):
 def name_split_node(name):
     """Splits `name` into 'processname', 'nodename' components."""
     assert '#' not in name
-    comps = name.split('@')
+    comps = name.split('#')
     if len(comps) == 2:
         return tuple(comps)
     elif len(comps) == 1:
