@@ -130,7 +130,7 @@ class DistProcess():
         self._state = common.Namespace()
         self._events = []
 
-    def setup(self):
+    def setup(self, **rest):
         """Initialization routine for the DistAlgo process.
 
         Should be overridden by child classes to initialize process states.

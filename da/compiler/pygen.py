@@ -71,30 +71,26 @@ AggregateMap = {
     dast.SumExpr : "sum"
 }
 
-PATTERN_EXPR_NAME = "_PatternExpr_%d"
-QUATIFIED_EXPR_NAME = "_QuantifiedExpr_%d"
 CONFIG_OBJECT_NAME = "_config_object"
 STATE_ATTR_NAME = "_state"
 ENTRYPOINT_NAME = "run"
+CATCHALL_PARAM_NAME = "rest_%d"
 
 ########## Convenience methods for creating AST nodes: ##########
 
 def call_noarg_ast(name):
     return Call(Name(name, Load()), [], [], None, None)
 
-if sys.version_info < (3, 5):
-    def pyCall(func, args=[], keywords=[], starargs=None, kwargs=None):
-        if isinstance(func, str):
-            func = pyName(func)
+def pyCall(func, args=[], keywords=[], starargs=None, kwargs=None):
+    if isinstance(func, str):
+        func = pyName(func)
+    if sys.version_info < (3, 5):
         return Call(func,
                     list(args),
                     [keyword(arg, val) for arg, val in keywords],
                     starargs,
                     kwargs)
-else:
-    def pyCall(func, args=[], keywords=[], starargs=None, kwargs=None):
-        if isinstance(func, str):
-            func = pyName(func)
+    else:
         return Call(func,
                     list(args),
                     [keyword(arg, val) for arg, val in keywords])
@@ -166,9 +162,9 @@ def pyLabel(name, block=False, timeout=None):
                        args=[Str(name)],
                        keywords=kws))
 
-if sys.version_info < (3, 5):
-    def pyClassDef(name, bases=[], keywords=[], starargs=None,
-                   kwargs=None, body=[], decorator_list=[]):
+def pyClassDef(name, bases=[], keywords=[], starargs=None,
+               kwargs=None, body=[], decorator_list=[]):
+    if sys.version_info < (3, 5):
         return ClassDef(name,
                         list(bases),
                         [keyword(arg, val) for arg, val in keywords],
@@ -176,9 +172,7 @@ if sys.version_info < (3, 5):
                         kwargs,
                         list(body),
                         list(decorator_list))
-else:
-    def pyClassDef(name, bases=[], keywords=[], starargs=None,
-                   kwargs=None, body=[], decorator_list=[]):
+    else:
         return ClassDef(name,
                         list(bases),
                         [keyword(arg, val) for arg, val in keywords],
@@ -329,9 +323,10 @@ class PythonGenerator(NodeVisitor):
             # This is an expression, pass on pre and post bodies:
             return propagate_attributes([node], res)
 
-    def body(self, body):
+    def body(self, body, res=None):
         """Process a block of statements."""
-        res = []
+        if res is None:
+            res = []
         for stmt in body:
             if stmt.label is not None:
                 res.append(pyLabel(stmt.label))
@@ -422,7 +417,7 @@ class PythonGenerator(NodeVisitor):
         kwonlyargs = [arg(ident.name, None) for ident in node.kwonlyargs]
         kw_defaults = [self.visit(expr) for expr in node.kw_defaults]
         defaults = [self.visit(expr) for expr in node.defaults]
-        if sys.version_info > (3, 4):
+        if sys.version_info >= (3, 5):
             vararg = arg(node.vararg.name, None) \
                      if node.vararg is not None else None
             kwarg = arg(node.kwarg.name, None) \
@@ -487,19 +482,33 @@ class PythonGenerator(NodeVisitor):
         stmts[0].args = [arg('self', None)]
         return stmts
 
+    def _generate_setup(self, node, fd):
+        fd.args = self.visit(node.parent.args)
+        kwargname = CATCHALL_PARAM_NAME % node._index
+        fd.args.kwarg = arg(kwargname, None)
+        superargs = [(argname.name, pyName(argname.name))
+                     for argname in node.parent.args.args]
+        superargs.append((None, pyName(kwargname)))
+        fd.body.append(Expr(
+            pyCall(func=pyAttr(pyCall("super"), "setup"),
+                   keywords=superargs)))
+        fd.body.extend([
+            Assign(targets=[pyAttr(pyAttr("self", STATE_ATTR_NAME),
+                                   name, Store())],
+                   value=pyName(name))
+            for name in node.parent.ordered_names
+        ])
+
     def visit_Function(self, node):
         fd = FunctionDef()
         fd.name = node.name
         fd.args = self.visit(node.args)
-        fd.body = self.body(node.body)
+        fd.body = []
         if isinstance(node.parent, dast.Process):
             if node.name == "setup":
-                fd.args = self.visit(node.parent.args)
-                fd.body = ([Assign(targets=[pyAttr(pyAttr("self", STATE_ATTR_NAME),
-                                                   name, Store())],
-                                   value=pyName(name))
-                            for name in node.parent.ordered_names] + fd.body)
+                self._generate_setup(node, fd)
             fd.args.args.insert(0, arg("self", None))
+        fd.body = self.body(node.body, fd.body)
         fd.decorator_list = [self.visit(d) for d in node.decorators]
         fd.returns = None
         return [fd]

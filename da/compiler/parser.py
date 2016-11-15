@@ -850,6 +850,8 @@ class Parser(NodeVisitor):
             self.program.body.append(proc)
 
             self.signature(initfun.args)
+            if proc.args.kwarg is not None:
+                self.error("'setup()' can not have keyword argument.", initfun)
             self.current_block = proc.body
             # setup() has to be parsed first:
             self.proc_body([node.body[bodyidx]] +
