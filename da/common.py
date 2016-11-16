@@ -365,10 +365,10 @@ class ProcessId(namedtuple("_ProcessId",
         """
         if len(self.nodename) > 0 and self.nodename != self.name:
             if len(self.name) > 0:
-                return "<{0.clsname}:{0.name}@{0.nodename}>".format(self)
+                return "<{0.clsname}:{0.name}#{0.nodename}>".format(self)
             else:
                 # otherwise, we use `uid` truncated to the last 5 hex digits:
-                return "<{0.clsname}:{1:05x}@{0.nodename}>".format(
+                return "<{0.clsname}:{1:05x}#{0.nodename}>".format(
                     self, self.uid & 0xfffff)
         else:
             if len(self.name) > 0:
@@ -384,10 +384,10 @@ class ProcessId(namedtuple("_ProcessId",
         """
         if len(self.nodename) > 0 and self.nodename != self.name:
             if len(self.name) > 0:
-                return "<{0.clsname}:{0.name}@{0.nodename}>".format(self)
+                return "<{0.clsname}:{0.name}#{0.nodename}>".format(self)
             else:
                 # otherwise, we use `uid` truncated to the last 5 hex digits:
-                return "<{0.clsname}:{1:x}@{0.nodename}>".format(self, self.uid)
+                return "<{0.clsname}:{1:x}#{0.nodename}>".format(self, self.uid)
         else:
             if len(self.name) > 0:
                 return "<{0.clsname}:{0.name}>".format(self)
