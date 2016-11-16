@@ -1,0 +1,730 @@
+\documentclass[12pt]{article}
+\usepackage{fullpage}
+\setlength{\parskip}{.8ex}
+\setlength{\parindent}{0ex}
+\usepackage{url}
+\usepackage{xspace} %
+\usepackage{alltt} %
+\usepackage[T1]{fontenc} %
+\usepackage{graphicx}
+
+\usepackage{tikz}                %
+\usetikzlibrary{arrows,positioning} 
+\tikzset{
+    %
+    >=stealth',
+    %
+    absbox/.style={
+           rectangle, rounded corners, draw=black, very thick,
+           text width=14em, minimum height=2em,
+           text centered},
+    %
+    absarrow/.style={
+           <-, thick,
+           shorten <=2pt,
+           shorten >=2pt},
+    field/.style={ %
+           rectangle, draw=black, thick,
+           text width=4.2em, minimum height=1.6em,
+           text centered, inner sep=0pt},
+    cell/.style={ %
+           rectangle, draw=black, thick,
+           text width=1.5em, minimum height=1.5em,
+           text centered, inner sep=0pt},
+    pointer/.style={ %
+           <-, thick,
+           shorten <=2pt,
+           shorten >=2pt},
+    vertex/.style={ %
+           circle, draw=black, thick,
+           text width=1.5em, minimum height=1.5em,
+           text centered, inner sep=0pt},
+}
+
+\newcommand{\notes}[1]{} %
+\newcommand{\todo}[1]{}
+\newcommand{\om}[1]{} %
+\newcommand{\body}[1]{} %
+
+\newcommand{\mysubsec}[1]{\subsection*{#1}}
+\newcommand{\myparag}[1]{\vspace{2ex}\noindent\b{#1.}~}
+
+\newcommand{\exerciselist}[1]{#1} %
+\newcommand{\exercise}[1]{ %
+  \refstepcounter{exercounter} \paragraph{Exercise \theexercounter} #1}
+\newcommand{\exername}[1]{$\!\!\!\!$\b{(#1)}\,} %
+\newcommand{\sol}[1]{} %
+
+\newenvironment{example}{}{}
+
+\newcommand{\grammar}[1]{}
+
+\hyphenation{in-cre-men-tal-i-za-tion di-men-sion-al}\todo{}
+\def\hyph{-\penalty0\hskip0pt\relax}
+
+\newcommand\defn[1]{{\it #1}\index{#1|bold}}
+\newcommand\defnn[2]{{\it #1}\index{#2|bold}} %
+\newcommand\defna[2]{{\it #1}\index{#2@#1|bold}} %
+\newcommand\defnu[2]{{\it #1}\index{#2!#1|bold}} %
+\newcommand\term[1]{#1\index{#1}}
+\newcommand\termm[2]{#1\index{#2}}
+\newcommand\terma[2]{#1\index{#2@#1}} %
+\newcommand\termu[2]{#1\index{#2!#1}} %
+\newcommand\people[1]{#1\index{#1}}
+\newcommand\lang[1]{#1\index{#1}}
+
+\def\mathify#1{\ifmmode{#1}\else\mbox{$#1$}\fi}
+\newcommand\m[1]{$#1$} %
+
+\newenvironment{code}{\begin{center}\small\begin{alltt}\vspace{-1.5ex}}{\vspace{-1.5ex}\end{alltt}\end{center}}
+\renewcommand\c[1]{{\tt\small #1}} %
+\newcommand\cm[1]{\m{\c{#1}}} %
+\renewcommand\b[1]{{\bf #1}} %
+\newcommand\power{\texttt{\hspace{0pt}\char`\^\hspace{0pt}}}
+\newcommand{\ctrue}{\c{true}\xspace}
+\newcommand{\cfalse}{\c{false}\xspace}
+\newcommand{\cwhile}{\c{while}\xspace}
+\newcommand{\cfor}{\c{for}\xspace}
+\newcommand{\cforall}{\c{all}} %
+\newcommand{\cthis}{\c{self}\xspace} %
+\newcommand{\cif}{\c{\hspace{-1pt}if~}} %
+\newcommand{\celse}{\c{else}} %
+\newcommand{\cset}{\c{set}} %
+\newcommand{\cempty}{\c{new~set}} %
+\newcommand{\cnot}{\c{\hspace{4pt}not\hspace{5pt}}} %
+\newcommand{\cin}{\c{\hspace{4pt}in\hspace{5pt}}} %
+\newcommand{\cadd}{\c{add}} %
+\newcommand{\cdel}{\c{del}} %
+\newcommand{\ccontains}{\c{contains}} %
+\newcommand{\elem}{\c{members}} %
+\newcommand{\cclass}{\c{class~}} %
+\newcommand{\DEF}{\b{def}~} %
+\newcommand{\THEN}{\b{then}~} %
+\newcommand{\ELSE}{\b{else}~} %
+\newcommand{\LET}{\b{let}~} %
+\newcommand{\IN}{\b{in}~} %
+\newcommand\p[1]{{\small\mathify{\it #1}}}
+\newcommand{\cmd}{{\it cmd}} %
+\renewcommand{\exp}{{\it exp}} %
+\renewcommand\to{\c{->}\xspace} %
+\renewcommand{\|}{\mathify{\,\mbox{\c{|}}\,}} %
+
+\newcommand\inv[1]{\c{#1}} %
+\renewcommand{\=}{\mathify{\,=\,}\linebreak[0]}
+\newenvironment{invl}{\begin{center}}{\end{center}}
+\newenvironment{invln}{\begin{equation}}{\end{equation}\ignorespacesafterend}
+
+\renewcommand\O[1]{\mathify{O(#1)}\xspace}
+\newcommand\s[1]{\mathify{\#}\c{#1}}
+\renewcommand\arg[2]{\mathify{\c{#1}.#2}}
+\newcommand\relarg[3]{\mathify{\#\c{#1}.#2/#3}}
+\newcommand\fire{{\it firedTimes}\xspace}
+\newcommand\I[1]{\mbox{{\small \it I}\c{#1}}}
+\newcommand\D[1]{\mbox{{\small \it D}\c{#1}}}
+\newcommand{\atime}{{\it time}} %
+\newcommand{\afreq}{{\it freq}} %
+
+\newenvironment{twoLineFigure}[1]
+  {\begin{figure*}[#1]
+      \rule{\textwidth}{.1mm}}{\rule{\textwidth}{.1mm}
+  \end{figure*}\ignorespacesafterend}
+
+\newcommand{\Vspace}[1]{\rule{0cm}{#1ex}}
+
+\newcommand{\INV}{\b{\hspace{-.9ex}inv~\hspace{.1ex}}}
+\newcommand{\query}{{\it query}\xspace} %
+\newcommand{\AT}{\b{at~\hspace{.2ex}}}
+\newcommand{\update}{{\it update}\xspace} %
+\newcommand{\IF}{\b{if}~} %
+\newcommand{\cond}{{\it condition}}
+\newcommand{\DE}{\b{de~\hspace{1pt}}}
+\newcommand{\class}{{\it class}}
+\newcommand{\decl}{{\it declaration}}
+\newcommand{\DO}{\b{do}~} %
+\newcommand{\BEFORE}{\b{before~}}
+\newcommand{\AFTER}{\b{after~}}
+\newcommand{\INSTEAD}{\b{instead~}}
+\newcommand{\maint}{{\it maint}\xspace}
+\newcommand{\COST}{\b{cost~}}
+\newcommand{\cost}{{\it cost}\xspace}
+\newcommand{\vquery}{{\it query}} %
+\newcommand{\vupdate}{{\it update}} %
+\newcommand{\vqos}{{\it qos}} %
+\newcommand{\vaddqo}{{\it addqo}} %
+\newcommand{\velemmod}{{\it elementmodified}} %
+
+\newcommand{\aread}{{\rm read}}
+\newcommand{\awrite}{{\rm write}}
+\newcommand{\amayalias}{{\rm mayalias}}
+\newcommand{\atype}{{\rm type}}
+\newcommand{\avars}{{\rm vars}}
+\newcommand{\aclass}{{\rm class}}
+\newcommand{\amethod}{{\rm method}}
+\newcommand{\aisfield}{{\rm isfield}}
+\newcommand{\aisfieldof}{{\rm isfieldof}}
+\newcommand{\aisupdatedin}{{\rm isupdatedin}}
+
+\newenvironment{dedication}
+{
+   \cleardoublepage
+   \thispagestyle{empty}
+   \vspace*{\stretch{1}}
+   \hfill\begin{minipage}[t]{0.66\textwidth}
+   \raggedright
+}%
+{
+   \end{minipage}
+   \vspace*{\stretch{3}}
+   \clearpage
+}
+
+
+
+
+
+\begin{document}
+
+\body{} %
+
+\newpage
+\appendix
+
+\renewcommand{\thesection}{\arabic{section}}
+
+\setcounter{page}{1}
+\setcounter{section}{0}
+
+
+\notes{}
+
+\section*{{\Large DistAlgo Language Description}}
+
+{\large Yanhong A.\ Liu, Bo Lin, and Scott Stoller}
+
+\c{liu@cs.stonybrook.edu, bolin@cs.stonybrook.edu, stoller@cs.stonybrook.edu}
+
+{\small Revised November 16, 2016}
+\vspace{4ex}
+
+\def\da{\vspace{-2.5ex}in DistAlgo\vspace{-2.5ex}}
+\def\langmap{\vspace{.5ex}\m{\longrightarrow}~\b{in Python syntax:~}
+  \vspace{.0ex}}
+\newcommand{\alt}[1]{{\bf ---}#1\\{\bf ---}} %
+\renewcommand{\mysubsec}[1]{\section{#1}}
+\renewcommand{\myparag}[1]{\subsection{#1}}
+
+
+DistAlgo is a language for distributed algorithms.  We describe DistAlgo
+language constructs as extensions to conventional object-oriented
+programming languages, including a syntax for extensions to Python.
+
+There are four components conceptually: (1) distributed processes and
+sending messages, (2) control flows and receiving messages, (3) high-level
+queries of message histories, and (4) configurations.
+
+High-level queries are not specific to distributed algorithms, but using
+them over message histories is particularly helpful for expressing and
+understanding distributed algorithms at a high level.  Some conventional
+programming languages, such as Python, support high-level queries to some
+extent, but DistAlgo query constructs are more declarative, especially with
+the support of tuple patterns for messages.
+
+\mysubsec{Distributed processes and sending messages}
+
+\myparag{Process definition}
+
+A process definition is of the following form.  It defines a type of
+processes named \p{p}, by defining a class \p{p} that extends class
+\c{process}.  The \c{\p{process\_body}} is a set of method definitions and
+handler definitions, to be described.
+\begin{code}
+    class \p{p} extends process:
+      \p{process\_body}
+\end{code}
+The syntax of process definition could be made simpler and clearer:
+\begin{code}
+    process \p{p}:
+      \p{process_body}
+\end{code}
+but it would make \c{process} a keyword, which is usually a reserved word,
+whereas \c{process} as a class name is not reserved %
+and can be defined or redefined to be anything else.
+
+\langmap
+\begin{code}
+    class \p{p} (process):
+      \p{process_body}
+\end{code}
+
+\todo{}
+
+
+A special method \c{setup} may be defined in \c{\p{process\_body}} for
+initially setting up data in the process before the execution starts.
+For each parameter \p{v} of \c{setup}, a process field named \p{v} is
+defined automatically and assigned the value of parameter \p{v}; additional
+fields
+can be defined explicitly in the method body of \c{setup}.
+
+A special method \c{run()}
+must be defined in \c{\p{process\_body}} for carrying out the main flow of
+execution.
+
+
+A special variable \c{self} refers to the current process.  
+Fields of the process may be defined by including the field name
+as a parameter of method \c{setup}, or by explicitly prefixing the field name 
+with \c{self} in an assignment to the field.
+References to fields of the process 
+do not need to be prefixed with \c{self}.  References to methods of the
+process do not need to be prefixed with \c{self} either.  Also, method
+definitions implicitly include parameter \c{self}.
+
+
+
+
+\myparag{Process creation}
+
+Process creation consists of statements for creating, setting up, and
+starting processes. %
+
+A process creation statement is of the following form.  It creates \p{n}
+new processes of type \p{p} at each node in the value of \c{\p{node\_exp}},
+and assigns the resulting process
+or set of processes to variable \p{v}. %
+Expression \c{\p{node\_exp}} evaluates to a node
+or a set of nodes, specifying where the new processes will be created.
+A node is a running DistAlgo program on a machine. %
+A node is identified by a string of the form \c{name@host}, where \c{name}
+can be specified on the command line when starting the node, and \c{host}
+is the host name of the machine running the node; \c{@host} can be omitted
+if the node is running on the same machine. %
+All nodes communicating with each other must have the same cookie, which
+can be specified on the command line when starting the node.
+The number \p{n} and clause \c{at} are optional; the defaults are 1 and
+local node, respectively.  When both the number \p{n} and clause \c{at} are
+omitted, a single process is created and assigned to \p{v}; otherwise, a
+set of processes is created and assigned to \p{v}.
+\begin{code}
+    \p{v} = \p{n} new \p{p} at \p{node_exp}
+\end{code}
+
+\langmap
+\begin{code}
+    \p{v} = new(\p{p}, num = \p{n}, at = \p{node_exp})
+\end{code}
+
+
+
+A process setup statement is of the following form.  It sets up the process
+or set of processes that is the value of expression \p{pexp}, using method
+\c{setup} of the process or processes with the values of argument
+expressions \p{args}.  If the values of \p{args} are available when the
+process or processes are created at a call to \c{new}, the call to
+\c{setup} can be omitted by inserting tuple \c{(\p{args})} after \p{p} in
+the call to \c{new}.
+\begin{code}
+    \p{pexp}.setup(\p{args})
+\end{code}
+
+\langmap%
+\begin{code}
+    setup(\p{pexp}, (\p{args}))        \normalfont{Note: You must add a trailing comma if \p{args} is a single argument.}
+\end{code}
+
+A process start statement is of the
+ following form.  It starts the
+execution of the method \c{run} of the process or set of processes that is
+the value of expression \p{pexp}.
+\begin{code}
+    \p{pexp}.start()
+\end{code}
+
+\langmap%
+\begin{code}
+    start(\p{pexp})
+\end{code}
+
+\notes{}
+
+\myparag{Sending messages}
+
+A statement for sending messages is of the following form.  It sends the
+message that is value of expression \p{mexp} to the process or set of
+processes that is the value of expression \p{pexp}.  A message can be any
+value but is by convention a tuple whose first component is a string,
+called a tag, indicating the kind of the message.
+\begin{code}
+    send \p{mexp} to \p{pexp}
+\end{code}
+
+\langmap
+\begin{code}
+    send(\p{mexp}, to = \p{pexp})
+\end{code}
+\notes{}
+
+
+\mysubsec{Control flows and receiving messages}
+
+\myparag{Yield points}
+
+A yield point preceding a statement is of the following form, where
+identifier \p{l} is a label and is optional.  It specifies that point in
+the program as a place where control may yield to handling of received
+messages.
+\begin{code}
+    -- \p{l}:
+\end{code}
+
+\langmap
+\begin{code}
+    -- \p{l}
+\end{code}
+\quad\quad which is a statement in Python, where \p{l} is any valid Python
+identifier.
+\notes{}
+
+\notes{}
+
+
+\myparag{Handling messages received}
+
+Handling messages received can be done using handler definitions and
+message history variables.
+
+A handler definition is of the following form. 
+It handles, at yield points labeled \p{l\sb{1}}, ..., \p{l\sb{j}},
+un-handled messages that match \p{mexp} sent from \p{pexp}, where
+\p{mexp} and \p{pexp} are parts of a pattern;
+previously unbound variables in a pattern are bound to the corresponding
+components in the value matched.
+The \c{from} and \c{at} clauses are optional; the defaults are any process
+and all yield points.  The \c{\p{handler\_body}} is a sequence of
+statements to be executed for the matched messages.
+\begin{code}
+    receive \p{mexp} from \p{pexp} at \p{l\sb{1}}, ..., \p{l\sb{j}}:
+      \p{handler_body}
+\end{code}
+We could use the noun \c{handler} in place of \c{receive}, but handlers are
+not named and called with their names; instead, yield points are named, and
+handlers are executed at the specified yield points.
+
+\langmap
+\begin{code}
+    def receive(msg = \p{mexp}, from_ = \p{pexp}, at = (\p{l\sb{1}}, ..., \p{l\sb{j}})):
+      \p{handler_body}
+\end{code}
+\quad\quad where \c{\_} is added after \c{from} because \c{from} is a
+reserved word in Python.
+
+Message histories, i.e., the sequences of messages received and sent, in
+variables \c{received}
+and \c{sent}, respectively, can be used in expressions.
+Sequence \c{received} is updated at the next yield point if there are
+un-handled messeges, by adding un-handled messages before any matching
+receive handler executes.
+Sequence \c{sent} is updated at each \c{send} statement, by adding each
+message sent to a process.
+
+In particular, the following two equivalent expressions return true iff a
+message that matches \p{mexp} sent from \p{pexp} is in \c{received}.  The
+\c{from} clause is optional; the default is any process.
+\begin{code}
+    received \p{mexp} from \p{pexp}
+    \p{mexp} from \p{pexp} in received
+\end{code}
+
+\langmap
+\begin{code}
+    received(\p{mexp}, from_ = \p{pexp})
+    (\p{mexp}, \p{pexp}) in received
+\end{code}
+
+Similarly, the following expressions use \c{sent}.
+\begin{code}
+    sent \p{mexp} to \p{pexp}
+    \p{mexp} to \p{pexp} in sent
+\end{code}
+
+\langmap
+\begin{code}
+    sent(\p{mexp}, to = \p{pexp})
+    (\p{mexp}, \p{pexp}) in sent
+\end{code}
+\todo{}
+
+
+\myparag{Synchronization}
+
+Synchronization and associated actions can be expressed using general,
+non\-deterministic \c{await} statements.
+
+A simple \c{await} statement is of the following form.  It waits for the
+value of Boolean-valued expression \p{bexp} to become true, with an
+implicit yield point for handling messages while waiting.  It is a short
+hand for \c{await \p{bexp}:~pass} in a general, nondeterministic \c{await}
+statement.
+\begin{code}
+    await \p{bexp}
+\end{code}
+
+\langmap
+\begin{code}
+    await(\p{bexp})
+\end{code}
+
+A general, nondeterministic \c{await} statement is of the following form.
+It waits for any of the values of expressions \p{bexp\sb{1}}, ...,
+\p{bexp\sb{k}} to become true or a timeout after \p{t} seconds, with an
+implicit yield point for handling messages while waiting, and then
+nondeterministically selects one\notes{} of statements
+\p{stmt\sb{1}}, ..., \p{stmt\sb{k}}, \p{stmt} whose corresponding
+conditions are satisfied to execute.  The \c{or} and \c{timeout} clauses
+are optional.
+\begin{code}
+    await \p{bexp\sb{1}}: \p{stmt\sb{1}}
+    or ... 
+    or \p{bexp\sb{k}}: \p{stmt\sb{k}}
+    timeout \p{t}: \p{stmt}
+\end{code}
+\notes{}
+
+\langmap
+\begin{code}
+    if await(\p{bexp\sb{1}}): \p{stmt\sb{1}}
+    elif ...
+    elif \p{bexp\sb{k}}: \p{stmt\sb{k}}
+    elif timeout(\p{t}): \p{stmt}
+\end{code}
+
+An \c{await} statement must be preceded by a yield point; if a yield point
+is not specified explicitly, the default is that all message handlers can
+be executed at this point.
+
+\notes{}
+
+
+\mysubsec{High-level queries of message histories}
+
+\myparag{Comprehensions}
+
+A comprehension is a query of the following form plus a set of
+\defn{parameters}---variables whose values are bound before the query.
+For a query to be well-formed, every variable in it must be
+\defn{reachable} from a parameter---be a parameter or be the left-side
+variable of a membership clause whose right-side variables are reachable.
+Given values of parameters, the query returns the set of values of \p{exp}
+for all values of variables that satisfy all membership clauses
+\c{\p{v_i} in \p{sexp\sb{i}}} and condition \p{bexp}.
+When \p{sexp_i} is a variable \p{s_i}, clause \c{\p{v_i} in \p{s_i}} can
+also be written as \p{s_i(v_i)}.
+When \p{bexp} is \c{true}, \c{, \p{bexp}} can be omitted.
+\begin{code}
+    \{\p{exp}: \p{v\sb{1}} in \p{sexp\sb{1}}, ..., \p{v\sb{k}} in \p{sexp\sb{k}}, \p{bexp}\}
+\end{code}
+To indicate that a variable \c{x} on the left side of a membership
+clause is a parameter, add prefix \c{=} to \c{x}; this is only needed
+for the first occurrence of such a variable.
+Notation \c{=x} means a value that is equal to the value of parameter
+\c{x}; it is equivalent to using a fresh variable \c{y} instead and adding
+a conjunct \c{y=x} in condition \p{bexp}.
+This notation can generalize: one can add as prefix any binary operator
+that is a symbol not allowed in identifiers, uses the parameter value as
+the right operand, and returns a Boolean value.  For example, \c{>x} means
+a value that is greater than the value of parameter \c{x}.
+
+\langmap
+\begin{code}
+    setof(\p{exp}, \p{v\sb{1}} in \p{sexp\sb{1}}, ..., \p{v\sb{k}} in \p{sexp\sb{k}}, \p{bexp})
+\end{code}
+\quad\quad where \c{\_} is used in place of \c{=} to indicate parameters.
+This forbids the use of variable names that start with \c{\_} in the query.
+Also, only for \p{sexp_i} being variable \c{received} or \c{sent} can
+clause \c{\p{v_i} in received} or \c{\p{v_i} in sent} be written as
+\c{received(\p{v_i})} or \c{sent(\p{v_i})}, respectively.
+
+
+
+
+
+\myparag{Aggregations}
+
+An aggregation is a query of one of the following two forms, where
+\c{\p{agg}} is an aggregation operator, including \c{count}, \c{sum},
+\c{min}, and \c{max}.
+The query returns the value of applying \c{\p{agg}} to the set value of the
+comprehension expression \c{\p{comprehension\_exp}}, for the first form, or
+to the multiset of values of \p{exp} for all values of variables that
+satisfy all membership clauses \c{\p{v\sb{i}} in \p{sexp\sb{i}}} and
+condition \p{bexp}, for the second form.
+\begin{code}
+    \p{agg} \p{comprehension_exp}
+    \p{agg} (\p{exp}: \p{v\sb{1}} in \p{sexp\sb{1}}, ..., \p{v\sb{k}} in \p{sexp\sb{k}}, \p{bexp})
+\end{code}
+
+\langmap
+\begin{code}
+    \p{agg}(\p{comprehension_exp})
+    \p{agg}of(\p{exp}, \p{v\sb{1}} in \p{sexp\sb{1}}, ..., \p{v\sb{k}} in \p{sexp\sb{k}}, \p{bexp})
+\end{code}
+\quad\quad where \c{len} is used in place of \c{count}.
+
+
+\myparag{Quantifications}
+
+A quantification is a query of one of the following two forms plus a set of
+parameters.  The two forms are called existential and universal
+quantifications, respectively.  Given values of parameters, the query
+returns \c{true} iff for some or all, respectively, values of the variables
+that satisfy all membership clauses \c{\p{v\sb{i}} in \p{sexp\sb{i}}},
+expression \p{bexp} evaluates to \c{true}.  When an existential
+quantification returns \c{true}, all variables in the query are also bound
+to a combination of values, called a witness, that satisfy all the
+membership clauses and condition \p{bexp}.
+\begin{code}
+    some \p{v\sb{1}} in \p{sexp\sb{1}}, ..., \p{v\sb{k}} in \p{sexp\sb{k}} has \p{bexp}
+    each \p{v\sb{1}} in \p{sexp\sb{1}}, ..., \p{v\sb{k}} in \p{sexp\sb{k}} has \p{bexp}
+\end{code}
+Parameters are indicated as for comprehensions.  Also as for
+comprehensions, when \p{sexp_i} is a variable \p{s_i}, expression
+\p{s_i(v_i)} can be used in place of \c{\p{v_i} in \p{s_i}}.  When \p{bexp}
+is \c{true}, the \c{has} clause can be omitted.
+
+\langmap\notes{}
+\begin{code}
+    some(\p{v\sb{1}} in \p{sexp\sb{1}}, ..., \p{v\sb{k}} in \p{sexp\sb{k}}, has = \p{bexp})
+    each(\p{v\sb{1}} in \p{sexp\sb{1}}, ..., \p{v\sb{k}} in \p{sexp\sb{k}}, has = \p{bexp})
+\end{code}
+\quad\quad where prefix \c{\_} or a \c{params} clause is used to indicate
+parameters, as for comprehensions.
+
+\notes{}
+
+
+\myparag{Patterns}
+\label{sec-patterns}
+
+In the clauses \c{\p{v\sb{1}} in \p{sexp\sb{1}}, \ldots, \p{v\sb{k}} in
+  \p{sexp\sb{k}}} in all of comprehensions, aggregations, and
+quantifications, a tuple expression \p{texp_i}, called a tuple pattern, may
+occur in place of variable \p{v_i}.  Previously unbound variables in
+\p{texp_i} are bound to the corresponding components in %
+the matched elements of the value of \p{sexp\sb{i}}.
+The underscore (\c{\_}) is used as a wild card that can be bound to anything.
+In general, any data construction expression 
+can be used as a pattern; we use only tuple patterns because messages are
+by convention tuples.
+
+
+\mysubsec{Configurations}
+
+
+
+\myparag{Channel types}
+
+The following statement configures all channels to be
+first-in-first-out (FIFO).
+Other options for \c{channel} include \c{reliable} and \c{\{reliable,
+  fifo\}}.  When these options are specified, TCP is used for process
+communication; otherwise, UDP is used.
+\begin{code}
+    configure channel = fifo
+\end{code}
+
+\langmap
+\begin{code}
+    config(channel = 'fifo')
+\end{code}
+Channels can also be configured separately for messages from certain types
+of processes to certain types of processes, by adding clauses \c{from
+  \p{ps}} and \c{to \p{qs}}, or arguments \c{from\_ = \p{ps}} and \c{to =
+  \p{qs}} in Python syntax, where \p{ps} and \p{qs} can be a type of
+processes or a set of types of processes.  Each of these clauses is
+optional; the default is all types of processes.
+
+
+\myparag{Message handling}
+
+The following statement configures the system to handle all messages
+received at each yield point; this is the default. 
+Other options for \c{handling} include \c{one}.
+\begin{code}
+    configure handling = all
+\end{code}
+
+\langmap
+\begin{code}
+    config(handling = 'all')
+\end{code}
+
+
+\myparag{Logical clocks}
+
+The following statement configures the system to use Lamport clock.  Other
+options for \c{clock} include \c{vector}; it is currently not supported.
+\begin{code}
+    configure clock = Lamport
+\end{code}
+
+\langmap
+\begin{code}
+    config(clock = 'Lamport')  
+\end{code}
+
+A call \c{logical\_time()} returns the current value of the logical
+clock.
+
+
+\myparag{Overall}
+
+A DistAlgo program is written in files named with extension \c{.da}.  It
+consists of a set of process definitions, a method \c{main}, and possibly
+other, conventional program parts.  Method \c{main} specifies the
+configurations and creates, sets up, and starts a set of processes.
+
+DistAlgo language constructs can be used in process definitions and method
+\c{main} and are implemented according to the semantics described; 
+other, conventional program parts are implemented according to their
+conventional semantics.
+\notes{}
+
+
+
+\mysubsec{Other useful functions in Python}
+
+\myparag{Logging output}
+
+The following method prints the values of expressions \c{\p{exp_1}} through
+\c{\p{exp_k}} in their \c{str()} representation, separated by the value of
+\c{\p{str\_exp}} and prefixed with system timestamp, process id, and the
+specified integer level \p{l}, to the log of %
+the node that runs the current DistAlgo process; the printing is done only
+if level \p{l} is greater or equal to the default logging level or the
+level specified on the command line when starting the node. %
+The log defaults to console\notes{}\notes{}, but can be a file specified on the command
+line when starting the node. %
+\begin{code}
+    output(\p{exp\sb{1}}, ..., \p{exp\sb{k}}, sep = \p{str\_exp}, level = \p{l})
+\end{code}
+Argument \c{sep} is optional and defaults to the empty space.  Argument
+\c{level} is optional and defaults to \c{logging.INFO}, corresponding to
+value 20, in the Python logging module; see
+\url{https://docs.python.org/3/library/logging.html#levels} for a list of
+predefined level names.
+
+
+\myparag{Importing modules}
+
+The following statement is equivalent to Python statement \c{import
+  \p{module} as \p{m}}.\linebreak It takes DistAlgo module \p{module},
+which must end in a DistAlgo program file name excluding extension \c{.da},
+compiles the program file if an up-to-date compiled file does not already
+exist, and assigns to \p{m} the resulting module object if successful or
+raises \c{ImportError} otherwise.
+\begin{code}
+    \p{m} = import_da(\p{module})
+\end{code}
+
+
+\end{document}
