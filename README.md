@@ -263,7 +263,7 @@ The following command installs DistAlgo for the current user:
      <Node_:Ping>:INFO: Waiting to resolve name 'Pong'...
      
   This indicates that the node process 'Ping' is blocked at the 'send'
-  statement, because the DistAlgo system does not how to resolve the name
+  statement, because the DistAlgo system does not know how to resolve the name
   'Pong'. So let's write the corresponding 'Pong.da' program:
 
     def main():
