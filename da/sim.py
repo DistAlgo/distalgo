@@ -312,7 +312,7 @@ class DistProcess():
                         "`setup` failed for %r, terminating child.", cid)
                     self.end(cid)
             children = tmp
-        if num is None:
+        if num is None and at is None:
             return children[0] if len(children) > 0 else None
         else:
             return set(children)
