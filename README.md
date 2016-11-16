@@ -204,17 +204,17 @@ The following command installs DistAlgo for the current user:
 
    The following command runs the Lamport mutual exclusion example:
 
-       python -m da -m da.lib.lamutex.orig
+       python -m da -m da.examples.lamutex.orig
 
    The following command runs the same program, but passes `20` to `orig.da`,
    causing the program to create 20 processes:
 
-       python -m da -m da.lib.lamutex.orig 20
+       python -m da -m da.examples.lamutex.orig 20
 
    The following command runs the same program, but passes `-f` to the
    runtime, causing a log file to be created for this run:
 
-       python -m da -f -m da.lib.lamutex.orig
+       python -m da -f -m da.examples.lamutex.orig
 
    After running the above command, you should find a file `orig.da.log` under
    the current directory.
@@ -222,7 +222,7 @@ The following command installs DistAlgo for the current user:
    The following command runs the same program, but passes `-L debug` to the
    runtime, causing debugging output to be printed to the console:
 
-       python -m da -L debug -m da.lib.lamutex.orig
+       python -m da -L debug -m da.examples.lamutex.orig
 
 # Further References
 
