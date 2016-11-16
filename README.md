@@ -70,9 +70,12 @@ The following command installs DistAlgo for the current user:
   
 ## Using `pip` to install DistAlgo
 
-   `pip` is the recommended method of installing DistAlgo. Using `pip`, you
-   do not need to manually download the DistAlgo distribution package or
-   setup environment variables, as `pip` will manage all of that for you.
+   `pip` is a command line utility for installing Python packages from the
+   Python Package Index(PyPI). `pip` is the recommended method of installing
+   DistAlgo. Using `pip`, you do not need to manually download the DistAlgo
+   distribution package or setup environment variables, as `pip` will manage
+   all of that for you. The name of the DistAlgo package on PyPI is
+   'pyDistAlgo'.
    
    To install DistAlgo as a system-wide package:
    
@@ -80,10 +83,13 @@ The following command installs DistAlgo for the current user:
      
    This command will likely require administrator privileges.
    
-   To install DistAlgo for the current user:
+   To install DistAlgo for the current user only:
    
      pip install --user pyDistAlgo
-     
+
+   Just as with `distutils`, if you have installed DistAlgo for both system
+   and the current user, the user installation will take precedence.
+
    To upgrade an existing DistAlgo installation:
    
      pip install --upgrade [--user] pyDistAlgo
@@ -217,3 +223,11 @@ The following command installs DistAlgo for the current user:
    runtime, causing debugging output to be printed to the console:
 
        python -m da -L debug -m da.lib.lamutex.orig
+
+# Further References
+
+  For a full description of the DistAlgo language, see
+  `<DAROOT>/doc/language.pdf`. For a quick reference of all DistAlgo
+  built-in functions, run the following command:
+  
+      python -m da -B
