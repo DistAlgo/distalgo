@@ -133,6 +133,11 @@ def parseArgs():
                         help="if set, the system will not try to bootstrap "
                         "on startup. ",
                         action="store_true", default=False)
+    parser.add_argument("-D", "--idle",
+                        help="if set, this node will run as an idle node, "
+                        "i.e. it will not execute the `main` method defined "
+                        "in the main module. ",
+                        action="store_true", default=False)
     parser.add_argument("-r", "--recompile", dest="recompile",
                         help="force recompile DistAlgo source file. ",
                         action="store_true", default=False)

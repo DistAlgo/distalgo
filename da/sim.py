@@ -959,7 +959,7 @@ class NodeProcess(DistProcess):
         if len(self._nodes) > 0:
             self.bootstrap()
         try:
-            if hasattr(self, 'run'):
+            if (not get_runtime_option('idle')) and hasattr(self, 'run'):
                 return self.run()
             else:
                 self.hanged()
