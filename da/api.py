@@ -270,7 +270,12 @@ def entrypoint():
     # Start main program
     nodename = _check_nodename()
     niters = get_runtime_option('iterations')
-    cookie = _load_cookie()
+    if len(nodename) == 0:
+        # Safety precaution: disallow distributed messaging when no node name
+        # specified:
+        cookie = multiprocessing.current_process().authkey
+    else:
+        cookie = _load_cookie()
     nodeimpl = None
     router = None
     trman = None
