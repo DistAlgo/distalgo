@@ -1196,12 +1196,12 @@ class Parser(NodeVisitor):
             elif type(e) is Yield:
                 stmtobj = self.create_stmt(dast.YieldStmt, node)
                 self.current_context = Read(stmtobj)
-                stmtobj.expr = self.visit(e)
+                stmtobj.value = self.visit(e.value)
             elif type(e) is YieldFrom:
                 # 'yield' should be a statement, handle it here:
                 stmtobj = self.create_stmt(dast.YieldFromStmt, node)
                 self.current_context = Read(stmtobj)
-                stmtobj.expr = self.visit(e)
+                stmtobj.value = self.visit(e.value)
 
             else:
                 stmtobj = self.create_stmt(dast.SimpleStmt, node)
