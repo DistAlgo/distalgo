@@ -286,7 +286,7 @@ class ProcessId(namedtuple("_ProcessId",
                         # cached entry:
                         obj = entry
                     elif obj.uid != entry.uid:
-                        log.warning("Process name '%s@%s' reassigned from %s "
+                        log.warning("Process name '%s#%s' reassigned from %s "
                                     "to %s.", name, nodename,
                                     ProcessId._full_form_(entry),
                                     ProcessId._full_form_(obj))
