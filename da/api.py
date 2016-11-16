@@ -242,6 +242,9 @@ def entrypoint():
     """Entry point for running DistAlgo as the main module.
 
     """
+    if sys.version_info < (3, 4):
+        die("DistAlgo requires Python version 3.4 or newer.\n")
+
     startmeth = get_runtime_option('start_method')
     if startmeth != multiprocessing.get_start_method(allow_none=True):
         multiprocessing.set_start_method(startmeth)
