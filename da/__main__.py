@@ -118,7 +118,12 @@ def parseArgs():
                         help="a string for authentication of peers. "
                         "All peer processes participating in message passing "
                         "must have matching cookies. "
-                        "Defaults to the content of '${HOME}/.da.cookie'. ")
+                        "If this option is not set, but the file "
+                        "'${HOME}/.da.cookie' exists, then the contents of "
+                        "that file will be used as the "
+                        "cookie. If this option is not set and the file "
+                        "'${HOME}/.da.cookie' does not exist, then peer "
+                        "authentication will be disabled for this node.")
     parser.add_argument('--message-buffer-size', type=int, default=(4 * 1024),
                         help="size in bytes of the buffers used to serialize "
                         "messages. The serialized(pickled) size of any DistAlgo "
@@ -129,7 +134,7 @@ def parseArgs():
                         help="if set, the system will not bind to TCP ports "
                         "that are in the 'TIME_WAIT' state. ",
                         action="store_true", default=False)
-    parser.add_argument("--master",
+    parser.add_argument("-M", "--master",
                         help="if set, the system will not try to bootstrap "
                         "on startup. ",
                         action="store_true", default=False)
