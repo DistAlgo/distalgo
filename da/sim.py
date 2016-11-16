@@ -160,7 +160,12 @@ class DistProcess():
                         message=(self.__newcmd_seqno, None),
                         to=self.__parent, flags=ChannelCaps.RELIABLEFIFO)
         self._wait_for(lambda: self.__running)
-        return self.run()
+        try:
+            return self.run()
+        except Exception as e:
+            self._log.error("Unrecoverable error in DistAlgo process: %r",
+                            e, exc_info=1)
+            return -1
 
     @internal
     def _init_config(self):
@@ -251,13 +256,12 @@ class DistProcess():
 
         """
         if not issubclass(pcls, DistProcess):
-            self._log.error("Can not create non-DistProcess classes.")
-            return set()
+            raise TypeError("new: can not create DistAlgo process using "
+                            "non-DistProcess class: {}.".format(pcls))
+        if args is not None and not isinstance(args, collections.abc.Sequence):
+            raise TypeError("new: 'args' must be a sequence but is {} "
+                            "instead.".format(args))
 
-        if isinstance(at, collections.abc.Set):
-            at = {self.resolve(nameorid) for nameorid in at}
-        else:
-            at = self.resolve(at)
         iterator = []
         if num is None:
             iterator = range(1)
@@ -266,8 +270,12 @@ class DistProcess():
         elif isinstance(num, collections.abc.Iterable):
             iterator = num
         else:
-            self._log.error("Invalid value for `num`: %r", num)
-            return set()
+            raise TypeError("new: invalid value for 'num': {}".format(num))
+
+        if isinstance(at, collections.abc.Set):
+            at = {self.resolve(nameorid) for nameorid in at}
+        else:
+            at = self.resolve(at)
         if method is None:
             method = get_runtime_option('default_proc_impl')
 
@@ -311,6 +319,9 @@ class DistProcess():
 
     @internal
     def _setup(self, procs, args, seqno=None):
+        if not isinstance(args, collections.abc.Sequence):
+            raise TypeError("setup: 'args' must be a sequence but is {} "
+                            "instead.".format(args))
         res = True
         if seqno is None:
             seqno = self._create_cmd_seqno()
@@ -522,8 +533,7 @@ class DistProcess():
             return None
         dest = ProcessId.lookup((procname, nodename))
         if dest is None:
-            self._log.info("Waiting to resolve name %r#%s:%s...",
-                           fullname, host, port)
+            self._log.info("Waiting to resolve name %r...", name)
             seqno = self._create_cmd_seqno()
             self._register_async_event(Command.ResolveAck, seqno)
             if self._send1(Command.Resolve,
@@ -963,6 +973,10 @@ class NodeProcess(DistProcess):
                 return self.run()
             else:
                 self.hanged()
+        except Exception as e:
+            self._log.error("Unrecoverable error in node process: %r",
+                            e, exc_info=1)
+            return -1
         finally:
             self._send1(Command.NodeLeave,
                         message=self._id, to=self._nodes)
@@ -1433,8 +1447,7 @@ class OSProcessContainer(ProcessContainer, multiprocessing.Process):
             self._log.debug("Received KeyboardInterrupt, exiting")
             return 1
         except Exception as e:
-            sys.stderr.write("Unexpected error at process %s:%r"% (str(self), e))
-            traceback.print_tb(e.__traceback__)
+            self._log.error("Unexpected error: %r", e, exc_info=1)
         finally:
             self.end()
 
@@ -1471,8 +1484,7 @@ class OSThreadContainer(ProcessContainer, threading.Thread):
             self._log.debug("Received KeyboardInterrupt, exiting")
             return 1
         except Exception as e:
-            sys.stderr.write("Unexpected error at process %s:%r"% (str(self), e))
-            traceback.print_tb(e.__traceback__)
+            self._log.error("Unexpected error: %r", e, exc_info=1)
             return 5
         finally:
             if self.router is not None:
