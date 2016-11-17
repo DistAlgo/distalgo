@@ -426,7 +426,7 @@ class DistProcess():
         'USRDBG' level.
 
         """
-        self.output(*message, sep, level=logging.DEBUG+1)
+        self.output(*message, sep=sep, level=logging.DEBUG+1)
 
     @builtin
     def error(self, *message, sep=' '):
@@ -436,7 +436,7 @@ class DistProcess():
         'USRERR' level.
 
         """
-        self.output(*message, sep, level=logging.INFO+2)
+        self.output(*message, sep=sep, level=logging.INFO+2)
 
     @builtin
     def work(self):
