@@ -233,54 +233,22 @@ The following command installs DistAlgo for the current user:
   By default, the node process is unnamed, and as such will not be able to
   talk to other node processes, and any DistAlgo process running on an
   unnamed node will not be able to communicate with DistAlgo processes
-  running on other nodes. In order to have multiple node processes each
-  communicating with each other, you must give each one a unique name. A
-  node name can be any string that does not include the characters '@', '#',
-  and ':'. A node process can be named by using the `-n <NAME>` command line
-  argument, such as:
+  running on other nodes. In order to have multiple node processes that
+  communicates with each other, you must give each one a unique name. A node
+  name can be any string that does not include the characters '@', '#', and
+  ':'. A node process can be named by using the `-n <NAME>` command line
+  argument. For example, the command
   
       python -m da -n Node1 -m da.examples.lamutex.orig
       
-  This command will run the mutual exclusion example on a node named
-  "Node1". Observe that the printed process ids in the output now include a
-  "#Node1" suffix to indicate that they are running on the "Node1" node.
-  
-  You can use the name of the node process to send messages to it. Assume
-  you have a file 'Ping.da' which contains the following program:
-  
-     def main():
-         send(('ping', ), to='Pong')
-         await(received(('pong',)))
-         
-  This program simply sends a 'ping' message to a node named 'Pong', then
-  waits for the other node to reply with a 'pong' message. You can now run
-  this program on the 'Ping' node using
-  
-     python -m da -n Ping Ping.da
-     
-  It will print a few lines of output, one of which will look like:
-  
-     <Node_:Ping>:INFO: Waiting to resolve name 'Pong'...
-     
-  This indicates that the node process 'Ping' is blocked at the 'send'
-  statement, because the DistAlgo system does not how to resolve the name
-  'Pong'. So let's write the corresponding 'Pong.da' program:
-
-    def main():
-        send(('pong', ), to='Ping')
-        await(received(('ping',)))
-
-  This program simply sends a 'pong' message to the node named 'Ping' and
-  waits for a 'ping' message. And if you now run this program from another
-  terminal using:
-  
-    python -m da -n Pong Pong.da
-    
-  then both programs will successfully terminate.
+  will start a node named 'Node1', which then runs the mutual exclusion
+  example. Notice that the printed process ids in the output of this command
+  now include a "#Node1" suffix to indicate that they are running on the
+  'Node1' node.
   
   Node names can also be used for the `at` argument when calling the `new`
   function, which instructs the system to create the new processes on the
-  named nodes instead of locally. The following program, 'pingpong.da',
+  named node(s) instead of locally. The following program, 'pingpong.da',
   creates a `Pong` process on the node named 'PongNode', then creates a
   `Ping` process on the local node, and finally starts both:
 
@@ -299,34 +267,48 @@ The following command installs DistAlgo for the current user:
               send(('Pong',), to=ping)
       
       def main():
-          pong = new(Pong, args=(), at="PongNode")
+          pong = new(Pong, args=(), at='PongNode')
           ping = new(Ping, args=(pong,))
           start(pong)
           start(ping)
       
-  When you run this program, and name the local node 'PingNode'
+  To run this example program, first start a node named anything other than
+  'PongNode', for example 'PingNode', and tell it to run 'pingpong.da':
   
      python -m da -n PingNode pingpong.da
 
-  it will block at the first `new` statement because the system does not yet
-  know how to resolve the name "PongNode". If you now start a node and name
-  it "PongNode":
+  'PingNode' will run the `main` method and attempt to create a `Pong`
+  process on a node named 'PongNode'. But since it does not yet know which
+  node is 'PongNode', it will block at the first `new` statement waiting to
+  resolve the name 'PongNode'. 
+  
+  In order for the program execution to continue, you must start another
+  node and name it 'PongNode':
   
      python -m da -n PongNode -D pingpong.da
      
-  then 'PingNode' will be able to resolve the name 'PongNode', and
-  successfully create a `Pong` process on 'PongNode' and a `Ping` processes
-  on the local node. The command line parameter '-D'(or equivalently,
-  '--idle') tells the system to create an "idle" node, which means that it
-  will not run the `main` method. You should now be able to observe the line
+  The same 'pingpong.da' file has to be specified on the command line,
+  because the 'PongNode' needs to have access to the `Pong` class in order
+  to create `Pong` processes. The command line parameter '-D'(or
+  equivalently, '--idle') tells the system to create an "idle" node. Idle
+  nodes do not execute their `main` method, and their only responsibility is
+  to create DistAlgo processes on behalf of other nodes. If you omit '-D',
+  then 'PongNode' will also run the `main` method, creating an additional
+  `Ping` and `Pong` process each, which may or may not be your desired
+  outcome.
   
-     pingpong.Ping<Ping:eb002#Ping>:OUTPUT: Ponged.
+  At this point, 'PingNode' will be able to resolve the name 'PongNode', and
+  the execution of `main` can continue as usual. After 'PingNode'
+  terminates, you should be able to observe the line
+  
+     pingpong.Ping<Ping:eb002#PingNode>:OUTPUT: Ponged.
      
   on the terminal running the 'PingNode', and the line
   
      pingpong.Pong<Pong:54802#PongNode>:OUTPUT: Pinged.
      
-  on the terminal running the 'PongNode'.
+  on the terminal running the 'PongNode' (the 5 hex-digit process id values
+  may differ).
 
 #### Cookies
 
@@ -353,6 +335,11 @@ The following command installs DistAlgo for the current user:
   This way, all DistAlgo nodes will automatically use the contents of
   '${HOME}/.da.cookie' as their cookie, unless you explicitly specify one on
   the command line using '--cookie'.
+
+  As a special case, when an unnamed node is started, it sets its cookie to
+  a random value, thus preventing this node and any DistAlgo processes
+  created by this node from accidentally communicating with other nodes and
+  processes.
   
   **SECURITY WARNING**: Any remote or local process that knows your cookie
     and can send UDP packets to the UDP port or make TCP connections to the
