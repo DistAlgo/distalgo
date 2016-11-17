@@ -1,5 +1,7 @@
 include bin/*
-include doc/*
+prune doc/
+include doc/language.pdf
+include doc/screenshot.png
 include README.md
 include setup.py
 include LICENSE
