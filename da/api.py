@@ -43,6 +43,7 @@ from .common import api, deprecated, get_runtime_option, ProcessId
 DISTPY_SUFFIXES = [".da", ""]
 PYTHON_SUFFIX = ".py"
 NODECLS = "Node_"
+BASE_MODULE_NAME = 'da.lib.base'
 DEFAULT_MASTER_PORT = 15000
 ASYNC_TIMEOUT = 5
 PORT_RANGE = 10
@@ -224,11 +225,13 @@ def _load_main_module():
                            from_dir=source_dir,
                            compiler_args=compiler_args)
         sys.argv = [target] + get_runtime_option('args')
-    else:
+    elif get_runtime_option('module') is not None:
         module_args = get_runtime_option('module')
         module_name = module_args[0]
         module = import_da(module_name, compiler_args=compiler_args)
         sys.argv = ['__main__'] + module_args[1:]
+    else:
+        module = import_da(BASE_MODULE_NAME)
     return module
 
 def _check_nodename():
@@ -252,11 +255,16 @@ def entrypoint():
         module = _load_main_module()
     except ImportError as e:
         die("ImportError: " + str(e))
-
-    if not (hasattr(module, 'Node_') and
-            type(module.Node_) is type and
-            issubclass(module.Node_, sim.DistProcess)):
-        die("Main process not defined!")
+    is_idle = get_runtime_option('idle')
+    if not hasattr(module, 'Node_'):
+        if is_idle:
+            # Just use the generic node:
+            module.Node_ = sim.NodeProcess
+        else:
+            die("Main process not defined!")
+    elif not (type(module.Node_) is type and
+              issubclass(module.Node_, sim.DistProcess)):
+        die("Main process is not a DistProcess: {}".format(module.Node_))
 
     common.set_runtime_option('this_module_name', module.__name__)
     common.set_runtime_option('main_module_name', module.__name__)

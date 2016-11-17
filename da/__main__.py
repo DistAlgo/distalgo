@@ -163,7 +163,7 @@ def parseArgs():
                         " 'process' uses OS processes,"
                         " 'thread' uses OS threads.")
     parser.add_argument("-v", "--version", action="version", version=__version__)
-    group = parser.add_mutually_exclusive_group(required=True)
+    group = parser.add_mutually_exclusive_group()
     group.add_argument("-m", "--module", default=None, nargs='+',
                         help="name of a DistAlgo module that will be run as "
                        "the main module. If this argument is specified, "
@@ -178,6 +178,12 @@ def parseArgs():
                         help="arguments passed to program in sys.argv[1:].")
 
     args = parser.parse_args()
+    if args.help_builtins:
+        help_builtins()
+        return 0
+    elif not args.idle and args.module is None and args.file is None:
+        parser.print_usage()
+        return 1
     args.config = dict(parseConfig(item) for item in args.config)
     if args.cookie is not None:
         args.cookie = args.cookie.encode()
@@ -200,9 +206,8 @@ def libmain():
 
     """
     args = parseArgs()
-    if args.help_builtins:
-        help_builtins()
-        return 0
+    if isinstance(args, int):
+        return args
     else:
         initialize_runtime_options(args.__dict__)
         return entrypoint()
