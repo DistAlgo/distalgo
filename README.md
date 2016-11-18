@@ -246,7 +246,7 @@ The following command installs DistAlgo for the current user:
   now include a "#Node1" suffix to indicate that they are running on the
   'Node1' node.
   
-  Node names can also be used for the `at` argument when calling the `new`
+  Node names can be used for the `at` argument when calling the `new`
   function, which instructs the system to create the new processes on the
   named node(s) instead of locally. The following program, 'pingpong.da',
   creates a `Pong` process on the node named 'PongNode', then creates a
