@@ -234,7 +234,7 @@ The following command installs DistAlgo for the current user:
   talk to other node processes, and any DistAlgo process running on an
   unnamed node will not be able to communicate with DistAlgo processes
   running on other nodes. In order to have multiple node processes that
-  communicates with each other, you must give each one a unique name. A node
+  communicate with each other, you must give each one a unique name. A node
   name can be any string that does not include the characters '@', '#', and
   ':'. A node process can be named by using the `-n <NAME>` command line
   argument. For example, the command
