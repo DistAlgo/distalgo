@@ -1062,7 +1062,7 @@ class Router(threading.Thread):
         self.bootstrap_peer = None
         nid = common.pid_of_node()
         hellocmd = (RouterCommands.HELLO, ProcessId.all_named_ids())
-        dummyid = ProcessId(uid=0, seqno=1, clsname='_Dummy', name='',
+        dummyid = ProcessId(uid=0, seqno=1, pcls=DistProcess, name='',
                             nodename='', hostname=hostname,
                             transports=\
                             tuple(port for _ in range(len(nid.transports))))

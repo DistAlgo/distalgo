@@ -250,7 +250,7 @@ def name_split_node(name):
         return (None, None)
 
 class ProcessId(namedtuple("_ProcessId",
-                           'uid, seqno, clsname, \
+                           'uid, seqno, pcls, \
                            name, nodename, hostname, transports')):
     """An instance of `ProcessId` uniquely identifies a DistAlgo process instance.
 
@@ -272,8 +272,8 @@ class ProcessId(namedtuple("_ProcessId",
     _named = dict()
     _callbacks = dict()
 
-    def __new__(cls, uid, seqno, clsname, name, nodename, hostname, transports):
-        obj = super().__new__(cls, uid, seqno, clsname, name, nodename, hostname,
+    def __new__(cls, uid, seqno, pcls, name, nodename, hostname, transports):
+        obj = super().__new__(cls, uid, seqno, pcls, name, nodename, hostname,
                               transports)
         if len(name) > 0:
             fullname = (name, nodename)
@@ -352,8 +352,7 @@ class ProcessId(namedtuple("_ProcessId",
         nodename = get_runtime_option('nodename')
         uid = ProcessId.gen_uid(hostname,
                                 pid=threading.current_thread().ident)
-        return idcls(uid=uid, seqno=1,
-                     clsname=pcls.__qualname__,
+        return idcls(uid=uid, seqno=1, pcls=pcls,
                      name=name, nodename=nodename,
                      hostname=hostname, transports=transports)
 
@@ -365,16 +364,16 @@ class ProcessId(namedtuple("_ProcessId",
         """
         if len(self.nodename) > 0 and self.nodename != self.name:
             if len(self.name) > 0:
-                return "<{0.clsname}:{0.name}#{0.nodename}>".format(self)
+                return "<{0.pcls.__name__}:{0.name}#{0.nodename}>".format(self)
             else:
                 # otherwise, we use `uid` truncated to the last 5 hex digits:
-                return "<{0.clsname}:{1:05x}#{0.nodename}>".format(
+                return "<{0.pcls.__name__}:{1:05x}#{0.nodename}>".format(
                     self, self.uid & 0xfffff)
         else:
             if len(self.name) > 0:
-                return "<{0.clsname}:{0.name}>".format(self)
+                return "<{0.pcls.__name__}:{0.name}>".format(self)
             else:
-                return "<{0.clsname}:{1:05x}>".format(self, self.uid & 0xfffff)
+                return "<{0.pcls.__name__}:{1:05x}>".format(self, self.uid & 0xfffff)
 
     def _long_form_(self):
         """Constructs a short string representation of this pid.
@@ -384,15 +383,15 @@ class ProcessId(namedtuple("_ProcessId",
         """
         if len(self.nodename) > 0 and self.nodename != self.name:
             if len(self.name) > 0:
-                return "<{0.clsname}:{0.name}#{0.nodename}>".format(self)
+                return "<{0.pcls.__name__}:{0.name}#{0.nodename}>".format(self)
             else:
                 # otherwise, we use `uid` truncated to the last 5 hex digits:
-                return "<{0.clsname}:{1:x}#{0.nodename}>".format(self, self.uid)
+                return "<{0.pcls.__name__}:{1:x}#{0.nodename}>".format(self, self.uid)
         else:
             if len(self.name) > 0:
-                return "<{0.clsname}:{0.name}>".format(self)
+                return "<{0.pcls.__name__}:{0.name}>".format(self)
             else:
-                return "<{0.clsname}:{1:x}>".format(self, self.uid)
+                return "<{0.pcls.__name__}:{1:x}>".format(self, self.uid)
 
     def _full_form_(self):
         """Constructs a full string representation of this pid.
@@ -400,7 +399,8 @@ class ProcessId(namedtuple("_ProcessId",
         This form may be more useful in debugging.
 
         """
-        fmt = "ProcessId(uid={0.uid:x}, seqno={0.seqno}, clsname={0.clsname}, " \
+        fmt = "ProcessId(uid={0.uid:x}, seqno={0.seqno}, " \
+              "pcls={0.pcls.__name__}, " \
               "name='{0.name}', nodename='{0.nodename}', " \
               "hostname='{0.hostname}', transports={0.transports})"
         return fmt.format(self)
