@@ -85,15 +85,20 @@ def pyCall(func, args=[], keywords=[], starargs=None, kwargs=None):
     if isinstance(func, str):
         func = pyName(func)
     if sys.version_info < (3, 5):
-        return Call(func,
-                    list(args),
-                    [keyword(arg, val) for arg, val in keywords],
-                    starargs,
-                    kwargs)
+        ast = Call(func,
+                   list(args),
+                   [keyword(arg, val) for arg, val in keywords],
+                   starargs,
+                   kwargs)
+        propagate_attributes((starargs, kwargs), ast)
     else:
-        return Call(func,
-                    list(args),
-                    [keyword(arg, val) for arg, val in keywords])
+        ast = Call(func,
+                   list(args),
+                   [keyword(arg, val) for arg, val in keywords])
+    propagate_attributes(func, ast)
+    propagate_attributes(args, ast)
+    propagate_attributes([val for _, val in keywords], ast)
+    return ast
 
 def pyName(name, ctx=None):
     return Name(name, Load() if ctx is None else ctx)
@@ -117,23 +122,28 @@ def pyFalse():
         return pyName("False")
 
 def pyNot(expr):
-    return UnaryOp(Not(), expr)
+    ast = UnaryOp(Not(), expr)
+    return propagate_attributes(expr, ast)
 
 def pyList(elts, ctx=None):
-    return List(elts, Load() if ctx is None else ctx)
+    ast = List(elts, Load() if ctx is None else ctx)
+    return propagate_attributes(elts, ast)
 
 def pySet(elts, ctx=None):
-    return Set(elts)
+    ast = Set(elts)
+    return propagate_attributes(elts, ast)
 
 def pyTuple(elts, ctx=None):
-    return Tuple(elts, Load() if ctx is None else ctx)
+    ast = Tuple(elts, Load() if ctx is None else ctx)
+    return propagate_attributes(elts, ast)
 
 def pySetC(elts):
     return pyCall("set", args=elts)
 
 def pySubscr(value, index, ctx=None):
-    return Subscript(value, Index(index),
-                     Load() if ctx is None else ctx)
+    ast = Subscript(value, Index(index),
+                    Load() if ctx is None else ctx)
+    return propagate_attributes((value, index), ast)
 
 def pySize(value):
     return pyCall("len", [value])
@@ -146,13 +156,15 @@ def pyMax(value):
 
 def pyAttr(name, attr, ctx=None):
     if isinstance(name, str):
-        return Attribute(Name(name, Load()), attr,
+        ast = Attribute(Name(name, Load()), attr,
                          Load() if ctx is None else ctx)
     else:
-        return Attribute(name, attr, Load() if ctx is None else ctx)
+        ast = Attribute(name, attr, Load() if ctx is None else ctx)
+    return propagate_attributes(ast.value, ast)
 
 def pyCompare(left, op, right):
-    return Compare(left, [op()], [right])
+    ast = Compare(left, [op()], [right])
+    return propagate_attributes((left, right), ast)
 
 def pyLabel(name, block=False, timeout=None):
     kws = [("block", pyTrue() if block else pyFalse())]
@@ -584,16 +596,13 @@ class PythonGenerator(NodeVisitor):
         return pyNone()
 
     def visit_TupleExpr(self, node):
-        ast = pyTuple([self.visit(e) for e in node.subexprs])
-        return propagate_attributes(ast.elts, ast)
+        return pyTuple([self.visit(e) for e in node.subexprs])
 
     def visit_ListExpr(self, node):
-        ast = pyList([self.visit(e) for e in node.subexprs])
-        return propagate_attributes(ast.elts, ast)
+        return pyList([self.visit(e) for e in node.subexprs])
 
     def visit_SetExpr(self, node):
-        ast = Set([self.visit(e) for e in node.subexprs])
-        return propagate_attributes(ast.elts, ast)
+        return pySet([self.visit(e) for e in node.subexprs])
 
     def visit_DictExpr(self, node):
         ast = Dict([self.visit(e) for e in node.keys],
@@ -607,41 +616,37 @@ class PythonGenerator(NodeVisitor):
         return propagate_attributes((ast.test, ast.body, ast.orelse), ast)
 
     def visit_CallExpr(self, node):
-        ast = pyCall(self.visit(node.func),
+        return pyCall(self.visit(node.func),
                      [self.visit(a) for a in node.args],
                      [(key, self.visit(value)) for key, value in node.keywords],
                      self.visit(node.starargs)
                      if node.starargs is not None else None,
                      self.visit(node.kwargs)
                      if node.kwargs is not None else None)
-        return propagate_attributes([ast.func] + ast.args, ast)
 
     def visit_ApiCallExpr(self, node):
-        ast = pyCall(pyAttr("da", node.func),
+        return pyCall(pyAttr("da", node.func),
                      [self.visit(a) for a in node.args],
                      [(key, self.visit(value)) for key, value in node.keywords],
                      self.visit(node.starargs)
                      if node.starargs is not None else None,
                      self.visit(node.kwargs)
                      if node.kwargs is not None else None)
-        return propagate_attributes(ast.args, ast)
 
     def visit_BuiltinCallExpr(self, node):
-        ast = pyCall(pyAttr("self", node.func),
+        return pyCall(pyAttr("self", node.func),
                      [self.visit(a) for a in node.args],
                      [(key, self.visit(value)) for key, value in node.keywords],
                      self.visit(node.starargs)
                      if node.starargs is not None else None,
                      self.visit(node.kwargs)
                      if node.kwargs is not None else None)
-        return propagate_attributes(ast.args, ast)
 
     visit_SetupExpr = visit_StartExpr = visit_ConfigExpr = visit_BuiltinCallExpr
 
     def visit_AggregateExpr(self, node):
-        ast = pyCall(AggregateMap[type(node)],
+        return pyCall(AggregateMap[type(node)],
                      [self.visit(a) for a in node.args])
-        return propagate_attributes(ast.args, ast)
 
     visit_MaxExpr = visit_AggregateExpr
     visit_MinExpr = visit_AggregateExpr
