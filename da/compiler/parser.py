@@ -836,8 +836,7 @@ class Parser(NodeVisitor):
                     else:
                         self.error("Duplicate setup() definition.", s)
             if initfun is None:
-                self.error("Process missing 'setup()' definition.", node)
-                return
+                self.warn("Process missing 'setup()' definition.", node)
 
             n = self.current_scope.add_name(node.name)
             proc = dast.Process(self.current_parent, node,
@@ -848,13 +847,18 @@ class Parser(NodeVisitor):
             self.program.processes.append(proc)
             self.program.body.append(proc)
 
-            self.signature(initfun.args)
-            if proc.args.kwarg is not None:
-                self.error("'setup()' can not have keyword argument.", initfun)
+            if initfun is not None:
+                self.signature(initfun.args)
+                if proc.args.kwarg is not None:
+                    self.error("'setup()' can not have keyword argument.",
+                               initfun)
             self.current_block = proc.body
-            # setup() has to be parsed first:
-            self.proc_body([node.body[bodyidx]] +
-                           node.body[:bodyidx] + node.body[(bodyidx+1):])
+            if bodyidx is not None:
+                # setup() has to be parsed first:
+                self.proc_body([node.body[bodyidx]] +
+                               node.body[:bodyidx] + node.body[(bodyidx+1):])
+            else:
+                self.proc_body(node.body)
             dbgstr = ["Process ", proc.name, " has names: "]
             for n in proc._names.values():
                 dbgstr.append("%s: %s; " % (n, str(n.get_typectx())))
