@@ -242,9 +242,9 @@ The following command installs DistAlgo for the current user:
       python -m da -n Node1 -m da.examples.lamutex.orig
       
   will start a node named 'Node1', which then runs the mutual exclusion
-  example. Notice that the printed process ids in the output of this command
-  now include a "#Node1" suffix to indicate that they are running on the
-  'Node1' node.
+  example. Notice that the formatted process ids in the output of this
+  command now include a "#Node1" suffix, to indicate that the processes are
+  running on the 'Node1' node.
   
   Node names can be used for the `at` argument when calling the `new`
   function, which instructs the system to create the new processes on the
