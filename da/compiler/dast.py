@@ -2295,16 +2295,6 @@ class NonlocalStmt(SimpleStmt):
         super().__init__(parent, ast)
         self.names = list(names)
 
-class SendStmt(SimpleStmt):
-
-    _fields = ['message', 'target', 'broadcast']
-
-    def __init__(self, parent, ast=None):
-        super().__init__(parent, ast)
-        self.message = None
-        self.target = None
-        self.broadcast = None
-
 class OutputStmt(SimpleStmt):
 
     _fields = ['message', 'level']

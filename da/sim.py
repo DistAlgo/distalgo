@@ -477,7 +477,7 @@ class DistProcess():
             self._logical_clock += 1
 
     @builtin
-    def send(self, message, to, channel=None):
+    def send(self, message, to, channel=None, **rest):
         """Send a DistAlgo message.
 
         `message` can be any pickle-able Python object. `to` can be a process id

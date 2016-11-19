@@ -1160,13 +1160,6 @@ class PythonGenerator(NodeVisitor):
     def visit_NonlocalStmt(self, node):
         return [Nonlocal(node.names)]
 
-    def visit_SendStmt(self, node):
-        mesg = self.visit(node.message)
-        tgt = self.visit(node.target)
-        ast = Expr(pyCall(func=pyAttr("self", "send"),
-                          args=[mesg, tgt]))
-        return concat_bodies([mesg, tgt], [ast])
-
     def visit_OutputStmt(self, node):
         args = [self.visit(msg) for msg in node.message]
         keywords = []

@@ -63,7 +63,6 @@ KW_AWAIT = "await"
 KW_AWAIT_TIMEOUT = "timeout"
 KW_SEND = "send"
 KW_SEND_TO = KW_EVENT_DESTINATION
-KW_BROADCAST = "bcast"
 KW_PRINT = "output"
 KW_LEVEL = "level"
 KW_SEP= "sep"
@@ -1065,7 +1064,7 @@ class Parser(NodeVisitor):
                 for kw in node.keywords:
                     if kw.arg in keywords:
                         keywords -= {kw.arg}
-                    elif optional_keywords is None or \
+                    elif optional_keywords is not None and \
                          kw.arg not in optional_keywords:
                         raise MalformedStatementError(
                             "unrecognized keyword: '%s'." % kw.arg)
@@ -1140,17 +1139,17 @@ class Parser(NodeVisitor):
                                   e)
                     stmtobj.timeout = self.visit(e.keywords[0].value)
 
-            elif self.expr_check(KW_SEND, 1, 1, e, keywords={KW_SEND_TO}):
-                stmtobj = self.create_stmt(dast.SendStmt, node)
+            elif self.expr_check(KW_SEND, 1, 1, e, keywords={KW_SEND_TO},
+                                 optional_keywords=None):
+                stmtobj = self.create_stmt(dast.SimpleStmt, node)
                 self.current_context = Read(stmtobj)
-                stmtobj.message = self.parse_message(e.args[0])
-                stmtobj.target = self.visit(e.keywords[0].value)
-
-            elif self.expr_check(KW_BROADCAST, 1, 1, e, keywords={KW_SEND_TO}):
-                stmtobj = self.create_stmt(dast.SendStmt, node)
-                self.current_context = Read(stmtobj)
-                stmtobj.message = self.parse_message(e.args[0])
-                stmtobj.target = self.visit(e.keywords[0].value)
+                stmtobj.expr = self.create_expr(dast.BuiltinCallExpr, e)
+                self.current_context = Read(stmtobj.expr)
+                stmtobj.expr.func = KW_SEND
+                stmtobj.expr.args = [self.parse_message(e.args[0])]
+                stmtobj.expr.keywords = [(kw.arg, self.visit(kw.value))
+                                          for kw in e.keywords]
+                self.pop_state()
 
             elif self.expr_check(KW_PRINT, 1, None, e,
                                  optional_keywords={KW_LEVEL, KW_SEP}):
