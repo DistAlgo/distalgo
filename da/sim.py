@@ -492,10 +492,12 @@ class DistProcess():
         flags = None
         if channel is not None:
             flags = self.__get_channel_flags(channel)
+        impersonate = rest.get('impersonate', None)
         res = self._send1(msgtype=Command.Message,
                           message=(self._logical_clock, message),
                           to=to,
-                          flags=flags)
+                          flags=flags,
+                          impersonate=impersonate)
         self.__trigger_event(pattern.SentEvent(
             (self._logical_clock, to, self._id), message))
         return res
@@ -551,7 +553,8 @@ class DistProcess():
         self._send1(Command.ResolveAck, message=(seqno, pid), to=src)
 
     @internal
-    def _send1(self, msgtype, message, to, flags=None, **params):
+    def _send1(self, msgtype, message, to, flags=None, impersonate=None,
+               **params):
         """Internal send.
 
         Pack the message and forward to router.
@@ -569,11 +572,13 @@ class DistProcess():
         else:
             # 'to' must be an iterable of `ProcessId`s:
             target = to
+        if impersonate is None:
+            impersonate = self._id
         for dest in target:
             if isinstance(dest, str):
                 # This is a process name, try to resolve to an id
                 dest = self.resolve(dest)
-            if not self.__router.send(self._id, dest, protocol_message,
+            if not self.__router.send(impersonate, dest, protocol_message,
                                       params, flags):
                 res = False
         return res
