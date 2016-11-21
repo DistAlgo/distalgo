@@ -151,6 +151,11 @@ def setup_logging_for_module(modulename,
     """Configures package level logger.
 
     """
+    if GlobalOptions is None:
+        # We're not yet initialized, which will happen when using `import_da`
+        # under spawning semantics. This is fine, as logging will be setup after
+        # `OSProcessContainer.run` gets called. We can safely ignore this call:
+        return
     if '_da_module_cache' not in GlobalOptions:
         GlobalOptions['_da_module_cache'] = dict()
     GlobalOptions['_da_module_cache'][modulename] = (consolefmt, filefmt)
