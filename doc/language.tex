@@ -43,140 +43,124 @@
 
 \newcommand{\notes}[1]{} %
 \newcommand{\todo}[1]{}
-\newcommand{\om}[1]{} %
+ %
 \newcommand{\body}[1]{} %
 
 \newcommand{\mysubsec}[1]{\subsection*{#1}}
 \newcommand{\myparag}[1]{\vspace{2ex}\noindent\b{#1.}~}
 
-\newcommand{\exerciselist}[1]{#1} %
-\newcommand{\exercise}[1]{ %
-  \refstepcounter{exercounter} \paragraph{Exercise \theexercounter} #1}
-\newcommand{\exername}[1]{$\!\!\!\!$\b{(#1)}\,} %
-\newcommand{\sol}[1]{} %
+ %
 
-\newenvironment{example}{}{}
+ %
+ %
 
-\newcommand{\grammar}[1]{}
+
+
+
 
 \hyphenation{in-cre-men-tal-i-za-tion di-men-sion-al}\todo{}
 \def\hyph{-\penalty0\hskip0pt\relax}
 
-\newcommand\defn[1]{{\it #1}\index{#1|bold}}
-\newcommand\defnn[2]{{\it #1}\index{#2|bold}} %
-\newcommand\defna[2]{{\it #1}\index{#2@#1|bold}} %
-\newcommand\defnu[2]{{\it #1}\index{#2!#1|bold}} %
-\newcommand\term[1]{#1\index{#1}}
-\newcommand\termm[2]{#1\index{#2}}
-\newcommand\terma[2]{#1\index{#2@#1}} %
-\newcommand\termu[2]{#1\index{#2!#1}} %
-\newcommand\people[1]{#1\index{#1}}
-\newcommand\lang[1]{#1\index{#1}}
+\newcommand{\defn}[1]{{\it #1}\index{#1|bold}}
+ %
+ %
+ %
+
+
+ %
+ %
+
+\newcommand{\lang}[1]{#1\index{#1}}
 
 \def\mathify#1{\ifmmode{#1}\else\mbox{$#1$}\fi}
-\newcommand\m[1]{$#1$} %
+\newcommand{\m}[1]{$#1$} %
 
 \newenvironment{code}{\begin{center}\small\begin{alltt}\vspace{-1.5ex}}{\vspace{-1.5ex}\end{alltt}\end{center}}
-\renewcommand\c[1]{{\tt\small #1}} %
-\newcommand\cm[1]{\m{\c{#1}}} %
-\renewcommand\b[1]{{\bf #1}} %
-\newcommand\power{\texttt{\hspace{0pt}\char`\^\hspace{0pt}}}
-\newcommand{\ctrue}{\c{true}\xspace}
-\newcommand{\cfalse}{\c{false}\xspace}
-\newcommand{\cwhile}{\c{while}\xspace}
-\newcommand{\cfor}{\c{for}\xspace}
-\newcommand{\cforall}{\c{all}} %
-\newcommand{\cthis}{\c{self}\xspace} %
-\newcommand{\cif}{\c{\hspace{-1pt}if~}} %
-\newcommand{\celse}{\c{else}} %
-\newcommand{\cset}{\c{set}} %
-\newcommand{\cempty}{\c{new~set}} %
-\newcommand{\cnot}{\c{\hspace{4pt}not\hspace{5pt}}} %
-\newcommand{\cin}{\c{\hspace{4pt}in\hspace{5pt}}} %
-\newcommand{\cadd}{\c{add}} %
-\newcommand{\cdel}{\c{del}} %
-\newcommand{\ccontains}{\c{contains}} %
-\newcommand{\elem}{\c{members}} %
-\newcommand{\cclass}{\c{class~}} %
-\newcommand{\DEF}{\b{def}~} %
-\newcommand{\THEN}{\b{then}~} %
-\newcommand{\ELSE}{\b{else}~} %
-\newcommand{\LET}{\b{let}~} %
-\newcommand{\IN}{\b{in}~} %
-\newcommand\p[1]{{\small\mathify{\it #1}}}
-\newcommand{\cmd}{{\it cmd}} %
-\renewcommand{\exp}{{\it exp}} %
-\renewcommand\to{\c{->}\xspace} %
+\renewcommand{\c}[1]{{\tt\small #1}} %
+ %
+\renewcommand{\b}[1]{{\bf #1}} %
+
+
+
+
+
+ %
+ %
+ %
+ %
+ %
+ %
+ %
+ %
+ %
+ %
+ %
+ %
+ %
+ %
+ %
+ %
+ %
+ %
+\newcommand{\p}[1]{{\small\mathify{\it #1}}}
+ %
+ %
+\renewcommand{\to}{\c{->}\xspace} %
 \renewcommand{\|}{\mathify{\,\mbox{\c{|}}\,}} %
 
-\newcommand\inv[1]{\c{#1}} %
+ %
 \renewcommand{\=}{\mathify{\,=\,}\linebreak[0]}
-\newenvironment{invl}{\begin{center}}{\end{center}}
-\newenvironment{invln}{\begin{equation}}{\end{equation}\ignorespacesafterend}
 
-\renewcommand\O[1]{\mathify{O(#1)}\xspace}
-\newcommand\s[1]{\mathify{\#}\c{#1}}
-\renewcommand\arg[2]{\mathify{\c{#1}.#2}}
-\newcommand\relarg[3]{\mathify{\#\c{#1}.#2/#3}}
-\newcommand\fire{{\it firedTimes}\xspace}
-\newcommand\I[1]{\mbox{{\small \it I}\c{#1}}}
-\newcommand\D[1]{\mbox{{\small \it D}\c{#1}}}
-\newcommand{\atime}{{\it time}} %
-\newcommand{\afreq}{{\it freq}} %
 
-\newenvironment{twoLineFigure}[1]
-  {\begin{figure*}[#1]
-      \rule{\textwidth}{.1mm}}{\rule{\textwidth}{.1mm}
-  \end{figure*}\ignorespacesafterend}
 
-\newcommand{\Vspace}[1]{\rule{0cm}{#1ex}}
 
-\newcommand{\INV}{\b{\hspace{-.9ex}inv~\hspace{.1ex}}}
-\newcommand{\query}{{\it query}\xspace} %
-\newcommand{\AT}{\b{at~\hspace{.2ex}}}
-\newcommand{\update}{{\it update}\xspace} %
-\newcommand{\IF}{\b{if}~} %
-\newcommand{\cond}{{\it condition}}
-\newcommand{\DE}{\b{de~\hspace{1pt}}}
-\newcommand{\class}{{\it class}}
-\newcommand{\decl}{{\it declaration}}
-\newcommand{\DO}{\b{do}~} %
-\newcommand{\BEFORE}{\b{before~}}
-\newcommand{\AFTER}{\b{after~}}
-\newcommand{\INSTEAD}{\b{instead~}}
-\newcommand{\maint}{{\it maint}\xspace}
-\newcommand{\COST}{\b{cost~}}
-\newcommand{\cost}{{\it cost}\xspace}
-\newcommand{\vquery}{{\it query}} %
-\newcommand{\vupdate}{{\it update}} %
-\newcommand{\vqos}{{\it qos}} %
-\newcommand{\vaddqo}{{\it addqo}} %
-\newcommand{\velemmod}{{\it elementmodified}} %
+\newcommand{\s}[1]{\mathify{\#}\c{#1}}
 
-\newcommand{\aread}{{\rm read}}
-\newcommand{\awrite}{{\rm write}}
-\newcommand{\amayalias}{{\rm mayalias}}
-\newcommand{\atype}{{\rm type}}
-\newcommand{\avars}{{\rm vars}}
-\newcommand{\aclass}{{\rm class}}
-\newcommand{\amethod}{{\rm method}}
-\newcommand{\aisfield}{{\rm isfield}}
-\newcommand{\aisfieldof}{{\rm isfieldof}}
-\newcommand{\aisupdatedin}{{\rm isupdatedin}}
 
-\newenvironment{dedication}
-{
-   \cleardoublepage
-   \thispagestyle{empty}
-   \vspace*{\stretch{1}}
-   \hfill\begin{minipage}[t]{0.66\textwidth}
-   \raggedright
-}%
-{
-   \end{minipage}
-   \vspace*{\stretch{3}}
-   \clearpage
-}
+
+
+
+ %
+ %
+
+
+
+
+
+
+ %
+
+ %
+ %
+
+
+
+
+ %
+
+
+
+
+
+
+ %
+ %
+ %
+ %
+ %
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -203,13 +187,13 @@
 
 \c{liu@cs.stonybrook.edu, bolin@cs.stonybrook.edu, stoller@cs.stonybrook.edu}
 
-{\small Revised November 16, 2016}
+{\small Revised November 19, 2016}
 \vspace{4ex}
 
 \def\da{\vspace{-2.5ex}in DistAlgo\vspace{-2.5ex}}
 \def\langmap{\vspace{.5ex}\m{\longrightarrow}~\b{in Python syntax:~}
   \vspace{.0ex}}
-\newcommand{\alt}[1]{{\bf ---}#1\\{\bf ---}} %
+ %
 \renewcommand{\mysubsec}[1]{\section{#1}}
 \renewcommand{\myparag}[1]{\subsection{#1}}
 
@@ -267,7 +251,7 @@ fields
 can be defined explicitly in the method body of \c{setup}.
 
 A special method \c{run()}
-must be defined in \c{\p{process\_body}} for carrying out the main flow of
+may be defined in \c{\p{process\_body}} for carrying out the main flow of
 execution.
 
 
