@@ -409,7 +409,7 @@ class UdpTransport(SocketTransport):
         buf = bytes(chain(*packet))
         return self.conn.sendto(buf, target) == len(buf)
 
-    if os.name == 'nt':
+    if sys.platform == 'win32':
         _sendmsg = _sendmsg_nt
     else:
         _sendmsg = _sendmsg_nix
@@ -454,8 +454,11 @@ class UdpTransport(SocketTransport):
     def _recvmsg_nix(self):
         return self.conn.recvmsg(self.buffer_size)
 
-    if os.name == 'nt':
+    if sys.platform == 'win32':
         _recvmsg = _recvmsg_nt
+        socket.MSG_ERRQUEUE = 0
+    elif sys.platform == 'darwin':
+        _recvmsg = _recvmsg_nix
         socket.MSG_ERRQUEUE = 0
     else:
         _recvmsg = _recvmsg_nix
@@ -754,7 +757,7 @@ class TcpTransport(SocketTransport):
         buf = bytes(chain(*data))
         conn.sendall(buf)
 
-    if os.name == 'nt':
+    if sys.platform == 'win32':
         _send_1 = _send_1_nt
 
     def recvmesgs(self):
