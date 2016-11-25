@@ -29,9 +29,7 @@ import time
 import os.path
 import logging
 import warnings
-import importlib
 import threading
-import multiprocessing
 
 from collections import abc, deque, namedtuple
 from inspect import signature, Parameter
@@ -198,6 +196,7 @@ def setup_logging_for_module(modulename,
         rootlog.addHandler(logging.NullHandler())
 
 def load_modules():
+    import importlib
     global IncOQBaseType
     if not GlobalOptions['load_inc_module']:
         return

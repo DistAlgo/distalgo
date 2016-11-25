@@ -22,22 +22,17 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-import os
-import abc
 import sys
 import copy
 import enum
 import time
-import signal
 import random
 import pickle
 import logging
 import functools
 import threading
-import traceback
 import collections
 import multiprocessing
-from itertools import chain
 
 from . import common, pattern, endpoint
 from .common import (builtin, internal, name_split_host, name_split_node,

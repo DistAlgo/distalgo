@@ -22,7 +22,6 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-import os
 import sys
 import enum
 import time
@@ -589,6 +588,7 @@ class TcpTransport(SocketTransport):
         self.selector = None
 
     def _deliver_challenge(self, conn, addr):
+        import os
         digest = None
         if self.authkey is not None:
             import hmac
