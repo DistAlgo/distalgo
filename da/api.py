@@ -25,15 +25,9 @@
 import os
 import sys
 import time
-import time
 import stat
 import logging
-import socket
 import collections.abc
-import importlib
-import threading
-import traceback
-import multiprocessing
 import os.path
 
 from sys import stderr
@@ -106,7 +100,9 @@ def import_da(name, from_dir=None, compiler_args=[]):
 
     """
     import re
+    import importlib
     import da.compiler as compiler
+
     force_recompile = get_runtime_option('recompile', default=False)
     paths = sys.path if from_dir is None else [from_dir]
     pathname = name.replace(".", os.sep)
@@ -245,6 +241,9 @@ def entrypoint():
     """Entry point for running DistAlgo as the main module.
 
     """
+    import socket
+    import multiprocessing
+
     if sys.version_info < (3, 4):
         die("DistAlgo requires Python version 3.4 or newer.\n")
 
@@ -341,9 +340,7 @@ def entrypoint():
             stderr.write("\nNode terminated. Goodbye!\n")
             return 1
     except Exception as e:
-        err_info = sys.exc_info()
-        log.error("Caught unexpected global exception: %r", e)
-        traceback.print_tb(err_info[2])
+        log.error("Caught unexpected global exception: %r", e, exc_info=1)
         return 4
 
 def die(mesg = None):
