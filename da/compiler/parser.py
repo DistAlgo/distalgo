@@ -1799,7 +1799,7 @@ class Parser(NodeVisitor):
                         self.pop_state()
                     else:
                         condition = dom
-                except MalformedStatementError as node:
+                except MalformedStatementError as e:
                     self.error("malformed domain spec: " + e.reason, e.node)
             else:
                 # if not, then it's just a boolean condition:
