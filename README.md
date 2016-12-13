@@ -310,6 +310,57 @@ The following command installs DistAlgo for the current user:
   on the terminal running the 'PongNode' (the 5 hex-digit process id values
   may differ).
 
+#### Running nodes on multiple hosts
+
+By default, DistAlgo nodes and processes are only able to communicate with
+nodes and processes running on the same host. This is because they only
+listen for incoming messages on the interface named 'localhost'. The
+hostname 'localhost' usually resolves to the loopback interface '127.0.0.1',
+which can only receive messages that were sent from the local host.
+
+In order to run a distributed DistAlgo system with nodes on multiple hosts,
+you need to perform two additional operations:
+
+  1. instruct the DistAlgo processes to listen on an interface that is able
+     to receive network messages from remote hosts, by using the
+     '--hostname'(or equivalently, '-H') command line parameter;
+
+  2. instruct DistAlgo nodes to connect to an existing node running on a
+     remote host, by using the '--peer'(or equivalently, '-R') command line
+     parameter.
+
+You can specify either a hostname that resolves to a local interace, or the
+IP address of a local interface as argument to '-H'. To obtain a list of
+local interfaces and their corresponding IP addresses, use `ifconfig` on
+Linux systems, or `ipconfig` on Windows. The special IP address '0.0.0.0'
+can be used to indicate all available interfaces on the local host.
+
+As an example, consider the scenario of running the 'pingpong' program on
+two hosts, 'jupiter' and 'io'. First, start the 'PingNode' on host
+'jupiter', instructing the system to listen on all interfaces:
+
+    jupiter> python -m da -H 0.0.0.0 -n PingNode pingpong.da
+
+You can now start the 'PongNode' on host 'io', telling it to connect to the
+node on 'jupiter':
+
+    io> python -m da -H 0.0.0.0 -R jupiter -n PongNode -D pingpong.da
+
+The DistAlgo nodes network are conceptually fully connected, so for a new
+node to join a network of existing nodes, it is sufficient to specify the
+address of any node in the existing network. Continuing the previous
+example, suppose you want to start another node, 'PongNode2', on the host
+'thebe' and have it join the network of 'PingNode' and 'PongNode' already
+running on 'jupiter' and 'io', then the commands
+
+    thebe> python -m da -H 0.0.0.0 -R jupiter -n PongNode2 -D pingpong.da
+
+and
+
+    thebe> python -m da -H 0.0.0.0 -R io -n PongNode2 -D pingpong.da
+
+will have the same effect.
+
 #### Cookies
 
   In a DistAlgo system involving multiple nodes, a pre-shared secret key,
