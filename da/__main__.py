@@ -127,7 +127,7 @@ def parseArgs():
     parser.add_argument('--message-buffer-size', type=int, default=(4 * 1024),
                         help="size in bytes of the buffers used to serialize "
                         "messages. The serialized(pickled) size of any DistAlgo "
-                        "message must be smaller than value in order for the "
+                        "message must be smaller than this value in order for the "
                         "system to be able to send it "
                         "across address space boundaries. Default value is 4KB.")
     parser.add_argument("--tcp-dont-reuse-addr",

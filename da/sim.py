@@ -244,7 +244,7 @@ class DistProcess():
         method is not specified then its default value is taken from the
         '--default_proc_impl' command line option.
 
-        If both `num` and `at` are not specified, then `new` will return the
+        If neither `num` nor `at` is specified, then `new` will return the
         process id of child process if successful, or None otherwise. If either
         `num` or `at` is specified, then `new` will return a set containing the
         process ids of the processes that was successfully created.
