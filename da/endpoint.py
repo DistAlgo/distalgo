@@ -264,6 +264,8 @@ class SocketTransport(Transport):
                    retries=MAX_RETRY, **rest):
         super().initialize(**rest)
         self.buffer_size = get_runtime_option('message_buffer_size')
+        min_port = get_runtime_option('min_port')
+        max_port = get_runtime_option('max_port')
         assert self.conn is not None
         try:
             _, bound_port = self.conn.getsockname()
@@ -278,7 +280,7 @@ class SocketTransport(Transport):
         self.port = port
         if self.port is None:
             if not strict:
-                self.port = random.randint(MIN_TCP_PORT, MAX_TCP_PORT)
+                self.port = random.randint(min_port, max_port)
             else:
                 raise NoAvailablePortsException("Port number not specified!")
         address = None
@@ -294,7 +296,7 @@ class SocketTransport(Transport):
                     if linear:
                         self.port += 1
                     else:
-                        self.port = random.randint(MIN_TCP_PORT, MAX_TCP_PORT)
+                        self.port = random.randint(min_port, max_port)
                     retry += 1
                 else:
                     raise BindingException(
@@ -329,9 +331,6 @@ class SocketTransport(Transport):
 
 
 # UDP Implementation:
-
-MIN_UDP_PORT = 10000
-MAX_UDP_PORT = 40000
 DIGEST_LENGTH = 16
 DIGEST_HOLDER = b'0' * DIGEST_LENGTH
 
@@ -494,12 +493,8 @@ class UdpTransport(SocketTransport):
 
 
 # TCP Implementation:
-
 MAX_TCP_BACKLOG = 10
 MAX_TCP_CONN = 200
-MIN_TCP_PORT = 10000
-MAX_TCP_PORT = 40000
-
 #
 # Authentication stuff
 #

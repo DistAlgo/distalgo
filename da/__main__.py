@@ -114,6 +114,16 @@ def parseArgs():
                         "nodes if the port number is not explicitly given. "
                         "Default value is 15000. "
                         "This option is ignored if '--nodename' is not set.")
+    parser.add_argument("--min-port", type=int, default=10000,
+                        help="low end of the port range for binding network "
+                        "sockets. "
+                        "Default value is 10000. "
+                        "This option has no effect if '--port' is set.")
+    parser.add_argument("--max-port", type=int, default=60000,
+                        help="high end of the port range for binding network "
+                        "sockets. "
+                        "Default value is 60000. "
+                        "This option has no effect if '--port' is set.")
     parser.add_argument("--cookie", default=None,
                         help="a string for authentication of peers. "
                         "All peer processes participating in message passing "
@@ -184,6 +194,8 @@ def parseArgs():
     elif not args.idle and args.module is None and args.file is None:
         parser.print_usage()
         return 1
+    elif not args.max_port > args.min_port:
+        die("'max_port' must be greater than 'min_port'!")
     args.config = dict(parseConfig(item) for item in args.config)
     if args.cookie is not None:
         args.cookie = args.cookie.encode()
@@ -215,7 +227,7 @@ def libmain():
 def die(mesg = None):
     if mesg != None:
         sys.stderr.write(mesg + "\n")
-    sys.exit(1)
+    sys.exit(10)
 
 if __name__ == '__main__':
     sys.exit(libmain())
