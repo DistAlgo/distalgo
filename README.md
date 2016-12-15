@@ -6,7 +6,7 @@
   compiler and not the language.
 
 
-# Requirements
+# 1. Requirements
 
 ## Python
 
@@ -30,7 +30,7 @@
    commands accordingly.
 
 
-# Installation
+# 2. Installation
 
   In all following commands, please replace `<DAROOT>` with the path of the
   DistAlgo root directory (the directory containing this file).
@@ -118,7 +118,7 @@ The following command installs DistAlgo for the current user:
    Python executable is `python`, if that is not the case then you must
    modify the batch files with the full path to your Python executable.
 
-# Running DistAlgo
+# 3. Running DistAlgo
 
   The DistAlgo system consists of a compiler and a runtime. Under normal
   circumstances, you do not need to invoke the compiler directly, because the
@@ -398,7 +398,7 @@ will have the same effect.
     DistAlgo system into *executing arbitrary code* on your system. *Never*
     share your cookie with untrusted parties!
 
-# Further References
+# 4. Further References
 
   For a full description of the DistAlgo language, see
   `<DAROOT>/doc/language.pdf`. For a quick reference of all DistAlgo
