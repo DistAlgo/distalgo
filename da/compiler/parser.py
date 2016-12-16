@@ -685,17 +685,17 @@ class Parser(NodeVisitor):
         extras = []
         args = node.args
         if len(args.defaults) < len(args.args):
-            extras.append(args.args[:(len(args.defaults) - len(args.args))])
-            args.args = args.args[(len(args.defaults) - len(args.args)):]
+            extras.extend(args.args[:(len(args.args) - len(args.defaults))])
+            args.args = args.args[(len(args.args) - len(args.defaults)):]
         if args.vararg:
             extras.append(args.vararg)
         if args.kwonlyargs:
-            extras.append(args.kwonlyargs)
+            extras.extend(args.kwonlyargs)
         if args.kwarg:
             extras.append(args.kwarg)
-        if len(extras) > 0:
-            for node in extras:
-                self.warn("extraneous arguments in event spec ignored.", node)
+        for node in extras:
+            self.error("Malformed event spec: unknown argument {!r}.".
+                       format(node.arg), node)
 
         events = []
         labels = set()
