@@ -28,9 +28,6 @@ import argparse
 
 from .api import entrypoint, DEFAULT_MASTER_PORT
 from . import common
-from .common import initialize_runtime_options
-
-__version__ = common.__version__
 
 if hasattr(sys, '_real_argv'):
     sys.argv[0] = sys._real_argv
@@ -172,7 +169,8 @@ def parseArgs():
                         " DistAlgo processes."
                         " 'process' uses OS processes,"
                         " 'thread' uses OS threads.")
-    parser.add_argument("-v", "--version", action="version", version=__version__)
+    parser.add_argument("-v", "--version", action="version",
+                        version=common.__version__)
     group = parser.add_mutually_exclusive_group()
     group.add_argument("-m", "--module", default=None, nargs='+',
                         help="name of a DistAlgo module that will be run as "
@@ -221,7 +219,7 @@ def libmain():
     if isinstance(args, int):
         return args
     else:
-        initialize_runtime_options(args.__dict__)
+        common.initialize_runtime_options(args.__dict__)
         return entrypoint()
 
 def die(mesg = None):

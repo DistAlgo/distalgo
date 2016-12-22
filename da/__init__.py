@@ -2,8 +2,9 @@
 
 from da import common, api, pattern as pat, compiler, sim
 from da.sim import DistProcess, NodeProcess
-from da.__main__ import libmain, __version__
+from da.__main__ import libmain
 
+__version__ = VERSION = common.__version__
 import_da = api.import_da
 __all__ = ["__version__", "pat", "api", "libmain", "compiler",
            "DistProcess", "NodeProcess",
