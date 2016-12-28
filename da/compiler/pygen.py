@@ -174,6 +174,12 @@ def pyLabel(name, block=False, timeout=None):
                        args=[Str(name)],
                        keywords=kws))
 
+def pycomprehension(target, iter, ifs, is_async=0):
+    if sys.version_info < (3, 6):
+        return comprehension(target, iter, ifs)
+    else:
+        return comprehension(target, iter, ifs, is_async)
+
 def pyClassDef(name, bases=[], keywords=[], starargs=None,
                kwargs=None, body=[], decorator_list=[]):
     if sys.version_info < (3, 5):
@@ -595,6 +601,11 @@ class PythonGenerator(NodeVisitor):
     def visit_NoneExpr(self, node):
         return pyNone()
 
+    def visit_FormattedValueExpr(self, node):
+        return FormattedValue(self.visit(node.value), node.conversion,
+                              self.visit(node.format_spec)
+                              if node.format_spec else None)
+
     def visit_TupleExpr(self, node):
         return pyTuple([self.visit(e) for e in node.subexprs])
 
@@ -603,6 +614,9 @@ class PythonGenerator(NodeVisitor):
 
     def visit_SetExpr(self, node):
         return pySet([self.visit(e) for e in node.subexprs])
+
+    def visit_FormattedStrExpr(self, node):
+        return JoinedStr([self.visit(value) for value in node.subexprs])
 
     def visit_DictExpr(self, node):
         ast = Dict([self.visit(e) for e in node.keys],
@@ -665,7 +679,7 @@ class PythonGenerator(NodeVisitor):
     def visit_DomainSpec(self, node):
         domain = self.visit(node.domain)
         if not isinstance(node.pattern, dast.PatternExpr):
-            result = comprehension(self.visit(node.pattern), domain, [])
+            result = pycomprehension(self.visit(node.pattern), domain, [])
         else:
             if self.pattern_generator is None:
                 # Legacy pattern
@@ -673,7 +687,7 @@ class PythonGenerator(NodeVisitor):
                     node.pattern)
             else:
                 target, condlist = self.pattern_generator.visit(node.pattern)
-            result = comprehension(target, domain, condlist)
+            result = pycomprehension(target, domain, condlist)
         return propagate_fields(result)
 
     def visit_QuantifiedExpr(self, node):
@@ -942,6 +956,10 @@ class PythonGenerator(NodeVisitor):
         return [Pass()]
 
     def visit_AssignmentStmt(self, node):
+        if node.value is None:
+            # This is a "pure" annotation (since Python 3.6), don't generate
+            # anything:
+            return []
         targets = [self.visit(tgt) for tgt in node.targets]
         val = self.visit(node.value)
         ast = Assign(targets, val)

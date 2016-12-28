@@ -887,6 +887,9 @@ class Parser(NodeVisitor):
             self.debug("".join(dbgstr))
             self.pop_state()
 
+    def visit_AsyncFunctionDef(self, node):
+        self.error('Python async functions are not supported!', node)
+
     def visit_FunctionDef(self, node):
         if (self.current_process is None or
                 node.name not in {KW_SENT_EVENT, KW_RECV_EVENT}):
@@ -1025,6 +1028,17 @@ class Parser(NodeVisitor):
         tgtexpr = self.visit(node.target)
         stmtobj.target = tgtexpr
         stmtobj.value = valexpr
+        self.pop_state()
+
+    # Since Python 3.6:
+    def visit_AnnAssign(self, node):
+        stmtobj = self.create_stmt(dast.AssignmentStmt, node)
+        self.current_context = Assignment(stmtobj,
+                                          type=self.visit(node.annotation))
+        stmtobj.targets = [self.visit(node.target)]
+        if node.value is not None:
+            self.current_context = Read(stmtobj)
+            stmtobj.value = self.visit(node.value)
         self.pop_state()
 
     def visit_ImportFrom(self, node):
@@ -2093,6 +2107,21 @@ class Parser(NodeVisitor):
         self.pop_state()
         return expr
 
+    def visit_FormattedValue(self, node):
+        expr = self.create_expr(dast.FormattedValueExpr, node)
+        expr.value = self.visit(node.value)
+        expr.conversion = node.conversion
+        if node.format_spec is not None:
+            expr.format_spec = self.visit(node.format_spec)
+        self.pop_state()
+        return expr
+
+    def visit_JoinedStr(self, node):
+        expr = self.create_expr(dast.FormattedStrExpr, node)
+        expr.subexprs = [self.visit(value) for value in node.values]
+        self.pop_state()
+        return expr
+
     def visit_Bytes(self, node):
         expr = self.create_expr(dast.ConstantExpr, node)
         expr.value = node.s
@@ -2267,6 +2296,11 @@ class Parser(NodeVisitor):
 
     def visit_Ellipsis(self, node):
         return self.create_expr(dast.EllipsisExpr, node, nopush=True)
+
+    def visit_Constant(self, node):
+        # As of 3.6, Python compiler doesn't actually generate this kind of
+        # node, this is only used for code optimization (see PEP 511)
+        return self.create_expr(dast.ConstantExpr, node, {'value': node.value})
 
     def generator_visit(self, node):
         if isinstance(node, SetComp):
