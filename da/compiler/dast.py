@@ -912,11 +912,17 @@ class SelfExpr(ConstantExpr): pass
 class TrueExpr(ConstantExpr): pass
 class FalseExpr(ConstantExpr): pass
 class NoneExpr(ConstantExpr): pass
+class FormattedValueExpr(ConstantExpr):    # Since Python 3.6
+    def __init__(self, parent, ast=None, value=None):
+        super().__init__(parent, ast, value)
+        self.conversion = -1
+        self.format_spec = None
 
 class SequenceExpr(Expression): pass
 class TupleExpr(SequenceExpr): pass
 class ListExpr(SequenceExpr): pass
 class SetExpr(SequenceExpr): pass
+class FormattedStrExpr(SequenceExpr): pass # Since Python 3.6
 
 class DictExpr(Expression):
 
