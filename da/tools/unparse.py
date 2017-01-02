@@ -440,7 +440,7 @@ class Unparser:
         if t.conversion != -1:
             conversion = chr(t.conversion)
             assert conversion in "sra"
-            write(f"!{conversion}")
+            write("!{}".format(conversion))
         if t.format_spec:
             write(":")
             meth = getattr(self, "_fstring_" + type(t.format_spec).__name__)
