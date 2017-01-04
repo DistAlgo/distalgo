@@ -32,6 +32,7 @@ OperatorMap = {
     dast.AddOp : Add,
     dast.SubOp : Sub,
     dast.MultOp : Mult,
+    dast.MatMultOp : MatMult,
     dast.DivOp : Div,
     dast.ModOp : Mod,
     dast.PowOp : Pow,
@@ -60,9 +61,6 @@ OperatorMap = {
     dast.AndOp : And,
     dast.OrOp : Or
 }
-# New matrix multiplication operator since 3.5:
-if sys.version_info > (3, 5):
-    OperatorMap[dast.MatMultOp] = MatMult
 
 AggregateMap = {
     dast.MaxExpr : "max",
@@ -84,17 +82,9 @@ def call_noarg_ast(name):
 def pyCall(func, args=[], keywords=[], starargs=None, kwargs=None):
     if isinstance(func, str):
         func = pyName(func)
-    if sys.version_info < (3, 5):
-        ast = Call(func,
-                   list(args),
-                   [keyword(arg, val) for arg, val in keywords],
-                   starargs,
-                   kwargs)
-        propagate_attributes((starargs, kwargs), ast)
-    else:
-        ast = Call(func,
-                   list(args),
-                   [keyword(arg, val) for arg, val in keywords])
+    ast = Call(func,
+               list(args),
+               [keyword(arg, val) for arg, val in keywords])
     propagate_attributes(func, ast)
     propagate_attributes(args, ast)
     propagate_attributes([val for _, val in keywords], ast)
@@ -104,22 +94,13 @@ def pyName(name, ctx=None):
     return Name(name, Load() if ctx is None else ctx)
 
 def pyNone():
-    if sys.version_info > (3, 4):
-        return NameConstant(None)
-    else:
-        return pyName("None")
+    return NameConstant(None)
 
 def pyTrue():
-    if sys.version_info > (3, 4):
-        return NameConstant(True)
-    else:
-        return pyName("True")
+    return NameConstant(True)
 
 def pyFalse():
-    if sys.version_info > (3, 4):
-        return NameConstant(False)
-    else:
-        return pyName("False")
+    return NameConstant(False)
 
 def pyNot(expr):
     ast = UnaryOp(Not(), expr)
@@ -182,20 +163,11 @@ def pycomprehension(target, iter, ifs, is_async=0):
 
 def pyClassDef(name, bases=[], keywords=[], starargs=None,
                kwargs=None, body=[], decorator_list=[]):
-    if sys.version_info < (3, 5):
-        return ClassDef(name,
-                        list(bases),
-                        [keyword(arg, val) for arg, val in keywords],
-                        starargs,
-                        kwargs,
-                        list(body),
-                        list(decorator_list))
-    else:
-        return ClassDef(name,
-                        list(bases),
-                        [keyword(arg, val) for arg, val in keywords],
-                        list(body),
-                        list(decorator_list))
+    return ClassDef(name,
+                    list(bases),
+                    [keyword(arg, val) for arg, val in keywords],
+                    list(body),
+                    list(decorator_list))
 
 def pyFunctionDef(name, args=[], body=[], decorator_list=[], returns=None):
     arglist = arguments(args=[arg(n, None) for n in args],
@@ -213,6 +185,13 @@ def pyFunctionDef(name, args=[], body=[], decorator_list=[], returns=None):
                        returns)
 
 def propagate_attributes(from_nodes, to_node):
+    """Propagates the 'prebody' and 'postbody' attributes.
+
+    These attributes carry auxiliary function definitions/cleanup statements,
+    which need to be propagated upward in the AST until they reach a point (i.e.
+    a statement block) where injection is possible.
+
+    """
     if isinstance(to_node, AST):
         if not (isinstance(from_nodes, list) or
                 isinstance(from_nodes, tuple) or
@@ -435,30 +414,17 @@ class PythonGenerator(NodeVisitor):
         kwonlyargs = [arg(ident.name, None) for ident in node.kwonlyargs]
         kw_defaults = [self.visit(expr) for expr in node.kw_defaults]
         defaults = [self.visit(expr) for expr in node.defaults]
-        if sys.version_info >= (3, 5):
-            vararg = arg(node.vararg.name, None) \
-                     if node.vararg is not None else None
-            kwarg = arg(node.kwarg.name, None) \
-                    if node.kwarg is not None else None
-            return arguments(
-                args=args,
-                vararg=vararg,
-                kwonlyargs=kwonlyargs,
-                kwarg=kwarg,
-                defaults=defaults,
-                kw_defaults=kw_defaults)
-        else:
-            vararg = node.vararg.name if node.vararg is not None else None
-            kwarg = node.kwarg.name if node.kwarg is not None else None
-            return arguments(
-                args=args,
-                vararg=vararg,
-                varargannotation=None,
-                kwonlyargs=kwonlyargs,
-                kwarg=kwarg,
-                kwargannotation=None,
-                defaults=defaults,
-                kw_defaults=kw_defaults)
+        vararg = arg(node.vararg.name, None) \
+                 if node.vararg is not None else None
+        kwarg = arg(node.kwarg.name, None) \
+                if node.kwarg is not None else None
+        return arguments(
+            args=args,
+            vararg=vararg,
+            kwonlyargs=kwonlyargs,
+            kwarg=kwarg,
+            defaults=defaults,
+            kw_defaults=kw_defaults)
 
     def visit_Process(self, node):
         printd("Compiling process %s" % node.name)
@@ -474,9 +440,6 @@ class PythonGenerator(NodeVisitor):
             # ########################################
             # TODO: just pass these through until we figure out a use for them:
             cd.keywords = node.ast.keywords
-            if sys.version_info < (3, 5):
-                cd.starargs = node.ast.starargs
-                cd.kwargs = node.ast.kwargs
             # ########################################
         else:
             cd.keywords = []
@@ -538,9 +501,6 @@ class PythonGenerator(NodeVisitor):
         # ########################################
         # TODO: just pass these through until we figure out a use for them:
         cd.keywords = node.ast.keywords
-        if sys.version_info < (3, 5):
-            cd.starargs = node.ast.starargs
-            cd.kwargs = node.ast.kwargs
         # ########################################
         cd.decorator_list = [self.visit(d) for d in node.decorators]
         return [cd]

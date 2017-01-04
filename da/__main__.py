@@ -29,6 +29,7 @@ import argparse
 from .api import entrypoint, DEFAULT_MASTER_PORT
 from . import common
 
+MINIMUM_PYTHON_VERSION = (3, 5)
 if hasattr(sys, '_real_argv'):
     sys.argv[0] = sys._real_argv
 
@@ -215,6 +216,10 @@ def libmain():
     function of the DistAlgo program.
 
     """
+    if sys.version_info < MINIMUM_PYTHON_VERSION:
+        die("DistAlgo requires Python version {} or newer.\n"
+            .format(MINIMUM_PYTHON_VERSION))
+
     args = parseArgs()
     if isinstance(args, int):
         return args
