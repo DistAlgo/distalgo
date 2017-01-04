@@ -1169,17 +1169,6 @@ class Parser(NodeVisitor):
                                           for kw in e.keywords]
                 self.pop_state()
 
-            elif self.expr_check(KW_PRINT, 1, None, e,
-                                 optional_keywords={KW_LEVEL, KW_SEP}):
-                stmtobj = self.create_stmt(dast.OutputStmt, node)
-                self.current_context = Read(stmtobj)
-                stmtobj.message = [self.visit(arg) for arg in e.args]
-                for kw in e.keywords:
-                    if kw.arg == KW_LEVEL:
-                        stmtobj.level = self.visit(kw.value)
-                    elif kw.arg == KW_SEP:
-                        stmtobj.separator = self.visit(kw.value)
-
             elif self.current_process is not None and \
                  self.expr_check(KW_RESET, 0, 1, e):
                 stmtobj = self.create_stmt(dast.ResetStmt, node)

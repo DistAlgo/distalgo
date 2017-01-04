@@ -1178,17 +1178,6 @@ class PythonGenerator(NodeVisitor):
     def visit_NonlocalStmt(self, node):
         return [Nonlocal(node.names)]
 
-    def visit_OutputStmt(self, node):
-        args = [self.visit(msg) for msg in node.message]
-        keywords = []
-        if node.level is not None:
-            keywords.append(("level", self.visit(node.level)))
-        if node.separator is not None:
-            keywords.append(("sep", self.visit(node.separator)))
-        ast = Expr(pyCall(func=pyAttr("self", "output"),
-                          args=args, keywords=keywords))
-        return concat_bodies(args, [ast])
-
     def visit_ResetStmt(self, node):
         blueprint = """
 for attr in dir(self):

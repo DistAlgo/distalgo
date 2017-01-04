@@ -2301,16 +2301,6 @@ class NonlocalStmt(SimpleStmt):
         super().__init__(parent, ast)
         self.names = list(names)
 
-class OutputStmt(SimpleStmt):
-
-    _fields = ['message', 'level']
-
-    def __init__(self, parent, ast=None):
-        super().__init__(parent, ast)
-        self.message = None
-        self.level = None
-        self.separator = None
-
 class ResetStmt(SimpleStmt):
 
     def __init__(self, parent, ast=None):
