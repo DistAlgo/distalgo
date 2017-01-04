@@ -512,7 +512,7 @@ class Unparser:
         self.write("}")
 
     def _comprehension(self, t):
-        if t.is_async:
+        if sys.version_info > (3, 6) and t.is_async:
             self.write(" async for ")
         else:
             self.write(" for ")
@@ -608,7 +608,7 @@ class Unparser:
         # is an integer literal then we need to either parenthesize
         # it or add an extra space to get 3 .__abs__().
         if ((isinstance(t.value, ast.Num) and isinstance(t.value.n, int))
-           or (isinstance(t.value, ast.Constant) and isinstance(t.value.value, int))):
+           or (sys.version_info > (3, 6) and isinstance(t.value, ast.Constant) and isinstance(t.value.value, int))):
             self.write(" ")
         self.write(".")
         self.write(t.attr)
