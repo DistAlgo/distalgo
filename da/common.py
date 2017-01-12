@@ -26,6 +26,7 @@ import os
 import sys
 import copy
 import time
+import pickle
 import os.path
 import logging
 import warnings
@@ -135,6 +136,8 @@ def sysinit():
     else:
         # default is short
         pass
+    if GlobalOptions['record_trace']:
+        os.makedirs(GlobalOptions['logdir'], exist_ok=True)
     load_modules()
 
 def _restore_module_logging():
@@ -186,12 +189,6 @@ def setup_logging_for_module(modulename,
             fh.setLevel(filelvl)
             rootlog._filelvl = filelvl
             rootlog.addHandler(fh)
-
-        if GlobalOptions['logdir'] is not None:
-            os.makedirs(GlobalOptions['logdir'], exist_ok=True)
-            rootlog._logdir = GlobalOptions['logdir']
-        else:
-            rootlog._logdir = None
     else:
         rootlog.addHandler(logging.NullHandler())
 
@@ -360,6 +357,23 @@ class ProcessId(namedtuple("_ProcessId",
                      name=name, nodename=nodename,
                      hostname=hostname, transports=transports)
 
+    def _filename_form_(self):
+        """Constructs a filesystem-friendly representation of this pid.
+
+        This form is designed to be use as filenames for logs, traces, etc.
+
+        """
+        if len(self.nodename) > 0 and self.nodename != self.name:
+            if len(self.name) > 0:
+                return "{0.pcls.__name__}-{0.name}.{0.nodename}".format(self)
+            else:
+                return "{0.pcls.__name__}-{1:x}.{0.nodename}".format(self, self.uid)
+        else:
+            if len(self.name) > 0:
+                return "{0.pcls.__name__}-{0.name}".format(self)
+            else:
+                return "{0.pcls.__name__}-{1:x}".format(self, self.uid)
+
     def _short_form_(self):
         """Constructs a short string representation of this pid.
 
@@ -389,7 +403,7 @@ class ProcessId(namedtuple("_ProcessId",
             if len(self.name) > 0:
                 return "<{0.pcls.__name__}:{0.name}#{0.nodename}>".format(self)
             else:
-                # otherwise, we use `uid` truncated to the last 5 hex digits:
+                # otherwise, we use the full hex representation of `uid`:
                 return "<{0.pcls.__name__}:{1:x}#{0.nodename}>".format(self, self.uid)
         else:
             if len(self.name) > 0:
@@ -540,16 +554,30 @@ class WaitableQueue:
     the CPython GIL when the queue is non-empty.
 
     """
-    def __init__(self, iterable=[], maxlen=None):
+    def __init__(self, iterable=[], maxlen=None, trace_files=None):
         self._q = deque(iterable, maxlen)
         self._condition = threading.Condition()
         self._num_waiting = 0
+        if trace_files is not None:
+            self._in_file, self._out_file = trace_files
+            self.__pop = self.pop
+            self.pop = self._pop_and_record
+        else:
+            self._in_file = self._out_file = None
 
     def append(self, item):
         self._q.append(item)
         if self._num_waiting > 0:
             with self._condition:
                 self._condition.notify_all()
+
+    def close(self):
+        if self._in_file is not None:
+            self._in_file.close()
+            self._in_file = None
+        if self._out_file is not None:
+            self._out_file.close()
+            self._out_file = None
 
     def pop(self, block=True, timeout=None):
         # Opportunistically try to get the next item off the queue:
@@ -574,9 +602,30 @@ class WaitableQueue:
             raise QueueEmpty()
         # Other exceptions will be propagated
 
+    def _pop_and_record(self, block=True, timeout=None):
+        """Version of `pop` that records a trace of queue items.
+
+        """
+        if block and timeout:
+            delay = time.time()
+        else:
+            delay = None
+        try:
+            item = self.__pop(block, timeout)
+            if delay:
+                delay = time.time() - delay
+            pickle.dump((delay, item), self._in_file)
+            return item
+        except QueueEmpty as e:
+            # We must record all `QueueEmpty` events as well, in order for the
+            # execution to be fully reproduced:
+            if delay:
+                delay = time.time() - delay
+            pickle.dump((delay, e), self._in_file)
+            raise e
+
     def __len__(self):
         return self._q.__len__()
-
 
 class Node(object):
     __slots__ = ['prev', 'next', 'me']

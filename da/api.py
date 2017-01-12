@@ -26,6 +26,7 @@ import os
 import sys
 import time
 import stat
+import pickle
 import logging
 import collections.abc
 import os.path
@@ -251,9 +252,8 @@ def entrypoint():
         module = _load_main_module()
     except ImportError as e:
         die("ImportError: " + str(e))
-    is_idle = get_runtime_option('idle')
     if not hasattr(module, 'Node_'):
-        if is_idle:
+        if get_runtime_option('idle'):
             # Just use the generic node:
             module.Node_ = sim.NodeProcess
         else:
@@ -274,18 +274,19 @@ def entrypoint():
     # Start main program
     nodename = _check_nodename()
     niters = get_runtime_option('iterations')
+    traces = get_runtime_option('replay_traces')
+    router = None
+    trman = None
     if len(nodename) == 0:
         # Safety precaution: disallow distributed messaging when no node name
-        # specified:
+        # specified (i.e. run an isolated node), by setting the cookie to a
+        # random value:
         cookie = multiprocessing.current_process().authkey
     else:
         cookie = _load_cookie()
-    nodeimpl = None
-    router = None
-    trman = None
     try:
         trman = endpoint.TransportManager(cookie)
-        if len(nodename) > 0:
+        if len(nodename) > 0 and not traces:
             router = _bootstrap_node(module.Node_, nodename, trman)
             nid = common.pid_of_node()
         else:
@@ -294,51 +295,162 @@ def entrypoint():
                                     transports=trman.transport_addresses,
                                     name=nodename)
             common._set_node(nid)
-
-        log.info("%s initialized at %s:(%s).", nid,
-                 get_runtime_option('hostname'), trman.transport_addresses_str)
-        log.info("Starting program %s...", module)
-        for i in range(0, niters):
-            log.info("Running iteration %d ...", (i+1))
-
-            nodeimpl = sim.OSThreadContainer(process_class=module.Node_,
-                                             transport_manager=trman,
-                                             process_id=nid,
-                                             parent_id=nid,
-                                             process_name=nodename,
-                                             router=router)
-            nodeimpl.start()
-            log.info("Waiting for remaining child processes to terminate..."
-                     "(Press \"Ctrl-C\" to force kill)")
-            nodeimpl.join()
-            nodeimpl = None
-            log.info("Main process terminated.")
-        return 0
-
     except (endpoint.TransportException, sim.RoutingException) as e:
         log.error("Transport initialization failed due to: %r", e)
         stderr.write("System failed to start. \n")
         return 5
-    except KeyboardInterrupt as e:
-        log.warning("Received keyboard interrupt. ")
-        if nodeimpl is not None:
-            stderr.write("Terminating node...")
-            nodeimpl.end()
+
+    log.info("%s initialized at %s:(%s).", nid,
+             get_runtime_option('hostname'), trman.transport_addresses_str)
+
+    if not traces:
+        nodeimpl = None
+        try:
+            log.info("Starting program %s...", module)
+            for i in range(niters):
+                log.info("Running iteration %d ...", (i+1))
+
+                nodeimpl = sim.OSThreadContainer(process_class=module.Node_,
+                                                 transport_manager=trman,
+                                                 process_id=nid,
+                                                 parent_id=nid,
+                                                 process_name=nodename,
+                                                 router=router)
+                nodeimpl.start()
+                log.info("Waiting for remaining child processes to terminate..."
+                         "(Press \"Ctrl-C\" to force kill)")
+                nodeimpl.join()
+                nodeimpl = None
+                log.info("Main process terminated.")
+
+        except KeyboardInterrupt as e:
+            log.warning("Received keyboard interrupt. ")
+            if nodeimpl is not None:
+                stderr.write("Terminating node...")
+                nodeimpl.end()
+                t = 0
+                while nodeimpl.is_alive() and t < ASYNC_TIMEOUT:
+                    stderr.write(".")
+                    t += 1
+                    nodeimpl.join(timeout=1)
+            if nodeimpl is not None and nodeimpl.is_alive():
+                stderr.write("\nNode did not terminate gracefully, "
+                             "some zombie child processes may be present.\n")
+                return 2
+            else:
+                stderr.write("\nNode terminated. Goodbye!\n")
+                return 1
+        except Exception as e:
+            log.error("Caught unexpected global exception: %r", e, exc_info=1)
+            return 4
+
+    else:
+        try:
+            pobjs = []
+            proctype = get_runtime_option('default_proc_impl')
+            if proctype == 'thread':
+                router = sim.Router(trman)
+                router.start()
+            log.info(
+                "Replaying trace file(s) on program %s using %r containers...",
+                module, proctype)
+            implcls = getattr(sim, 'OS{}Container'.format(proctype.capitalize()))
+            common.set_global_config(module.Node_._config_object)
+            for i in range(niters):
+                log.info("Running iteration %d...", (i+1))
+                pobjs = [implcls(process_class=sim.DistProcess,
+                                 transport_manager=trman,
+                                 router=router,
+                                 replay_file=tf)
+                         for tf in traces]
+                for p in pobjs:
+                    p.start()
+                log.info("Waiting for replay processes to terminate..."
+                         "(Press \"Ctrl-C\" to force kill)")
+                while pobjs:
+                    p = pobjs[-1]
+                    p.join()
+                    pobjs.pop()
+                log.info("All replay completed.")
+
+        except KeyboardInterrupt as e:
+            stderr.write("\nReceived keyboard interrupt. ")
+            stderr.write("\nTerminating processes...")
+            for p in pobjs:
+                p.end()
             t = 0
-            while nodeimpl.is_alive() and t < ASYNC_TIMEOUT:
-                stderr.write(".")
-                t += 1
-                nodeimpl.join(timeout=1)
-        if nodeimpl is not None and nodeimpl.is_alive():
-            stderr.write("\nNode did not terminate gracefully, "
-                         "some zombie child processes may be present.\n")
-            return 2
+            for p in pobjs:
+                while p.is_alive() and t < ASYNC_TIMEOUT:
+                    stderr.write(".")
+                    t += 1
+                    p.join(timeout=1)
+            if any(p.is_alive() for p in pobjs):
+                stderr.write("\nSome child processes may have been zombied.\n")
+                return 2
+            else:
+                stderr.write("\nAll child processes terminated. Goodbye!\n")
+                return 1
+        except sim.TraceException as e:
+            log.error("Could not replay trace due to: %r", e)
+            return 9
+        except Exception as e:
+            log.error("Caught unexpected global exception: %r", e, exc_info=1)
+            return 4
+
+    return 0
+
+def dump_trace(filename):
+    with open(filename, 'rb') as stream:
+        print('Dumping {}:'.format(filename))
+        header = stream.read(4)
+        if header != sim.TRACE_HEADER:
+            die('{} is not a DistAlgo trace file!')
+        version = stream.read(4)
+        print("\n  Generated by DistAlgo version ", end='')
+        if version[-1] == 0:
+            print("{}.{}.{}".format(*version[:-1]))
         else:
-            stderr.write("\nNode terminated. Goodbye!\n")
-            return 1
-    except Exception as e:
-        log.error("Caught unexpected global exception: %r", e, exc_info=1)
-        return 4
+            print("{}.{}.{}-{}".format(*version))
+        tracetyp = stream.read(1)[0]
+        if tracetyp == sim.TRACE_TYPE_RECV:
+            print("  Receive trace ")
+            dump_item = dump_recv_item
+        elif tracetyp == sim.TRACE_TYPE_SEND:
+            print("  Send trace ")
+            dump_item = dump_send_item
+        else:
+            stderr.write("Error: unknown trace type {}\n".format(tracetyp))
+            return
+        pid = pickle.load(stream)
+        parent = pickle.load(stream)
+        print("  Running process: {}\tParent process: {}\n".format(pid, parent))
+        while True:
+            try:
+                dump_item(stream)
+            except EOFError:
+                break
+        print("END OF TRACE")
+
+def dump_recv_item(stream):
+    delay, item = pickle.load(stream)
+    if isinstance(item, common.QueueEmpty):
+        print("-- {!r} ".format(item), end='')
+    else:
+        print(" {1} <= {0} ".format(*item), end='')
+    if delay:
+        print("@+{:.3f}s".format(delay))
+    else:
+        print('')
+
+RESULT_STR = { True:'Succeeded', False:'Failed'}
+def dump_send_item(stream):
+    event, value = pickle.load(stream)
+    if event == sim.Command.Message:
+        print(" ({}) => ".format(RESULT_STR[value]))
+    elif event == sim.Command.New:
+        print(" ({}) <+ ".format(value))
+    else:
+        print(" ({}) <? Unknown event type {}".format(value, event))
 
 def die(mesg = None):
     if mesg != None:

@@ -26,7 +26,9 @@ import sys
 import logging
 import argparse
 
-from .api import entrypoint, DEFAULT_MASTER_PORT
+from datetime import datetime
+
+from .api import entrypoint, DEFAULT_MASTER_PORT, dump_trace
 from . import common
 
 MINIMUM_PYTHON_VERSION = (3, 5)
@@ -53,10 +55,24 @@ def parseArgs():
                         "Useful if DistAlgo is run as a library .")
     parser.add_argument("-f", "--logfile", action="store_true", default=False,
                         help="creates a log file for this run.")
+
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("-T", "--record-trace", action="store_true", default=False,
+                        help="stores a message trace for each process.")
+    group.add_argument("-Y", "--replay-traces", nargs='+', default=[],
+                        help="replays the recorded message traces "
+                        "instead of running the `main` method. ")
+
     parser.add_argument("--logfilename",
                         help="file name of the log file, defaults to appending"
                         "'.log' to the source file name.")
-    parser.add_argument("--logdir")
+    parser.add_argument("--logdir",
+                        default=datetime.now().strftime('%Y-%m-%d_%H%M%S'),
+                        help="directory to store log and trace files, "
+                        "can be absolute or relative to the current working "
+                        "directory. Default value is a subdirectory under "
+                        "the working directory corresponding to the current "
+                        "date and time.")
     parser.add_argument("-L", "--logconsolelevel",
                         choices=LogLevelNames, default="info",
                         help="severity level of logging messages to print to "
@@ -181,6 +197,9 @@ def parseArgs():
     group.add_argument("-B", "--help-builtins", action='store_true', default=False,
                        help="print a list of DistAlgo built-in functions and "
                        "exit.")
+    group.add_argument("-P", "--dump-trace", action='store_true', default=False,
+                       help="print the contents of DistAlgo trace files. "
+                       "The files to print are specified by '--replay_traces'.")
     group.add_argument("file", nargs='?',
                         help="DistAlgo source file to run.")
     parser.add_argument("args", nargs=argparse.REMAINDER,
@@ -188,8 +207,9 @@ def parseArgs():
 
     args = parser.parse_args()
     if args.help_builtins:
-        help_builtins()
-        return 0
+        return help_builtins()
+    elif args.dump_trace:
+        return dump_traces(args.replay_traces)
     elif not args.idle and args.module is None and args.file is None:
         parser.print_usage()
         return 1
@@ -208,6 +228,17 @@ def help_builtins():
         sig = ", ".join([arg for arg in signature(func).parameters
                          if arg != 'self'])
         print("{}({}):\n\t{}\n".format(fname, sig, func.__doc__))
+    return 0
+
+def dump_traces(traces):
+    if not traces:
+        die('No trace files specified.')
+    for filename in traces:
+        try:
+            dump_trace(filename)
+        except OSError as e:
+            sys.stderr.write('{}: {}\n'.format(type(e).__name__, e))
+    return 0
 
 def libmain():
     """Main program entry point.

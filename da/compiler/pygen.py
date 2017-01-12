@@ -169,12 +169,14 @@ def pyClassDef(name, bases=[], keywords=[], starargs=None,
                     list(body),
                     list(decorator_list))
 
-def pyFunctionDef(name, args=[], body=[], decorator_list=[], returns=None):
+def pyFunctionDef(name, args=[], kwarg=None, body=[], decorator_list=[],
+                  returns=None):
     arglist = arguments(args=[arg(n, None) for n in args],
                         vararg=None,
                         varargannotation=None,
                         kwonlyargs=[],
-                        kwarg=None,
+                        kwarg=(arg(arg=kwarg, annotation=None)
+                               if kwarg is not None else None),
                         kwargannotation=None,
                         defaults=[],
                         kw_defaults=None)
@@ -242,7 +244,7 @@ def translate(distalgo_ast, filename="", options=None):
         raise PythonGeneratorException(str(pg.current_node)) from ex
 
 # List of arguments needed to initialize a process:
-PROC_INITARGS = ["procimpl", "props"]
+PROC_INITARGS = ["procimpl"]
 
 PREAMBLE = parse(
     """
@@ -391,13 +393,15 @@ class PythonGenerator(NodeVisitor):
     def generate_init(self, node):
         supercall = [Expr(pyCall(func=pyAttr(pyCall(pyName("super")),
                                              "__init__"),
-                                 args=[pyName(n) for n in PROC_INITARGS]))]
+                                 args=[pyName(n) for n in PROC_INITARGS],
+                                 keywords=[(None, pyName('props'))]))]
         histories = self.history_initializers(node)
         events = [Expr(pyCall(func=pyAttr(pyAttr("self", "_events"), "extend"),
                               args=[pyList([self.generate_event_def(evt)
                               for evt in node.events])]))]
         return pyFunctionDef(name="__init__",
                              args=(["self"] + PROC_INITARGS),
+                             kwarg='props',
                              body=(supercall + histories + events))
 
     def generate_handlers(self, node):
