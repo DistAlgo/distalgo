@@ -429,6 +429,9 @@ def dump_trace(filename):
                 dump_item(stream)
             except EOFError:
                 break
+            except Exception as e:
+                stderr.write("Error: trace file corrupted: {}\n".format(e))
+                return
         print("END OF TRACE")
 
 def dump_recv_item(stream):
@@ -448,7 +451,7 @@ def dump_send_item(stream):
     if event == sim.Command.Message:
         print(" ({}) => ".format(RESULT_STR[value]))
     elif event == sim.Command.New:
-        print(" ({}) <+ ".format(value))
+        print(" +> {} ".format(value))
     else:
         print(" ({}) <? Unknown event type {}".format(value, event))
 
