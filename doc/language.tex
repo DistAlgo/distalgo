@@ -187,7 +187,7 @@
 
 \c{liu@cs.stonybrook.edu, bolin@cs.stonybrook.edu, stoller@cs.stonybrook.edu}
 
-{\small Revised November 19, 2016}
+{\small Revised January 16, 2017}
 \vspace{4ex}
 
 \def\da{\vspace{-2.5ex}in DistAlgo\vspace{-2.5ex}}
@@ -244,7 +244,8 @@ and can be defined or redefined to be anything else.
 
 
 A special method \c{setup} may be defined in \c{\p{process\_body}} for
-initially setting up data in the process before the execution starts.
+initially setting up data in the process before the process's execution
+starts.
 For each parameter \p{v} of \c{setup}, a process field named \p{v} is
 defined automatically and assigned the value of parameter \p{v}; additional
 fields
@@ -285,10 +286,10 @@ is the host name of the machine running the node; \c{@host} can be omitted
 if the node is running on the same machine. %
 All nodes communicating with each other must have the same cookie, which
 can be specified on the command line when starting the node.
-The number \p{n} and clause \c{at} are optional; the defaults are 1 and
-local node, respectively.  When both the number \p{n} and clause \c{at} are
-omitted, a single process is created and assigned to \p{v}; otherwise, a
-set of processes is created and assigned to \p{v}.
+The number \p{n} and the \c{at} clause are optional; the defaults are 1 and
+local node, respectively.  When both are omitted, a single process is
+created and assigned to \p{v}; otherwise, a set of processes is created and
+assigned to \p{v}.
 \begin{code}
     \p{v} = \p{n} new \p{p} at \p{node_exp}
 \end{code}
@@ -355,8 +356,8 @@ called a tag, indicating the kind of the message.
 
 A yield point preceding a statement is of the following form, where
 identifier \p{l} is a label and is optional.  It specifies that point in
-the program as a place where control may yield to handling of received
-messages.
+the program as a place where control yields to handling of un-handled
+messages, if any, and resumes afterwards.
 \begin{code}
     -- \p{l}:
 \end{code}
@@ -377,7 +378,8 @@ identifier.
 Handling messages received can be done using handler definitions and
 message history variables.
 
-A handler definition is of the following form. 
+A handler definition, also called a \c{receive} definition, is of the
+following form.
 It handles, at yield points labeled \p{l\sb{1}}, ..., \p{l\sb{j}},
 un-handled messages that match \p{mexp} sent from \p{pexp}, where
 \p{mexp} and \p{pexp} are parts of a pattern;
@@ -390,11 +392,8 @@ statements to be executed for the matched messages.
     receive \p{mexp} from \p{pexp} at \p{l\sb{1}}, ..., \p{l\sb{j}}:
       \p{handler_body}
 \end{code}
-We could use the noun \c{handler} in place of \c{receive}, but handlers are
-not named and called with their names; instead, yield points are named, and
-handlers are executed at the specified yield points.
 
-\langmap
+\langmap\newpage
 \begin{code}
     def receive(msg = \p{mexp}, from_ = \p{pexp}, at = (\p{l\sb{1}}, ..., \p{l\sb{j}})):
       \p{handler_body}
@@ -406,7 +405,7 @@ Message histories, i.e., the sequences of messages received and sent, in
 variables \c{received}
 and \c{sent}, respectively, can be used in expressions.
 Sequence \c{received} is updated at the next yield point if there are
-un-handled messeges, by adding un-handled messages before any matching
+un-handled messages, by adding un-handled messages before any matching
 receive handler executes.
 Sequence \c{sent} is updated at each \c{send} statement, by adding each
 message sent to a process.
@@ -445,10 +444,7 @@ Synchronization and associated actions can be expressed using general,
 non\-deterministic \c{await} statements.
 
 A simple \c{await} statement is of the following form.  It waits for the
-value of Boolean-valued expression \p{bexp} to become true, with an
-implicit yield point for handling messages while waiting.  It is a short
-hand for \c{await \p{bexp}:~pass} in a general, nondeterministic \c{await}
-statement.
+value of Boolean-valued expression \p{bexp} to become true.
 \begin{code}
     await \p{bexp}
 \end{code}
@@ -460,9 +456,8 @@ statement.
 
 A general, nondeterministic \c{await} statement is of the following form.
 It waits for any of the values of expressions \p{bexp\sb{1}}, ...,
-\p{bexp\sb{k}} to become true or a timeout after \p{t} seconds, with an
-implicit yield point for handling messages while waiting, and then
-nondeterministically selects one\notes{} of statements
+\p{bexp\sb{k}} to become true or a timeout after \p{t} seconds, 
+and then nondeterministically selects one\notes{} of statements
 \p{stmt\sb{1}}, ..., \p{stmt\sb{k}}, \p{stmt} whose corresponding
 conditions are satisfied to execute.  The \c{or} and \c{timeout} clauses
 are optional.
@@ -482,9 +477,9 @@ are optional.
     elif timeout(\p{t}): \p{stmt}
 \end{code}
 
-An \c{await} statement must be preceded by a yield point; if a yield point
-is not specified explicitly, the default is that all message handlers can
-be executed at this point.
+An \c{await} statement must be preceded by a yield point, for handling
+messages while waiting; if a yield point is not specified explicitly, the
+default is that all message handlers can be executed at this point.
 
 \notes{}
 
@@ -493,14 +488,14 @@ be executed at this point.
 
 \myparag{Comprehensions}
 
-A comprehension is a query of the following form plus a set of
+A comprehension is a query of the following form, plus a set of
 \defn{parameters}---variables whose values are bound before the query.
 For a query to be well-formed, every variable in it must be
 \defn{reachable} from a parameter---be a parameter or be the left-side
 variable of a membership clause whose right-side variables are reachable.
 Given values of parameters, the query returns the set of values of \p{exp}
-for all values of variables that satisfy all membership clauses
-\c{\p{v_i} in \p{sexp\sb{i}}} and condition \p{bexp}.
+for all combinations of values of variables that satisfy all membership
+clauses \c{\p{v_i} in \p{sexp\sb{i}}} and condition \p{bexp}.
 When \p{sexp_i} is a variable \p{s_i}, clause \c{\p{v_i} in \p{s_i}} can
 also be written as \p{s_i(v_i)}.
 When \p{bexp} is \c{true}, \c{, \p{bexp}} can be omitted.
@@ -511,8 +506,8 @@ To indicate that a variable \c{x} on the left side of a membership
 clause is a parameter, add prefix \c{=} to \c{x}; this is only needed
 for the first occurrence of such a variable.
 Notation \c{=x} means a value that is equal to the value of parameter
-\c{x}; it is equivalent to using a fresh variable \c{y} instead and adding
-a conjunct \c{y=x} in condition \p{bexp}.
+\c{x}; it is equivalent to using a fresh variable \c{y} in its place and
+adding a conjunct \c{y=x} in condition \p{bexp}.
 This notation can generalize: one can add as prefix any binary operator
 that is a symbol not allowed in identifiers, uses the parameter value as
 the right operand, and returns a Boolean value.  For example, \c{>x} means
@@ -537,19 +532,19 @@ clause \c{\p{v_i} in received} or \c{\p{v_i} in sent} be written as
 An aggregation is a query of one of the following two forms, where
 \c{\p{agg}} is an aggregation operator, including \c{count}, \c{sum},
 \c{min}, and \c{max}.
-The query returns the value of applying \c{\p{agg}} to the set value of the
-comprehension expression \c{\p{comprehension\_exp}}, for the first form, or
-to the multiset of values of \p{exp} for all values of variables that
-satisfy all membership clauses \c{\p{v\sb{i}} in \p{sexp\sb{i}}} and
-condition \p{bexp}, for the second form.
+Given values of parameters, the query returns the value of applying
+\c{\p{agg}} to the set value of \c{\p{sexp}}, for the first form, or
+to the multiset of values of \p{exp} for all combinations of values of
+variables that satisfy all membership clauses \c{\p{v\sb{i}} in
+  \p{sexp\sb{i}}} and condition \p{bexp}, for the second form.
 \begin{code}
-    \p{agg} \p{comprehension_exp}
+    \p{agg} \p{sexp}
     \p{agg} (\p{exp}: \p{v\sb{1}} in \p{sexp\sb{1}}, ..., \p{v\sb{k}} in \p{sexp\sb{k}}, \p{bexp})
 \end{code}
 
 \langmap
 \begin{code}
-    \p{agg}(\p{comprehension_exp})
+    \p{agg}(\p{sexp})
     \p{agg}of(\p{exp}, \p{v\sb{1}} in \p{sexp\sb{1}}, ..., \p{v\sb{k}} in \p{sexp\sb{k}}, \p{bexp})
 \end{code}
 \quad\quad where \c{len} is used in place of \c{count}.
@@ -557,23 +552,20 @@ condition \p{bexp}, for the second form.
 
 \myparag{Quantifications}
 
-A quantification is a query of one of the following two forms plus a set of
-parameters.  The two forms are called existential and universal
-quantifications, respectively.  Given values of parameters, the query
-returns \c{true} iff for some or all, respectively, values of the variables
-that satisfy all membership clauses \c{\p{v\sb{i}} in \p{sexp\sb{i}}},
-expression \p{bexp} evaluates to \c{true}.  When an existential
-quantification returns \c{true}, all variables in the query are also bound
-to a combination of values, called a witness, that satisfy all the
-membership clauses and condition \p{bexp}.
+A quantification is a query of one of the following two forms.
+The two forms are called existential and universal quantifications,
+respectively.
+Given values of parameters, the query returns \c{true} iff for some or
+all, respectively, combinations of values of variables that satisfy
+all membership clauses \c{\p{v\sb{i}} in \p{sexp\sb{i}}}, expression
+\p{bexp} evaluates to \c{true}.
+When an existential quantification returns \c{true}, all variables in
+the query are also bound to a combination of values, called a witness,
+that satisfy all the membership clauses and condition \p{bexp}.
 \begin{code}
     some \p{v\sb{1}} in \p{sexp\sb{1}}, ..., \p{v\sb{k}} in \p{sexp\sb{k}} has \p{bexp}
     each \p{v\sb{1}} in \p{sexp\sb{1}}, ..., \p{v\sb{k}} in \p{sexp\sb{k}} has \p{bexp}
 \end{code}
-Parameters are indicated as for comprehensions.  Also as for
-comprehensions, when \p{sexp_i} is a variable \p{s_i}, expression
-\p{s_i(v_i)} can be used in place of \c{\p{v_i} in \p{s_i}}.  When \p{bexp}
-is \c{true}, the \c{has} clause can be omitted.
 
 \langmap\notes{}
 \begin{code}
@@ -589,11 +581,12 @@ parameters, as for comprehensions.
 \myparag{Patterns}
 \label{sec-patterns}
 
-In the clauses \c{\p{v\sb{1}} in \p{sexp\sb{1}}, \ldots, \p{v\sb{k}} in
-  \p{sexp\sb{k}}} in all of comprehensions, aggregations, and
-quantifications, a tuple expression \p{texp_i}, called a tuple pattern, may
-occur in place of variable \p{v_i}.  Previously unbound variables in
-\p{texp_i} are bound to the corresponding components in %
+In the clauses \c{\p{v\sb{1}} in \p{sexp\sb{1}}, \ldots, \p{v\sb{k}}
+  in \p{sexp\sb{k}}} in all of comprehensions, aggregations, and
+quantifications, a pattern, in particular a tuple expression
+\p{texp_i}, called a tuple pattern, may occur in place of variable
+\p{v_i}.  Previously unbound variables in \p{texp_i} are bound to the
+corresponding components in %
 the matched elements of the value of \p{sexp\sb{i}}.
 The underscore (\c{\_}) is used as a wild card that can be bound to anything.
 In general, any data construction expression 
@@ -630,8 +623,8 @@ optional; the default is all types of processes.
 
 \myparag{Message handling}
 
-The following statement configures the system to handle all messages
-received at each yield point; this is the default. 
+The following statement configures the system to handle all un-handled
+messages at each yield point; this is the default.
 Other options for \c{handling} include \c{one}.
 \begin{code}
     configure handling = all
