@@ -982,6 +982,7 @@ class NodeProcess(DistProcess):
                         message=self._id, to=self._nodes)
 
 class RoutingException(Exception): pass
+class CircularRoutingException(RoutingException): pass
 class BootstrapException(RoutingException): pass
 class NoAvailableTransportException(RoutingException): pass
 class MessageTooBigException(RoutingException): pass
@@ -1140,6 +1141,13 @@ class Router(threading.Thread):
                        mesg, dest, flags)
         if dest.hostname != self.hostname:
             flags |= ChannelCaps.INTERHOST
+        elif dest.transports == self.endpoint.transport_addresses:
+            # dest is not in our local_procs but has same hostname and transport
+            # address, so most likely dest is a process that has already
+            # terminated. Do not attempt forwarding or else will cause infinite
+            # loop:
+            raise CircularRoutingException('destination: {}'.format(dest))
+
         if transport is None:
             transport = self.endpoint.get_transport(flags)
         if transport is None:
@@ -1188,6 +1196,11 @@ class Router(threading.Thread):
             try:
                 self._send_remote(src, dest, payload, flags, **params)
                 return True
+            except CircularRoutingException as e:
+                # This is most likely due to stale process ids, so don't log
+                # error, just debug:
+                self.log.debug("Caught %r.", e)
+                return False
             except Exception as e:
                 self.log.error("Could not send message due to: %r", e)
                 self.log.debug("Send failed: ", exc_info=1)
