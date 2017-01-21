@@ -217,7 +217,7 @@ class Controller(process):
         if dones >= threshold and not self.sent_stop:
             rest_ps = ps - done_ps
             verboutput("Controller stopping everyone")
-            bcast(('CTL_Stop',), to=rest_ps)
+            send(('CTL_Stop',), to=rest_ps)
             self.sent_stop = True
     
     def run():
@@ -226,13 +226,13 @@ class Controller(process):
         verboutput("Controller starting everyone")
         
         t1 = time.perf_counter()
-        bcast(('CTL_Start',), to=ps)
+        send(('CTL_Start',), to=ps)
         
         # Shut 'em down.
         await(dones == nprocs)
         t2 = time.perf_counter()
         verboutput("Everyone done")
-        bcast(('CTL_Terminate',), to=ps)
+        send(('CTL_Terminate',), to=ps)
         
         jsondata = {}
         for rugroup_id, points in rudata_points.items():
@@ -282,7 +282,7 @@ class Controllee(process):
         if self.ctl_done:
             return
         ctl_end()
-        sys.exit()
+        exit()
     
     def run():
         # Stub to squelch warning.
