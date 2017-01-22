@@ -235,7 +235,8 @@ class DistProcess():
             return default
 
     @builtin
-    def new(self, pcls, args=None, num=None, at=None, method=None, **props):
+    def new(self, pcls, args=None, num=None, at=None,
+            method=None, daemon=False, **props):
         """Creates new DistAlgo processes.
 
         `pcls` specifies the DistAlgo process class. Optional argument `args` is
@@ -288,7 +289,7 @@ class DistProcess():
         if at is not None and at != self._id:
             self._register_async_event(Command.RPCReply, seqno)
             if self._send1(Command.New,
-                           message=(pcls, iterator, method, seqno, props),
+                           message=(pcls, iterator, method, daemon, seqno, props),
                            to=at,
                            flags=ChannelCaps.RELIABLEFIFO):
                 res = self._sync_async_event(Command.RPCReply, seqno, at)
@@ -301,7 +302,8 @@ class DistProcess():
                 children = []
         else:
             children = self.__procimpl.spawn(pcls, iterator, self._id, props,
-                                             seqno, container=method)
+                                             seqno, container=method,
+                                             daemon=daemon)
         self._log.debug("%d instances of %s created: %r",
                         len(children), pcls, children)
         self._sync_async_event(Command.NewAck, seqno, children)
@@ -805,10 +807,11 @@ class DistProcess():
 
     @internal
     def _cmd_New(self, src, args):
-        pcls, num, method, seqno, props = args
+        pcls, num, method, daemon, seqno, props = args
         children = self.__procimpl.spawn(pcls, num,
                                          parent=src, props=props,
-                                         seqno=seqno, container=method)
+                                         seqno=seqno, container=method,
+                                         daemon=daemon)
         self._send1(msgtype=Command.RPCReply,
                     message=(seqno, children),
                     to=src,
@@ -1507,7 +1510,8 @@ class ProcessContainer:
     def is_node(self):
         return self.dapid == common.pid_of_node()
 
-    def _spawn_process_spawn(self, pcls, name, parent, props, seqno=None):
+    def _spawn_process_spawn(self, pcls, name, parent, props, seqno=None,
+                             daemon=False):
         trman = None
         p = None
         cid = None
@@ -1524,7 +1528,8 @@ class ProcessContainer:
                                    process_name=name,
                                    cmd_seqno=seqno,
                                    pipe=child_pipe,
-                                   props=props)
+                                   props=props,
+                                   daemon=daemon)
             p.start()
             child_pipe.close()
             trman.serialize(parent_pipe, p.pid)
@@ -1545,7 +1550,8 @@ class ProcessContainer:
                 parent_pipe.close()
         return cid
 
-    def _spawn_process_fork(self, pcls, name, parent, props, seqno=None):
+    def _spawn_process_fork(self, pcls, name, parent, props, seqno=None,
+                            daemon=False):
         trman = None
         p = None
         cid = None
@@ -1559,7 +1565,8 @@ class ProcessContainer:
                                    parent_id=parent,
                                    process_name=name,
                                    cmd_seqno=seqno,
-                                   props=props)
+                                   props=props,
+                                   daemon=daemon)
             p.start()
             p.join(timeout=0.01)
             if not p.is_alive():
@@ -1576,7 +1583,7 @@ class ProcessContainer:
                 trman.close()
         return cid
 
-    def _spawn_thread(self, pcls, name, parent, props, seqno=None):
+    def _spawn_thread(self, pcls, name, parent, props, seqno=None, daemon=False):
         p = None
         cid = None
         try:
@@ -1590,7 +1597,8 @@ class ProcessContainer:
                                   process_name=name,
                                   cmd_seqno=seqno,
                                   router=self.router,
-                                  props=props)
+                                  props=props,
+                                  daemon=daemon)
             p.start()
             p.join(timeout=0.01)
             if not p.is_alive():
@@ -1602,7 +1610,8 @@ class ProcessContainer:
                             name, pcls, e)
         return cid
 
-    def _spawn(self, pcls, names, parent, props, seqno=None, container='process'):
+    def _spawn(self, pcls, names, parent, props, seqno=None,
+               container='process', daemon=False):
         children = []
         spawn_1 = getattr(self, '_spawn_' + container, None)
         if spawn_1 is None:
@@ -1616,7 +1625,7 @@ class ProcessContainer:
                 self._log.error("Name '%s' contains an illegal character(%r).",
                                 name, common.ILLEGAL_NAME_CHARS)
                 continue
-            cid = spawn_1(pcls, name, parent, props, seqno)
+            cid = spawn_1(pcls, name, parent, props, seqno, daemon)
             if cid is not None:
                 children.append(cid)
                 if len(name) > 0:
@@ -1632,13 +1641,14 @@ class ProcessContainer:
         return children
 
     def _record_spawn(self, pcls, names, parent, props, seqno=None,
-                      container='process'):
-        children = self._spawn(pcls, names, parent, props, seqno, container)
+                      container='process', daemon=False):
+        children = self._spawn(pcls, names, parent, props, seqno, container,
+                               daemon)
         self.router._record(Command.New, self.dapid, children)
         return children
 
     def _replay_spawn(self, pcls, names, parent, props, seqno=None,
-                      container='process'):
+                      container='process', daemon=False):
         rectype, children = self.router._replay(self.dapid)
         if rectype != Command.New:
             raise TraceMismatchException('Expecting spawn but got {} instead.'
