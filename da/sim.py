@@ -1254,7 +1254,7 @@ class Router(threading.Thread):
     def run(self):
         try:
             self.running = True
-            self.mesgloop(until=(lambda: False))
+            self.mesgloop(until=(lambda: not self.running))
         except Exception as e:
             self.log.debug("Unhandled exception: %r.", e)
         self.terminate_local_processes()
@@ -1659,7 +1659,7 @@ class OSProcessContainer(ProcessContainer, multiprocessing.Process):
     """An implementation of processes using OS process.
 
     """
-    def __init__(self, daemon=False, **rest):
+    def __init__(self, daemon=False, pipe=None, **rest):
         super().__init__(**rest)
         self.daemon = daemon
         if multiprocessing.get_start_method() == 'spawn':
@@ -1716,7 +1716,6 @@ class OSProcessContainer(ProcessContainer, multiprocessing.Process):
         finally:
             if self.router is not None:
                 self.router.deregister_local_process(self.dapid)
-            self.end()
             self.cleanup()
 
 class OSThreadContainer(ProcessContainer, threading.Thread):
