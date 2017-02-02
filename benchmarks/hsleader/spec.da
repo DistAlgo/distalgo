@@ -21,7 +21,7 @@ class P(process, controller.Controllee):
             elif (received(('In', self.id), from_=left) and
                   received(('In', self.id), from_=right)):
                 distance *= 2
-                reset("Received")
+                reset(received)
 
     def receive(msg=('Out', v, d), from_=source):
         if v > self.id:

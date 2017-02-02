@@ -449,7 +449,7 @@ class ArgumentsContainer(NameScope):
 
     def __init__(self, parent, ast=None):
         super().__init__(parent, ast)
-        self.args = Arguments(parent=self)
+        self.args = Arguments(parent=self, ast=ast)
 
     def clone(self):
         node = super().clone()
@@ -478,7 +478,7 @@ class NamedVar(DistNode):
     _attributes = ["name"] + DistNode._attributes
 
     def __init__(self, parent=None, ast=None, name=""):
-        super().__init__(ast)
+        super().__init__(parent, ast=ast)
         self.name = name
         self._scope = None
         self.assignments = []
@@ -2137,12 +2137,11 @@ class ExceptHandler(DistNode):
 
 class AwaitStmt(CompoundStmt):
 
-    _fields = ['branches', 'orelse', 'timeout']
+    _fields = ['branches', 'timeout']
 
     def __init__(self, parent, ast=None):
         super().__init__(parent, ast)
         self.branches = []
-        self.orelse = []
         self.timeout = None
 
     @property
@@ -2172,13 +2171,7 @@ class AwaitStmt(CompoundStmt):
                             for l in chain(self.branches, self.orelse)
                             if l is not None]))
 
-class LoopingAwaitStmt(AwaitStmt):
-
-    _fields = AwaitStmt._fields + ['orfail']
-
-    def __init__(self, parent, ast=None):
-        super().__init__(parent, ast)
-        self.orfail = []
+class LoopingAwaitStmt(AwaitStmt): pass
 
 class Branch(DistNode):
 
@@ -2303,8 +2296,11 @@ class NonlocalStmt(SimpleStmt):
 
 class ResetStmt(SimpleStmt):
 
+    _fields = ['target']
+
     def __init__(self, parent, ast=None):
         super().__init__(parent, ast)
+        self.target = ''
 
 class EventType: pass
 class ReceivedEvent(EventType): pass
@@ -2425,7 +2421,7 @@ class Process(CompoundStmt, ArgumentsContainer):
     _fields = ['bases', 'decorators', 'initializers', 'methods',
                'events', 'entry_point'] + \
         CompoundStmt._fields + ArgumentsContainer._fields
-    _attributes = ['name'] + CompoundStmt._attributes
+    _attributes = ['name', 'configurations'] + CompoundStmt._attributes
 
     def __init__(self, parent=None, ast=None, name="", bases=[]):
         super().__init__(parent, ast)

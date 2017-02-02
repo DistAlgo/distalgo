@@ -622,7 +622,7 @@ def generate_initializer_stub(varname, typename):
 INIT_FUN = """
 def init(procobj):
     global {self_name}
-    {self_name} = procobj.id
+    {self_name} = procobj._id
 """
 
 def process_initializers(state):
@@ -662,20 +662,20 @@ def process_setups(state):
 
     for proc in state.input_ast.processes:
         setup_body = proc.setup.body
-        if not hasattr(setup_body[0], "prebody"):
-            setup_body[0].prebody = []
-
-        his_init = [Assign(
-            targets=[pyAttr("self", evt.name)],
-            value=(pyCall(func=pyAttr(INC_MODULE_VAR,
-                                      INIT_STUB_PREFIX + evt.name))
-                   if evt in state.events else pyList([])))
-                    for evt in proc.events if evt.record_history]
-        incmodule_init = [Expr(pyCall(
-            func=pyAttr(INC_MODULE_VAR, "init"),
-            args=[pyName("self")]))]
-        setup_body[0].prebody = incmodule_init + his_init + \
-                                setup_body[0].prebody
+        prebody = [
+            Assign(targets=[pyAttr("self", evt.name)],
+                   value=(pyCall(func=pyAttr(INC_MODULE_VAR,
+                                             INIT_STUB_PREFIX + evt.name))
+                          if evt in state.events else pyList([])))
+            for evt in proc.events if evt.record_history
+        ]
+        prebody.append(
+            Expr(pyCall(func=pyAttr(INC_MODULE_VAR, "init"),
+                        args=[pyName("self")]))
+        )
+        if hasattr(setup_body[0], "prebody"):
+            prebody.extend(setup_body[0].prebody)
+        setup_body[0].prebody = prebody
 
 
 class CompilerState:
@@ -797,6 +797,10 @@ class StubcallGenerator(PythonGenerator):
 
     def visit_ResetStmt(self, node):
         proc = node.first_parent_of_type(dast.Process)
+        if proc is None:
+            # This is in the node process, just ignore:
+            return super().visit_ResetStmt(node)
+
         # Call the inc reset stub for all events used in queries:
         stmts = [Expr(pyCall(func=pyAttr(INC_MODULE_VAR,
                                          RESET_STUB_FORMAT % proc.name),
@@ -901,9 +905,9 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
     def visit(self, node):
         """Generic visit method.
 
-        If the node is a query, then 'process_query' would have attached a
-        call to the query method on the 'inc_query_override' attribute, so we
-        simply return that node. Otherwise, pass along to the parent 'visit'.
+        If the node is a query, then `process_query` would have generated a call
+        to the query method on the 'inc_query_override' attribute, so we simply
+        return that node. Otherwise, pass along to the parent's `visit` method.
 
         """
 
@@ -920,48 +924,36 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
 
     def visit_AttributeExpr(self, node):
         if isinstance(node.value, dast.SelfExpr):
-            if node.attr == 'id':
-                return pyName(SELF_ID_NAME)
-            else:
-                nameobj = node.first_parent_of_type(dast.Process).\
-                          find_name(node.attr)
-                return self.visit_NamedVar(nameobj)
+            procobj = node.first_parent_of_type(dast.Process)
+            nameobj = procobj.find_name(node.attr)
+            return self.visit_NamedVar(nameobj)
         else:
             return super().visit_AttributeExpr(node)
 
+    def visit_SelfExpr(self, node):
+        return pyName(SELF_ID_NAME)
+
     def visit_TuplePattern(self, node):
-        condition_list = []
-        targets = []
-        for elt in node.value:
-            tgt, conds = self.visit(elt)
-            targets.append(tgt)
-            condition_list.extend(conds)
-        if is_all_wildcards(targets):
-            # Optimization: combine into one '_'
-            return pyName('_'), []
-        target = pyTuple(targets)
-        if Options.jb_style:
+        target = super().visit_TuplePattern(node)
+        if Options.jb_style and isinstance(target, Tuple):
             # XXX: Hack!
-            if len(targets) == 1:
-                target = targets[0]
+            if len(target.elts) == 1:
+                condition_list = target.conditions
                 if len(condition_list) == 1:
                     assert isinstance(condition_list[0], Compare) and \
                         len(condition_list[0].comparators) == 1
                     condition_list[0].comparators[0] = pyTuple(
                         [condition_list[0].comparators[0]])
-        return target, condition_list
-
-    def visit_PatternExpr(self, node):
-        target, conds = self.visit(node.pattern)
-        return target, conds
-    visit_LiteralPatternExpr = visit_PatternExpr
+                target = target.elts[0]
+                target.conditions = condition_list
+        return target
 
     def visit_ComparisonExpr(self, node):
         if isinstance(node.left, dast.PatternExpr):
             # 'PATTERN in DOMAIN'
-            target, conds = self.visit(node.left)
+            target = self.visit(node.left)
             right = self.visit(node.right)
-            gen = comprehension(target, right, conds)
+            gen = comprehension(target, right, target.conditions)
             elem = optimize_tuple(pyTuple(node.left.ordered_freevars))
             ast = pySize(ListComp(elem, [gen])) if not Options.jb_style \
                   else pySize(SetComp(elem, [gen]))
@@ -975,40 +967,43 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
         typ = pyName("_EventType_")
         evtconds = [pyCompare(typ, Is,
                               pyName(node.type.__name__))]
-        msg, msgconds = self.visit(node.pattern)
-        evtconds += msgconds
+        msg = self.visit(node.pattern)
+        evtconds += msg.conditions
         srcconds = []
         if len(node.sources) > 0:
             if len(node.sources) > 1:
                 raise NotImplementedError(
                     "Multiple sources in event spec not supported.")
-            src, cond = self.visit(node.sources[0])
-            evtconds += cond
+            src = self.visit(node.sources[0])
+            evtconds += src.conditions
         else:
             src = pyName("_Source_")
         if len(node.destinations) > 0:
             if len(node.destinations) > 1:
                 raise NotImplementedError(
                     "Multiple destinations in event spec not supported.")
-            dst, cond = self.visit(node.destinations[0])
-            evtconds += cond
+            dst = self.visit(node.destinations[0])
+            evtconds += dst.conditions
         else:
             dst = pyName("_Destination_")
         if len(node.timestamps) > 0:
             if len(node.timestamps) > 1:
                 raise NotImplementedError(
                     "Multiple timestamps in event spec not supported.")
-            clk, cond = self.visit(node.timestamps[0])
-            evtconds += cond
+            clk = self.visit(node.timestamps[0])
+            evtconds += clk.conditions
         else:
             clk = pyName("_Timestamp_")
         env = pyTuple([clk, dst, src])
-        return pyTuple([typ, env, msg]), evtconds
+        res = pyTuple([typ, env, msg])
+        res.conditions = evtconds
+        return res
 
     def visit_DomainSpec(self, node):
         domain = self.visit(node.domain)
         if isinstance(node.pattern, dast.PatternExpr):
-            target, ifs = self.visit(node.pattern)
+            target = self.visit(node.pattern)
+            ifs = target.conditions
         else:
             target = self.visit(node.pattern)
             ifs = []

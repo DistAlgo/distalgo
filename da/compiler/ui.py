@@ -27,13 +27,14 @@ import sys
 import time
 import argparse
 
-import da
-
-from da.compiler.parser import Parser, daast_from_file
-from da.compiler.pygen import PythonGenerator
-from da.compiler.pseudo import DastUnparser
-from da.compiler.incgen import gen_inc_module
-from da.compiler.utils import is_valid_debug_level, set_debug_level, to_source, to_file
+from .. import __version__
+from .utils import is_valid_debug_level, set_debug_level, to_source, to_file
+from .parser import Parser
+from .parser import daast_from_file
+from .parser import daast_from_str
+from .pygen import PythonGenerator
+from .incgen import gen_inc_module
+from .pseudo import DastUnparser
 
 # DistAlgo filename suffix
 DA_SUFFIX = "da"
@@ -61,6 +62,10 @@ def dastr_to_pyast(src, filename='<str>', args=None):
         if pyast is None:
             print("Error: unable to generate Python AST from DistAlgo AST"
                   " for file ", filename, file=stderr)
+        assert isinstance(pyast, list) and len(pyast) == 1 and \
+            isinstance(pyast[0], ast.Module)
+        pyast = pyast[0]
+        ast.fix_missing_locations(pyast)
         return pyast
     else:
         return None
@@ -79,7 +84,42 @@ def dafile_to_pyast(filename, args=None):
         if pyast is None:
             print("Error: unable to generate Python AST from DistAlgo AST"
                   " for file ", filename, file=stderr)
+        assert isinstance(pyast, list) and len(pyast) == 1 and \
+            isinstance(pyast[0], ast.Module)
+        pyast = pyast[0]
+        ast.fix_missing_locations(pyast)
         return pyast
+    else:
+        return None
+
+def dafile_to_pycode(filename, args=None, _optimize=-1):
+    """Generates compiled Python code object from DistAlgo source file.
+
+    'filename' is the source file to compile. Optional argument 'args' is a
+    Namespace object containing the command line parameters for the compiler.
+    Returns the compiled Python code object, or None in case of errors.
+
+    """
+    pyast = dafile_to_pyast(filename, args)
+    if pyast is not None:
+        return compile(pyast, filename, mode='exec',
+                       dont_inherit=True, optimize=_optimize)
+    else:
+        return None
+
+def dastr_to_pycode(src, filename='<string>', args=None, _optimize=-1):
+    """Generates compiled Python code object from DistAlgo source string.
+
+    'src' is the DistAlgo source string to compile. Optional argument 'filename'
+    is the filename that appears in error messages. Optional argument 'args' is
+    a Namespace object containing the command line parameters for the compiler.
+    Returns the compiled Python code object, or None in case of errors.
+
+    """
+    pyast = dastr_to_pyast(src, filename, args)
+    if pyast is not None:
+        return compile(pyast, filename, mode='exec',
+                       dont_inherit=True, optimize=_optimize)
     else:
         return None
 
@@ -165,6 +205,8 @@ def dafile_to_pyfile(args):
                       (suffix, filename))
 
     pyast = dafile_to_pyast(filename, args)
+    if args.dump_ast:
+        print(ast.dump(pyast, include_attributes=True))
     if pyast is not None:
         if outname is None:
             outname = purename + ".py"
@@ -208,7 +250,7 @@ def dafile_to_incfiles(args):
         suffix = ""
     if suffix == "py":
         stderr.write("Warning: skipping '.py' file %s\n" % filename)
-        return
+        return 2
     elif suffix != DA_SUFFIX:
         stderr.write("Warning: unknown suffix '%s' in filename '%s'\n" %
                       (suffix, filename))
@@ -230,18 +272,11 @@ def dafile_to_incfiles(args):
     else:
         return 1
 
-def main(argv=None):
-    """Main entry point when invoking compiler module from command line.
-    """
-    if not check_python_version():
-        return 2
+def _add_compiler_args(parser):
+    """Install the set of options affecting compilation.
 
-    ap = argparse.ArgumentParser(description="DistAlgo compiler.",
-                                 argument_default=argparse.SUPPRESS)
-    ap.add_argument('-o', help="Output file name.",
-                    dest="outfile", default=None)
-    ap.add_argument('-L', help="Logging output level.",
-                    dest="debug", default=None)
+    """
+    ap = parser
     ap.add_argument('--full-event-pattern',
                     help="If set, use the 'full' format "
                     "(TYPE, (CLK, DST, SRC), MSG) for event patterns;"
@@ -268,14 +303,6 @@ def main(argv=None):
                     "parameter resolution. Under 'top' semantics, only "
                     "parameters to the top-level query are marked.",
                     action='store_true')
-    ap.add_argument('-i',
-                    help="Generate interface code for plugging"
-                    " into incrementalizer.",
-                    action='store_true', dest="geninc", default=False)
-    ap.add_argument("-m", "--inc-module-name",
-                    help="name of the incrementalized interface module, "
-                    "defaults to source module name + '_inc'. ",
-                    dest="incfile", default=None)
     ap.add_argument('--no-table1',
                     help="Disable table 1 quantification transformations. "
                     "Only used when '-i' is enabled.",
@@ -300,6 +327,38 @@ def main(argv=None):
                     help="Disable all quantification transformations. "
                     "Only useful with '-i'.",
                     action='store_true')
+
+def parse_compiler_args(argv):
+    ap = argparse.ArgumentParser(argument_default=argparse.SUPPRESS)
+    _add_compiler_args(ap)
+    args = ap.parse_args(argv)
+    return args
+
+def main(argv=None):
+    """Main entry point when invoking compiler module from command line.
+
+    """
+    if not check_python_version():
+        return 2
+
+    if argv is None:
+        argv = sys.argv[1:]
+    ap = argparse.ArgumentParser(description="DistAlgo compiler.",
+                                 argument_default=argparse.SUPPRESS)
+    _add_compiler_args(ap)
+    ap.add_argument('-o', help="Output file name.",
+                    dest="outfile", default=None)
+    ap.add_argument('-L', help="Logging output level.",
+                    dest="debug", default=None)
+    ap.add_argument('-i',
+                    help="Generate interface code for plugging"
+                    " into incrementalizer.",
+                    action='store_true', dest="geninc", default=False)
+    ap.add_argument("-m", "--inc-module-name",
+                    help="name of the incrementalized interface module, "
+                    "defaults to source module name + '_inc'. ",
+                    dest="incfile", default=None)
+    ap.add_argument('-D', '--dump-ast', default=False, action='store_true')
     ap.add_argument('-I', '--interactive',
                     help="Launch interactive shell.",
                     action='store_true', default=False)
@@ -308,14 +367,11 @@ def main(argv=None):
                     action='store_true', default=False)
     ap.add_argument('-p', help="Generate DistAlgo pseudo code.",
                     action='store_true', dest="genpsd", default=False)
-    ap.add_argument("-v", "--version", action="version", version=da.__version__)
+    ap.add_argument("-v", "--version", action="version", version=__version__)
     ap.add_argument('--psdfile', help="Name of DistAlgo pseudo code output file.",
                     dest="psdfile", default=None)
     ap.add_argument('infile', metavar='SOURCEFILE', type=str,
                     help="DistAlgo input source file.")
-
-    if argv is None:
-        argv = sys.argv[1:]
     args = ap.parse_args(argv)
 
     if args.benchmark:
@@ -338,7 +394,7 @@ def main(argv=None):
             stderr.write("Invalid debugging level %s.\n" % str(args.debug))
 
     if args.genpsd:
-        res =dafile_to_pseudofile(args.infile, args.psdfile)
+        res = dafile_to_pseudofile(args.infile, args.psdfile)
     if args.geninc:
         res = dafile_to_incfiles(args)
     else:

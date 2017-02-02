@@ -52,7 +52,7 @@ class Server(process):
     def follower_term(termTimeout):
         if await(some(received(('AppendEntries', term, _, _, _, _, _)),
                       has= term >= currentTerm)):
-            reset("Received")
+            reset(received)
         elif timeout(termTimeout):
             output("Heartbeat timeout, transitioning to Candidate state.")
             currentRole = Candidate
@@ -207,7 +207,7 @@ class Client(process):
                           has= leader is not None)):
                 debug("Wrong server, changing to", leader)
                 target = leader
-                reset("Received")
+                reset(received)
             elif some(received(('Reply', _req, _))):
                 output("Request", req + 1, "complete.")
                 req += 1

@@ -13,7 +13,7 @@ class P(process, controller.Controllee):
                 setof(v, v in V,
                       not some(sent(('Value', V2, _)), has=(v in V2))),
                 self.id), to=ps)
-          reset("Received")
+          reset(received)
           await(some(received(('Value', _, _))))
           V.update(setof(v, received(('Value', V2, _)), v in V2))
        x = min(V)

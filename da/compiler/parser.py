@@ -191,7 +191,7 @@ KnownUpdateMethods = {
     "delete", "remove", "pop", "clear", "discard"
 }
 
-ValidResetTypes = {"Received", "Sent", ""}
+ValidResetTypes = {"received", "sent", "Received", "Sent", ""}
 ApiMethods = frozenset(common.api_registry.keys())
 BuiltinMethods = frozenset(common.builtin_registry.keys())
 InternalMethods = frozenset(common.internal_registry.keys())
@@ -476,8 +476,7 @@ class Parser(NodeVisitor):
         self._dummy_process = None
         self.errcnt = 0
         self.warncnt = 0
-        self.program = execution_context if execution_context is not None \
-                       else dast.Program() # Just in case
+        self.program = execution_context
         self.cmdline_args = options
         self.module_args = Namespace()
 
@@ -565,7 +564,7 @@ class Parser(NodeVisitor):
     def visit_Module(self, node):
         dast.DistNode.reset_index()
         self.parse_module_header(node)
-        self.program = dast.Program(None, node)
+        self.program = dast.Program(None, ast=node)
         self.program._compiler_options = self.module_args
         # Populate global scope with Python builtins:
         for name in PythonBuiltins:
@@ -914,9 +913,10 @@ class Parser(NodeVisitor):
             elif (isinstance(s.parent, dast.Program) and
                   s.name == KW_ENTRY_POINT):
                 # Create the node process:
-                s.parent.nodecls = dast.Process(self.current_parent, None,
-                                                name=NodeProcName)
-                self._dummy_process = s.process = s.parent.nodecls
+                nodecls = dast.Process(self.current_parent,
+                                       ast=node, name=NodeProcName)
+                s.parent.nodecls = nodecls
+                self._dummy_process = s.process = nodecls
                 self._dummy_process.entry_point = s
                 # If we don't pop the entry_point from the module body then it
                 # ends up getting printed twice:
@@ -944,6 +944,7 @@ class Parser(NodeVisitor):
             events, labels, notlabels = self.parse_event_handler(node)
             events = self.current_process.add_events(events)
             h.events = events
+            h.process = self.current_process
             h.labels |= labels
             h.notlabels |= notlabels
             if len(h.labels) == 0:
@@ -1173,14 +1174,21 @@ class Parser(NodeVisitor):
                  self.expr_check(KW_RESET, 0, 1, e):
                 stmtobj = self.create_stmt(dast.ResetStmt, node)
                 self.current_context = Read(stmtobj)
-                if len(e.args) > 0:
-                    stmtobj.expr = self.visit(e.args[0])
-                    if not isinstance(stmtobj.expr, dast.ConstantExpr):
-                        self.error("Invalid argument in reset statement.", e)
-                    elif stmtobj.expr.value not in ValidResetTypes:
-                        self.error("Unknown argument in reset statement. "
-                                   "Valid arguments are: " +
-                                   str(ValidResetTypes), node)
+                if len(e.args) > 1:
+                    raise MalformedStatementError('too many arguments', e)
+                elif len(e.args) == 1:
+                    target = e.args[0]
+                    if not isinstance(target, Name):
+                        self.error("invalid argument in reset statement.", e)
+                    else:
+                        target = target.id.lower()
+                        if target not in ValidResetTypes:
+                            self.error(
+                                "unknown argument in reset statement; "
+                                "valid arguments are: {}".format(ValidResetTypes),
+                                e)
+                        else:
+                            stmtobj.target = target.capitalize()
 
             # Parse 'config' statements. These may appear at the module level or
             # the process level:
@@ -1223,7 +1231,7 @@ class Parser(NodeVisitor):
     # ~~~
 
     def parse_branches_for_await(self, stmtobj, node):
-        """Parse all branches except the first in an await statement.
+        """Parse all branches in an await statement.
 
         'stmtobj' is the DistNode instance of the await statement to be
         populated; 'node' is the input Python AST node corresponding to the
@@ -1234,64 +1242,54 @@ class Parser(NodeVisitor):
         for 'while await').
 
         """
+        has_timeout = False
+        else_ = [node]
         while True:
-            else_ = node.orelse
             if len(else_) == 0:
                 break
             elif len(else_) == 1 and isinstance(else_[0], If):
-                # This is an 'elif' branch:
                 node = else_[0]
-                if self.expr_check(KW_AWAIT_TIMEOUT, 1 ,1, node.test):
-                    stmtobj.timeout = self.visit(node.test.args[0])
-                    if len(stmtobj.orelse) > 0:
-                        self.warn("multiple timeout branches in await"
-                                  " statement, all but the last one will be  "
-                                  " ignored.", node)
+                if self.expr_check(KW_AWAIT_TIMEOUT, 0 ,1, node.test):
+                    # A timeout branch
+                    if len(node.test.args) == 1:
+                        if stmtobj.timeout is not None:
+                            self.error(
+                                "malformed await: multiple timeout specs.", node)
+                        stmtobj.timeout = self.visit(node.test.args[0])
                     if stmtobj.timeout is None:
                         self.warn("timeout branch in await statement without "
                                   "a timeout value.", node)
-                        stmtobj.orelse = []
-                    self.current_block = stmtobj.orelse
-                    self.body(node.body)
+                    condition = None
+
+                elif self.expr_check(KW_AWAIT, 1, 1, node.test,
+                                     optional_keywords={KW_AWAIT_TIMEOUT}):
+                    # A branch with 'await' keyword
+                    condition = self.visit(node.test.args[0])
+                    if len(node.test.keywords) > 0:
+                        if stmtobj.timeout is not None:
+                            self.error(
+                                "malformed await: multiple timeout specs.", node)
+                        stmtobj.timeout = self.visit(node.test.keywords[0].value)
                 else:
-                    branch = dast.Branch(stmtobj, node,
-                                         condition=self.visit(node.test))
-                    self.current_block = branch.body
-                    self.body(node.body)
-                    stmtobj.branches.append(branch)
+                    # A normal branch
+                    condition = self.visit(node.test)
+
+                branch = dast.Branch(stmtobj, node.test, condition)
+                self.current_block = branch.body
+                self.body(node.body)
+                stmtobj.branches.append(branch)
+                else_ = node.orelse
             else:
-                # This is a dangling 'else' branch, treat it as the timeout
-                # branch:
-                if stmtobj.timeout is None:
-                    self.warn("timeout branch in await statement without "
-                              "a timeout value.", node)
-                if len(stmtobj.orelse) > 0:
-                    self.warn("multiple timeout branches in await"
-                              " statement, all but the last one will be  "
-                              " ignored.", node)
-                    stmtobj.orelse = []
-                self.current_block = stmtobj.orelse
-                self.body(else_)
+                self.error("malformed await: dangling else.", node)
                 break
 
     def visit_If(self, node):
         stmtobj = None
         try:
-            if self.expr_check(KW_AWAIT, 1, 1, node.test):
+            if self.expr_check(KW_AWAIT, 1, 1, node.test,
+                               optional_keywords={KW_AWAIT_TIMEOUT}):
                 stmtobj = self.create_stmt(dast.AwaitStmt, node)
                 self.current_context = Read(stmtobj)
-                branch = dast.Branch(stmtobj, node.test,
-                                     condition=self.visit(node.test.args[0]))
-                if len(node.test.args) == 2:
-                    stmtobj.timeout = self.visit(node.test.args[1])
-                if len(node.test.keywords) > 0:
-                    if stmtobj.timeout is not None:
-                        self.warn("duplicate timeout spec in await statement.",
-                                  e)
-                    stmtobj.timeout = self.visit(e.keywords[0].value)
-                self.current_block = branch.body
-                self.body(node.body)
-                stmtobj.branches.append(branch)
                 self.parse_branches_for_await(stmtobj, node)
 
             else:
@@ -1569,11 +1567,13 @@ class Parser(NodeVisitor):
         if node.func.id == KW_RECV_QUERY:
             event = dast.Event(self.current_process,
                                event_type=dast.ReceivedEvent,
-                               pattern=pattern)
+                               pattern=pattern,
+                               ast=node)
         elif node.func.id == KW_SENT_QUERY:
             event = dast.Event(self.current_process,
                                event_type=dast.SentEvent,
-                               pattern=pattern)
+                               pattern=pattern,
+                               ast=node)
         else:
             self.error("unknown event specifier", node)
             return None
@@ -1632,7 +1632,7 @@ class Parser(NodeVisitor):
         expr = self.create_expr(dast.PatternExpr if not literal else
                                 dast.LiteralPatternExpr,
                                 node.ast)
-        pattern = dast.TuplePattern(node.parent)
+        pattern = dast.TuplePattern(node.parent, ast=node.ast)
 
         # Pattern structure:
         # (TYPE, ENVELOPE, MESSAGE)
@@ -1644,25 +1644,25 @@ class Parser(NodeVisitor):
                     value=self.current_scope.add_name(
                         node.type.__name__)))
         else:
-            pattern.value.append(dast.FreePattern(pattern))
+            pattern.value.append(dast.FreePattern(pattern, ast=node.ast))
 
-        env = dast.TuplePattern(pattern)
+        env = dast.TuplePattern(pattern, node.ast)
         if (len(node.timestamps) == 0):
-            env.value.append(dast.FreePattern(env))
+            env.value.append(dast.FreePattern(env, node.ast))
         elif len(node.timestamps) == 1:
             env.value.append(node.timestamps[0].pattern.clone())
             env.value[-1]._parent = env
         else:
             self.error("multiple timestamp spec in event pattern.", node)
         if (len(node.destinations) == 0):
-            env.value.append(dast.FreePattern(env))
+            env.value.append(dast.FreePattern(env, node.ast))
         elif len(node.destinations) == 1:
             env.value.append(node.destinations[0].pattern.clone())
             env.value[-1]._parent = env
         else:
             self.error("multiple destination spec in event pattern.", node)
         if (len(node.sources) == 0):
-            env.value.append(dast.FreePattern(env))
+            env.value.append(dast.FreePattern(env, node.ast))
         elif len(node.sources) == 1:
             env.value.append(node.sources[0].pattern.clone())
             env.value[-1]._parent = env
@@ -1671,7 +1671,7 @@ class Parser(NodeVisitor):
 
         pattern.value.append(env)
         if node.pattern is None:
-            msgpat = dast.FreePattern(pattern)
+            msgpat = dast.FreePattern(pattern, node.ast)
         else:
             msgpat = node.pattern.pattern.clone()
             msgpat._parent = pattern
