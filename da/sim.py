@@ -1085,7 +1085,7 @@ class Router(threading.Thread):
             except endpoint.AuthenticationException as e:
                 # Abort immediately:
                 raise e
-            except endpoint.TransportException as e:
+            except (CircularRoutingException, endpoint.TransportException) as e:
                 self.log.debug("Bootstrap attempt to %s:%d with %r failed "
                                ": %r", hostname, port, transport, e)
         if self.bootstrap_peer is None:
