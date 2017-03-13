@@ -31,6 +31,7 @@ import logging
 import warnings
 import threading
 
+from datetime import datetime
 from collections import abc, deque, namedtuple
 from inspect import signature, Parameter
 from functools import wraps
@@ -176,10 +177,12 @@ def setup_logging_for_module(modulename,
             logfilename = GlobalOptions['logfilename']
             if logfilename is None:
                 if GlobalOptions['file'] is not None:
-                    logfilename = \
-                             (os.path.basename(GlobalOptions['file']) + ".log")
+                    logfilename = os.path.basename(GlobalOptions['file'])
+                elif GlobalOptions['module'] is not None:
+                    logfilename = GlobalOptions['module'][0]
                 else:
-                    logfilename = GlobalOptions['module'][0] + '.log'
+                    logfilename = datetime.now().strftime('%Y-%m-%d_%H%M%S')
+                logfilename += '.log'
             fh = logging.FileHandler(logfilename)
             formatter = logging.Formatter(filefmt)
             fh.setFormatter(formatter)
