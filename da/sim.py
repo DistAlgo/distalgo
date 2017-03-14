@@ -1022,14 +1022,11 @@ class Router(threading.Thread):
         self._init_dispatch_table()
 
     def register_local_process(self, pid):
-        if self.running:
-            with self.lock:
-                if pid in self.local_procs:
-                    self.log.warning("Registering duplicate process: %s.", pid)
-                self.local_procs[pid] = common.WaitableQueue()
-            self.log.debug("Process %s registered.", pid)
-        else:
-            raise InvalidRouterStateException("Router not running.")
+        with self.lock:
+            if pid in self.local_procs:
+                self.log.warning("Registering duplicate process: %s.", pid)
+            self.local_procs[pid] = common.WaitableQueue()
+        self.log.debug("Process %s registered.", pid)
 
     def deregister_local_process(self, pid):
         if self.running:
@@ -1273,10 +1270,13 @@ class ProcessContainer:
         else:
             setattr(self, '_spawn_process', self._spawn_process_fork)
 
-    def start_router(self):
+    def init_router(self):
         if self.router is None:
             self.endpoint.start()
             self.router = Router(self.endpoint)
+
+    def start_router(self):
+        if not self.router.running:
             self.router.start()
 
     def end(self):
@@ -1443,8 +1443,9 @@ class OSProcessContainer(ProcessContainer, multiprocessing.Process):
                 self.endpoint.initialize(pipe=self.pipe)
                 del self.pipe
 
-            self.start_router()
+            self.init_router()
             self.router.register_local_process(self.dapid)
+            self.start_router()
             self._daobj = self._dacls(self, self._properties)
             self._log.debug("Process object initialized.")
 
@@ -1480,8 +1481,9 @@ class OSThreadContainer(ProcessContainer, threading.Thread):
         if len(self.name) == 0:
             self.name = str(self.pid)
         try:
-            self.start_router()
+            self.init_router()
             self.router.register_local_process(self.dapid)
+            self.start_router()
             self._daobj = self._dacls(self, self._properties)
             self._log.debug("Process object initialized.")
 
