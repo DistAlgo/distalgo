@@ -1014,6 +1014,7 @@ class Router(threading.Thread):
                           .getChild(self.__class__.__qualname__)
         self.daemon = True
         self.running = False
+        self.prestart_mesg_sink = []
         self.bootstrap_peer = None
         self.endpoint = transport_manager
         self.hostname = get_runtime_option('hostname')
@@ -1122,6 +1123,9 @@ class Router(threading.Thread):
     def run(self):
         try:
             self.running = True
+            for item in self.prestart_mesg_sink:
+                self._dispatch(*item)
+            self.prestart_mesg_sink = []
             self.mesgloop(until=(lambda: False))
         except Exception as e:
             self.log.debug("Unhandled exception: %r.", e)
@@ -1194,6 +1198,12 @@ class Router(threading.Thread):
                                  dest, e)
                 return False
         elif dest is not None:
+            if not self.running:
+                # We are still in bootstrap mode, which means this may be a
+                # message destined for a process that has yet to register, so
+                # save it in a sink to be dispatched later in run():
+                self.prestart_mesg_sink.append((src, dest, payload))
+                return True
             try:
                 self._send_remote(src, dest, payload, flags, **params)
                 return True
