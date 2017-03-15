@@ -537,10 +537,14 @@ class DistProcess():
                            message=((procname, nodename), host, port, seqno),
                            to=self.__procimpl._nodeid,
                            flags=ChannelCaps.RELIABLEFIFO):
-                res = self._sync_async_event(Command.ResolveAck, seqno, self._id)
+                res = self._sync_async_event(Command.ResolveAck, seqno,
+                                             self.__procimpl._nodeid)
                 dest = res[self._id]
+                self._log.debug("%r successfully resolved to %r.", name, dest)
             else:
                 self._deregister_async_event(Command.ResolveAck, seqno)
+                self._log.error("Unable to resolve %r: failed to send "
+                                "request to node!", name)
         return dest
 
     @internal
