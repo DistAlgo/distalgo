@@ -247,7 +247,7 @@ def name_split_host(name):
 
 def name_split_node(name):
     """Splits `name` into 'processname', 'nodename' components."""
-    assert '#' not in name
+    assert '@' not in name
     comps = name.split('#')
     if len(comps) == 2:
         return tuple(comps)
