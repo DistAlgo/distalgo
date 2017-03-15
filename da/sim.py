@@ -539,7 +539,7 @@ class DistProcess():
                            flags=ChannelCaps.RELIABLEFIFO):
                 res = self._sync_async_event(Command.ResolveAck, seqno,
                                              self.__procimpl._nodeid)
-                dest = res[self._id]
+                dest = res[self.__procimpl._nodeid]
                 self._log.debug("%r successfully resolved to %r.", name, dest)
             else:
                 self._deregister_async_event(Command.ResolveAck, seqno)
