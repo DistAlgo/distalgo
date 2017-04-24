@@ -1163,39 +1163,53 @@ class PythonGenerator(NodeVisitor):
     def visit_LoopingAwaitStmt(self, node):
         def INCGRD():
             return pyAugAssign(pyName(node.unique_label, Store()), Add, Num(1))
-        labelname = node.label
-        body = [
-            pyIf(test=pyCompare(pyName(node.unique_label), Eq, Num(2)),
-                 body=[Break()],
-                 orelse=[
-                     pyIf(test=pyCompare(pyName(node.unique_label), Eq, Num(1)),
-                          body=[pyLabel(labelname, block=True,
-                                        timeout=(self.visit(node.timeout)
-                                                 if node.timeout is not None
-                                                 else None))],
-                          orelse=[])
-                 ]),
-            pyAssign([pyName(node.unique_label, Store())], Num(1))
-        ]
+        def DEDGRD():
+            return pyAugAssign(pyName(node.unique_label, Store()), Sub, Num(1))
         conds = []
+        timeout_branches = []
+        body = [INCGRD()]       # body of the main while loop
         last = body
+        last_lineno, max_colno = None, None
         for br in node.branches:
-            cond = self.visit(br.condition)
-            conds.append(cond)
-            ifbody = self.body(br.body)
-            brnode = pyIf(cond, ifbody, [])
-            last.append(brnode)
-            last = brnode.orelse
-        if node.timeout is not None:
+            if br.condition is None:
+                # timeout branch:
+                timeout_branches.append(br)
+            else:
+                cond = self.visit(br.condition)
+                conds.append(cond)
+                ifbody = self.body(br.body)
+                ifbody.append(DEDGRD())
+                last_lineno, max_colno = fixup_locations_in_block(ifbody)
+                brnode = pyIf(cond, ifbody, [])
+                copy_location(brnode, br)
+                last.append(brnode)
+                last = brnode.orelse
+        last = body
+        if timeout_branches:
             cond = pyAttr("self", "_timer_expired")
-            ifbody = self.body(node.orelse)
+            ifbody = []
+            for br in timeout_branches:
+                ifbody.extend(self.body(br.body))
             ifbody.append(INCGRD())
             brnode = pyIf(cond, ifbody, [])
+            if last_lineno:
+                brnode.lineno, brnode.col_offset = last_lineno, max_colno
+                ifbody[0].lineno, ifbody[0].col_offset = last_lineno, max_colno
+            last_lineno, max_colno = fixup_locations_in_block(ifbody)
             last.append(brnode)
             last = brnode.orelse
-        last.extend(self.body(node.orfail))
-        last.append(INCGRD())
-        whilenode = pyWhile(pyTrue(), body, [])
+        # Label call must come after the If tests:
+        labelnode = pyIf(pyCompare(pyName(node.unique_label), Eq, Num(0)),
+                         [pyLabel(node.label, block=True,
+                                  timeout=(self.visit(node.timeout)
+                                        if node.timeout is not None else None))
+                         ], [])
+        last.append(labelnode)
+        if last_lineno is not None:
+            last[0].lineno, last[0].col_offset = last_lineno, max_colno
+        fixup_locations_in_block(last)
+        whilenode = pyWhile(pyCompare(pyName(node.unique_label), Eq, Num(0)),
+                            body, [])
         main = [pyAssign([pyName(node.unique_label, Store())], Num(0))]
         if node.timeout is not None:
             main.append(pyExpr(pyCall(pyAttr("self", "_timer_start"))))

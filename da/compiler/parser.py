@@ -743,6 +743,7 @@ class Parser(NodeVisitor):
 
         Process bodies differs from normal ClassDef bodies in that the names
         defined in this scope are visible to the whole process.
+
         """
         for stmt in statements:
             if (isinstance(stmt, FunctionDef) and stmt.name not in
@@ -1327,21 +1328,27 @@ class Parser(NodeVisitor):
         s = None
         try:
             if self.kw_check({KW_AWAIT}, node.test):
+                # full form (while await: if ...)
                 whilenode = node
                 s = self.create_stmt(dast.LoopingAwaitStmt, node)
                 self.current_context = Read(s)
                 if len(node.body) != 1 or not isinstance(node.body[0], If):
                     self.error("malformed 'while await' statement.", node)
-                if isinstance(node.body[0], If):
-                    node = node.body[0]
-                    branch = dast.Branch(s, node,
-                                         condition=self.visit(node.test))
-                    self.current_block = branch.body
-                    self.body(node.body)
-                    s.branches.append(branch)
-                    self.parse_branches_for_await(s, node)
-                self.current_block = s.orfail
-                self.body(whilenode.orelse)
+                self.parse_branches_for_await(s, node.body[0])
+                if len(node.orelse) > 0:
+                    self.error(
+                        "malformed 'while await' statement: dangling else.", node)
+
+            elif self.expr_check(KW_AWAIT, 1, 1, node.test,
+                                 optional_keywords={KW_AWAIT_TIMEOUT}):
+                # short-hand form (while await(CONDITION): ...)
+                s = self.create_stmt(dast.LoopingAwaitStmt, node)
+                self.current_context = Read(s)
+                condition = self.visit(node.test.args[0])
+                branch = dast.Branch(stmtobj, node.test, condition)
+                self.current_block = branch.body
+                self.body(node.body)
+                stmtobj.branches.append(branch)
 
             else:
                 s = self.create_stmt(dast.WhileStmt, node)
