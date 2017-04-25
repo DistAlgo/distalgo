@@ -170,7 +170,7 @@ def parseArgs():
     parser.add_argument("-r", "--recompile", dest="recompile",
                         help="force recompile DistAlgo source file. ",
                         action="store_true", default=False)
-    parser.add_argument("-c", "--compiler-flags", default="",
+    parser.add_argument("-c", "--compiler-flags", type=str, default="", 
                         help="flags to pass to the compiler, if (re)compiling "
                         "is required.")
     parser.add_argument("-o", "--config", default=[], nargs='*',
@@ -189,7 +189,7 @@ def parseArgs():
     parser.add_argument("-v", "--version", action="version",
                         version=common.__version__)
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("-m", "--module", default=None, nargs='+',
+    group.add_argument("-m", "--module", default=None, nargs=argparse.REMAINDER,
                         help="name of a DistAlgo module that will be run as "
                        "the main module. If this argument is specified, "
                        "all command line options after this point will be "
