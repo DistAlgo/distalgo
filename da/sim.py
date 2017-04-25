@@ -1417,6 +1417,10 @@ class Router(threading.Thread):
                 if timeleft <= 0:
                     break
 
+def _is_spawning_semantics():
+    """True if we are on spawning semantics."""
+    return sys.platform == 'win32' or \
+        multiprocessing.get_start_method(allow_none=True) == 'spawn'
 
 class ProcessContainer:
     """An abstract base class for process containers.
@@ -1432,6 +1436,7 @@ class ProcessContainer:
         super().__init__()
         # Logger can not be serialized so it has to be instantiated in the child
         # proc's address space:
+        self.before_run_hooks = []
         self._log = None
         self._dacls = process_class
         self._daobj = None
@@ -1446,7 +1451,7 @@ class ProcessContainer:
         if len(process_name) > 0:
             self.name = process_name
         self.endpoint = transport_manager
-        if multiprocessing.get_start_method() == 'spawn':
+        if _is_spawning_semantics():
             setattr(self, '_spawn_process', self._spawn_process_spawn)
         else:
             setattr(self, '_spawn_process', self._spawn_process_fork)
@@ -1655,35 +1660,14 @@ class ProcessContainer:
                                          .format(rectype))
         return children
 
-class OSProcessContainer(ProcessContainer, multiprocessing.Process):
-    """An implementation of processes using OS process.
-
-    """
-    def __init__(self, daemon=False, pipe=None, **rest):
-        super().__init__(**rest)
-        self.daemon = daemon
-        if multiprocessing.get_start_method() == 'spawn':
-            self.pipe = pipe
-            self._rtopts = (common.GlobalOptions, common.GlobalConfig)
-
-    def _debug_handler(self, sig, frame):
-        self._debugger.set_trace(frame)
-
     def run(self):
         self._log = logger.getChild(self.__class__.__qualname__)
         if len(self.name) == 0:
             self.name = str(self.pid)
+
         try:
-            if multiprocessing.get_start_method() == 'spawn':
-                common._restore_runtime_options(self._rtopts)
-                common._set_node(self._nodeid)
-                common.set_runtime_option('this_module_name',
-                                          self.__class__.__module__)
-                common.sysinit()
-                common._restore_module_logging()
-                assert self.pipe is not None
-                self.endpoint.initialize(pipe=self.pipe)
-                del self.pipe
+            for hook in self.before_run_hooks:
+                hook()
 
             self.start_router()
             if not self._trace_out_fd:
@@ -1693,51 +1677,6 @@ class OSProcessContainer(ProcessContainer, multiprocessing.Process):
                                                  self._trace_in_fd,
                                                  self._trace_out_fd)
 
-            self._daobj = self._dacls(self, **(self._properties))
-            self._log.debug("Process object initialized.")
-
-            return self._daobj._delayed_start()
-
-        except DistProcessExit as e:
-            self._log.debug("Caught %r, exiting gracefully.", e)
-            return e.exit_code
-        except RoutingException as e:
-            self._log.debug("Caught %r.", e)
-            return 2
-        except TraceException as e:
-            self._log.error("%r occurred.", e)
-            self._log.debug(e, exc_info=1)
-            return 3
-        except KeyboardInterrupt as e:
-            self._log.debug("Received KeyboardInterrupt, exiting")
-            return 1
-        except Exception as e:
-            self._log.error("Unexpected error: %r", e, exc_info=1)
-        finally:
-            if self.router is not None:
-                self.router.deregister_local_process(self.dapid)
-            self.cleanup()
-
-class OSThreadContainer(ProcessContainer, threading.Thread):
-    """An implementation of processes using OS threads.
-
-    """
-    def __init__(self, daemon=False, **rest):
-        super().__init__(**rest)
-        self.daemon = daemon
-
-    def run(self):
-        self._log = logger.getChild(self.__class__.__qualname__)
-        if len(self.name) == 0:
-            self.name = str(self.pid)
-        try:
-            self.start_router()
-            if not self._trace_out_fd:
-                self.router.register_local_process(self.dapid, self.daparent)
-            else:
-                self.router.replay_local_process(self.dapid,
-                                                 self._trace_in_fd,
-                                                 self._trace_out_fd)
             self._daobj = self._dacls(self, **(self._properties))
             self._log.debug("Process object initialized.")
 
@@ -1763,3 +1702,32 @@ class OSThreadContainer(ProcessContainer, threading.Thread):
             if self.router is not None:
                 self.router.deregister_local_process(self.dapid)
             self.cleanup()
+
+class OSProcessContainer(ProcessContainer, multiprocessing.Process):
+    """An implementation of processes using OS process.
+
+    """
+    def __init__(self, daemon=False, pipe=None, **rest):
+        super().__init__(**rest)
+        self.daemon = daemon
+        self.pipe = pipe
+        if _is_spawning_semantics():
+            self.before_run_hooks.append(self._init_for_spawn)
+
+    def _debug_handler(self, sig, frame):
+        self._debugger.set_trace(frame)
+
+    def _init_for_spawn(self):
+        common._set_node(self._nodeid)
+        assert self.pipe is not None
+        self.endpoint.initialize(pipe=self.pipe)
+        del self.pipe
+
+
+class OSThreadContainer(ProcessContainer, threading.Thread):
+    """An implementation of processes using OS threads.
+
+    """
+    def __init__(self, daemon=False, **rest):
+        super().__init__(**rest)
+        self.daemon = daemon
