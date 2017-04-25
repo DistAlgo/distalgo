@@ -255,7 +255,7 @@ def libmain():
     if isinstance(args, int):
         return args
     else:
-        common.initialize_runtime_options(args.__dict__)
+        common.global_init(args.__dict__)
         return entrypoint()
 
 def die(mesg = None):

@@ -1,14 +1,21 @@
 # runtime package
 
-from da import common, api, pattern as pat, compiler, sim
-from da.sim import DistProcess, NodeProcess
+from . import common
+from . import importer
+from . import pattern as pat
+from .common import global_init
+from .sim import DistProcess, NodeProcess
 
 __version__ = VERSION = common.__version__
-import_da = api.import_da
-__all__ = ["__version__", "pat", "api", "compiler",
-           "DistProcess", "NodeProcess",
-           "import_da"]
+modules = common.modules
+
+__all__ = ["global_init", "DistProcess", "NodeProcess"]
 
 for name in common.api_registry.keys():
     globals()[name] = common.api_registry[name]
     __all__.append(name)
+
+# Inject the DistAlgo module loader:
+importer._install()
+# Hook into multiprocessing.spawn:
+common._install()

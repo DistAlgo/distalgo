@@ -32,8 +32,11 @@ import logging
 import warnings
 import threading
 
-from collections import abc, deque, namedtuple
-from inspect import signature, Parameter
+from collections import abc
+from collections import deque
+from collections import namedtuple
+from inspect import signature
+from inspect import Parameter
 from functools import wraps
 
 MAJOR_VERSION = 1
@@ -44,10 +47,6 @@ __version__ = "{}.{}.{}{}".format(MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION,
                                    PRERELEASE_VERSION)
 
 INCOQ_MODULE_NAME = "incoq.mars.runtime"
-CONSOLE_LOG_FORMAT = \
-    '[%(relativeCreated)d] %(name)s<%(processName)s>:%(levelname)s: %(message)s'
-FILE_LOG_FORMAT = \
-    '[%(asctime)s] %(name)s<%(processName)s>:%(levelname)s: %(message)s'
 
 # a dict that contains the runtime configuration values:
 GlobalOptions = None
@@ -57,6 +56,13 @@ GlobalConfig = dict()
 CurrentNode = None
 # incoq.runtime.Type, only if using incoq:
 IncOQBaseType = None
+# all loaded DistAlgo modules, corresponds to sys.modules:
+modules = dict()
+
+CONSOLE_LOG_FORMAT = \
+    '[%(relativeCreated)d] %(name)s<%(processName)s>:%(levelname)s: %(message)s'
+FILE_LOG_FORMAT = \
+    '[%(asctime)s] %(name)s<%(processName)s>:%(levelname)s: %(message)s'
 
 # Define custom levels for text output from user code using the `output`,
 # `debug`, and `error` builtins, to differentiate output from user programs and
@@ -74,6 +80,10 @@ internal_registry = dict()
 class InvalidStateException(RuntimeError): pass
 
 def get_runtime_option(key, default=None):
+    """Returns the configured value of runtime option 'key', or 'default' if 'key'
+    is not configured.
+
+    """
     if GlobalOptions is None:
         if default is None:
             raise InvalidStateException("DistAlgo is not initialized.")
@@ -89,23 +99,48 @@ def set_runtime_option(key, value):
     GlobalOptions[key] = value
 
 def _version_as_bytes():
-    """Return a 4-byte representation of the version.
+    """Return a 4-byte representation of the version number.
     """
     prerelease = sum(ord(c) for c in PRERELEASE_VERSION) % 256
     return (((MAJOR_VERSION & 0xff) << 24) | ((MINOR_VERSION & 0xff) << 16) |
             ((PATCH_VERSION & 0xff) << 8) | prerelease).to_bytes(4, 'big')
 VERSION_BYTES = _version_as_bytes()
 
-def initialize_runtime_options(configs):
+def initialize_runtime_options(options):
+    """Sets and sanitizes runtime options.
+
+    'options' should be a dict-like object containing mappings from options
+    names to corresponding values.
+
+    This function has to be called exactly once per node instance.
+
+    """
     global GlobalOptions
     if GlobalOptions is not None:
-        raise InvalidStateException("DistAlgo is already initialized")
+        raise InvalidStateException("DistAlgo is already initialized!")
 
-    GlobalOptions = dict(configs)
+    GlobalOptions = dict(options)
+    # Canonize hostname, essential for properly determining whether a ProcessId
+    # is running on the local machine:
+    import socket
+    GlobalOptions['hostname'] \
+        = socket.gethostbyname(GlobalOptions['hostname'])
 
-def _restore_runtime_options(params):
-    global GlobalOptions, GlobalConfig
-    GlobalOptions, GlobalConfig = params
+    # Configure multiprocessing package to use chosen semantics:
+    import multiprocessing
+    startmeth = GlobalOptions['start_method']
+    if startmeth != multiprocessing.get_start_method(allow_none=True):
+        multiprocessing.set_start_method(startmeth)
+
+    # Convert 'compiler_flags' to a namespace object that can be passed directly
+    # to the compiler:
+    from . import compiler
+    GlobalOptions['compiler_args'] \
+        = compiler.ui.parse_compiler_args(GlobalOptions['compiler_flags'].split())
+
+    # Make sure the directory for storing trace files exists:
+    if GlobalOptions['record_trace']:
+        os.makedirs(GlobalOptions['logdir'], exist_ok=True)
 
 def set_global_config(props):
     GlobalConfig.update(props)
@@ -127,8 +162,25 @@ def get_inc_module():
         return None
     return sys.modules[GlobalOptions['inc_module_name']]
 
+def add_da_module(module):
+    """Register 'module' as a DistAlgo module.
+
+    This method is intended to be called from the importer module.
+
+    """
+    modules[module.__name__] = module
+    setup_logging_for_module(module.__name__)
+
 def sysinit():
-    pid_format = get_runtime_option('pid_format')
+    """Initialize the DistAlgo system.
+
+    This function must be called before any DistAlgo code can run. Specifically,
+    every child process created under spawning semantics must call this function
+    during initialization.
+
+    """
+    # Set the format used to convert ProcessId to its string representation:
+    pid_format = GlobalOptions['pid_format']
     if pid_format == 'full':
         ProcessId.__str__ = ProcessId.__repr__ = ProcessId._full_form_
     elif pid_format == 'long':
@@ -136,19 +188,26 @@ def sysinit():
     else:
         # default is short
         pass
-    if GlobalOptions['record_trace']:
-        os.makedirs(GlobalOptions['logdir'], exist_ok=True)
-    load_modules()
+    # Setup system logging:
+    setup_logging_for_module('da', CONSOLE_LOG_FORMAT, FILE_LOG_FORMAT)
 
-def _restore_module_logging():
-    assert '_da_module_cache' in GlobalOptions
-    for modulename in GlobalOptions['_da_module_cache']:
-        consolefmt, filefmt = GlobalOptions['_da_module_cache'][modulename]
-        setup_logging_for_module(modulename, consolefmt, filefmt)
+def global_init(config):
+    """Convenience method for one-time system setup.
 
+    This function should be called once for each node. The Python process that
+    called this function then becomes a DistAlgo node process.
+
+    """
+    initialize_runtime_options(config)
+    sysinit()
+
+DA_MODULE_CONSOLE_FORMAT = \
+    '[%(relativeCreated)d] %(name)s%(daPid)s:%(levelname)s: %(message)s'
+DA_MODULE_FILE_FORMAT = \
+    '[%(asctime)s] %(name)s%(daPid)s:%(levelname)s: %(message)s'
 def setup_logging_for_module(modulename,
-                             consolefmt=CONSOLE_LOG_FORMAT,
-                             filefmt=FILE_LOG_FORMAT):
+                             consolefmt=DA_MODULE_CONSOLE_FORMAT,
+                             filefmt=DA_MODULE_FILE_FORMAT):
     """Configures package level logger.
 
     """
@@ -157,9 +216,6 @@ def setup_logging_for_module(modulename,
         # under spawning semantics. This is fine, as logging will be setup after
         # `OSProcessContainer.run` gets called. We can safely ignore this call:
         return
-    if '_da_module_cache' not in GlobalOptions:
-        GlobalOptions['_da_module_cache'] = dict()
-    GlobalOptions['_da_module_cache'][modulename] = (consolefmt, filefmt)
     rootlog = logging.getLogger(modulename)
     rootlog.handlers = []       # Clear all handlers
 
@@ -179,8 +235,7 @@ def setup_logging_for_module(modulename,
             logfilename = GlobalOptions['logfilename']
             if logfilename is None:
                 if GlobalOptions['file'] is not None:
-                    logfilename = \
-                             (os.path.basename(GlobalOptions['file']) + ".log")
+                    logfilename = os.path.basename(GlobalOptions['file']) + ".log"
                 else:
                     logfilename = GlobalOptions['module'][0] + '.log'
             fh = logging.FileHandler(logfilename)
@@ -849,6 +904,46 @@ def freeze(obj):
     else:
         # everything else just assume hashable & immutable, hahaha:
         return obj
+
+def _install():
+    """Hooks into `multiprocessing.spawn` so that GlobalOptions is propagated to
+    child processes *before* they attempt to load any DistAlgo modules.
+
+    """
+    import multiprocessing.spawn
+
+    spawn_prepare = multiprocessing.spawn.prepare
+    spawn_get_preparation_data = multiprocessing.spawn.get_preparation_data
+    spawn_get_command_line = multiprocessing.spawn.get_command_line
+
+    def _advised_prepare(data):
+        global GlobalOptions
+        global GlobalConfig
+
+        if 'global_options' in data:
+            GlobalOptions = data['global_options']
+
+        if 'global_config' in data:
+            GlobalConfig = data['global_config']
+
+        return spawn_prepare(data)
+
+    def _advised_get_preparation_data(name):
+        d = spawn_get_preparation_data(name)
+        d['global_options'] = GlobalOptions
+        d['global_config'] = GlobalConfig
+        return d
+
+    def _advised_get_command_line(**kwds):
+        cmd = spawn_get_command_line(**kwds)
+        if len(cmd) < 3 or cmd[1] != '-c':
+            raise RuntimeError('Unsupported Python version!!!')
+        cmd[2] = 'import da; ' + cmd[2]
+        return cmd
+
+    multiprocessing.spawn.prepare = _advised_prepare
+    multiprocessing.spawn.get_preparation_data = _advised_get_preparation_data
+    multiprocessing.spawn.get_command_line = _advised_get_command_line
 
 if __name__ == "__main__":
     @api
