@@ -32,6 +32,7 @@ import logging
 import warnings
 import threading
 
+from datetime import datetime
 from collections import abc
 from collections import deque
 from collections import namedtuple
@@ -42,7 +43,8 @@ from functools import wraps
 MAJOR_VERSION = 1
 MINOR_VERSION = 1
 PATCH_VERSION = 0
-PRERELEASE_VERSION = "b6"
+PRERELEASE_VERSION = "b7"
+
 __version__ = "{}.{}.{}{}".format(MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION,
                                    PRERELEASE_VERSION)
 
@@ -235,9 +237,12 @@ def setup_logging_for_module(modulename,
             logfilename = GlobalOptions['logfilename']
             if logfilename is None:
                 if GlobalOptions['file'] is not None:
-                    logfilename = os.path.basename(GlobalOptions['file']) + ".log"
+                    logfilename = os.path.basename(GlobalOptions['file'])
+                elif GlobalOptions['module'] is not None:
+                    logfilename = GlobalOptions['module'][0]
                 else:
-                    logfilename = GlobalOptions['module'][0] + '.log'
+                    logfilename = datetime.now().strftime('%Y-%m-%d_%H%M%S')
+                logfilename += '.log'
             fh = logging.FileHandler(logfilename)
             formatter = logging.Formatter(filefmt)
             fh.setFormatter(formatter)
@@ -296,7 +301,7 @@ def name_split_host(name):
 
 def name_split_node(name):
     """Splits `name` into 'processname', 'nodename' components."""
-    assert '#' not in name
+    assert '@' not in name
     comps = name.split('#')
     if len(comps) == 2:
         return tuple(comps)

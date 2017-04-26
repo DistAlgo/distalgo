@@ -204,7 +204,6 @@ def _bootstrap_node(cls, nodename, trman):
             log.info("Bootstrapping attempt failed due to %r, "
                      " continuing as a master node (use '--master' to "
                      "disable bootstrapping at startup).", e)
-        router.start()
     return router
 
 def _load_main_module():

@@ -18,8 +18,8 @@ class P(process):
                 output("d is 1.")
             elif x == 1:
                 output("x is 1.")
-        else:
-            output("neither d nor x is 1.")
+            elif timeout(10):
+                output("neither d nor x is 1.")
 
 class Q(process):
     def setup(ps):

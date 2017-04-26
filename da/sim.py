@@ -549,10 +549,14 @@ class DistProcess():
                            message=((procname, nodename), host, port, seqno),
                            to=self.__procimpl._nodeid,
                            flags=ChannelCaps.RELIABLEFIFO):
-                res = self._sync_async_event(Command.ResolveAck, seqno, self._id)
-                dest = res[self._id]
+                res = self._sync_async_event(Command.ResolveAck, seqno,
+                                             self.__procimpl._nodeid)
+                dest = res[self.__procimpl._nodeid]
+                self._log.debug("%r successfully resolved to %r.", name, dest)
             else:
                 self._deregister_async_event(Command.ResolveAck, seqno)
+                self._log.error("Unable to resolve %r: failed to send "
+                                "request to node!", name)
         return dest
 
     @internal
@@ -1105,6 +1109,7 @@ class Router(threading.Thread):
                           .getChild(self.__class__.__qualname__)
         self.daemon = True
         self.running = False
+        self.prestart_mesg_sink = []
         self.bootstrap_peer = None
         self.endpoint = transport_manager
         self.hostname = get_runtime_option('hostname')
@@ -1121,44 +1126,35 @@ class Router(threading.Thread):
 
     def register_local_process(self, pid, parent=None):
         assert isinstance(pid, ProcessId)
-        if self.running:
-            with self.lock:
-                if pid in self.local_procs:
-                    self.log.warning("Registering duplicate process: %s.", pid)
-                self.local_procs[pid] = common.WaitableQueue()
-            self.log.debug("Process %s registered.", pid)
-        else:
-            raise InvalidRouterStateException("Router not running.")
+        with self.lock:
+            if pid in self.local_procs:
+                self.log.warning("Registering duplicate process: %s.", pid)
+            self.local_procs[pid] = common.WaitableQueue()
+        self.log.debug("Process %s registered.", pid)
 
     def replay_local_process(self, pid, in_stream, out_stream):
         assert isinstance(pid, ProcessId)
-        if self.running:
-            with self.lock:
-                if pid in self.local_procs:
-                    self.log.warning("Registering duplicate process: %s.", pid)
-                self.local_procs[pid] = ReplayQueue(in_stream, out_stream)
-            self.log.debug("Process %s registered.", pid)
-        else:
-            raise InvalidRouterStateException("Router not running.")
+        with self.lock:
+            if pid in self.local_procs:
+                self.log.warning("Registering duplicate process: %s.", pid)
+            self.local_procs[pid] = ReplayQueue(in_stream, out_stream)
+        self.log.debug("Process %s registered.", pid)
 
     def _record_local_process(self, pid, parent=None):
         assert isinstance(pid, ProcessId)
-        if self.running:
-            basedir = get_runtime_option('logdir')
-            infd = open(os.path.join(basedir,
-                                     pid._filename_form_() + ".trace"), "wb")
-            outfd = open(os.path.join(basedir,
-                                      pid._filename_form_() + ".snd"), "wb")
-            write_trace_header(pid, parent, TRACE_TYPE_RECV, infd)
-            write_trace_header(pid, parent, TRACE_TYPE_SEND, outfd)
-            with self.lock:
-                if pid in self.local_procs:
-                    self.log.warning("Registering duplicate process: %s.", pid)
-                self.local_procs[pid] \
-                    = common.WaitableQueue(trace_files=(infd, outfd))
-            self.log.debug("Process %s registered.", pid)
-        else:
-            raise InvalidRouterStateException("Router not running.")
+        basedir = get_runtime_option('logdir')
+        infd = open(os.path.join(basedir,
+                                 pid._filename_form_() + ".trace"), "wb")
+        outfd = open(os.path.join(basedir,
+                                  pid._filename_form_() + ".snd"), "wb")
+        write_trace_header(pid, parent, TRACE_TYPE_RECV, infd)
+        write_trace_header(pid, parent, TRACE_TYPE_SEND, outfd)
+        with self.lock:
+            if pid in self.local_procs:
+                self.log.warning("Registering duplicate process: %s.", pid)
+            self.local_procs[pid] \
+                = common.WaitableQueue(trace_files=(infd, outfd))
+        self.log.debug("Process %s registered.", pid)
 
     def deregister_local_process(self, pid):
         if self.running:
@@ -1218,7 +1214,7 @@ class Router(threading.Thread):
             except endpoint.AuthenticationException as e:
                 # Abort immediately:
                 raise e
-            except endpoint.TransportException as e:
+            except (CircularRoutingException, endpoint.TransportException) as e:
                 self.log.debug("Bootstrap attempt to %s:%d with %r failed "
                                ": %r", hostname, port, transport, e)
         if self.bootstrap_peer is None:
@@ -1254,6 +1250,9 @@ class Router(threading.Thread):
     def run(self):
         try:
             self.running = True
+            for item in self.prestart_mesg_sink:
+                self._dispatch(*item)
+            self.prestart_mesg_sink = []
             self.mesgloop(until=(lambda: not self.running))
         except Exception as e:
             self.log.debug("Unhandled exception: %r.", e)
@@ -1365,6 +1364,12 @@ class Router(threading.Thread):
                                  dest, e)
                 return False
         elif dest is not None:
+            if not self.running:
+                # We are still in bootstrap mode, which means this may be a
+                # message destined for a process that has yet to register, so
+                # save it in a sink to be dispatched later in run():
+                self.prestart_mesg_sink.append((src, dest, payload))
+                return True
             try:
                 self._send_remote(src, dest, payload, flags, **params)
                 return True
@@ -1502,10 +1507,13 @@ class ProcessContainer:
         if self._trace_out_fd:
             self._trace_out_fd.close()
 
-    def start_router(self):
+    def init_router(self):
         if self.router is None:
             self.endpoint.start()
             self.router = Router(self.endpoint)
+
+    def start_router(self):
+        if not self.router.running:
             self.router.start()
 
     def end(self):
@@ -1669,14 +1677,14 @@ class ProcessContainer:
             for hook in self.before_run_hooks:
                 hook()
 
-            self.start_router()
+            self.init_router()
             if not self._trace_out_fd:
                 self.router.register_local_process(self.dapid, self.daparent)
             else:
                 self.router.replay_local_process(self.dapid,
                                                  self._trace_in_fd,
                                                  self._trace_out_fd)
-
+            self.start_router()
             self._daobj = self._dacls(self, **(self._properties))
             self._log.debug("Process object initialized.")
 
