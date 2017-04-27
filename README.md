@@ -40,35 +40,7 @@
   root directory to your `PYTHONPATH` environment variable, or by using the
   Python package manager, `pip`.
 
-## Using `distutils`
-
-   To see full usage description, type:
-
-      cd <DAROOT>; python setup.py --help
-
-The following command installs DistAlgo as system-wide package:
-
-      cd <DAROOT>; python setup.py install
-
-The following command installs DistAlgo for the current user:
-
-      cd <DAROOT>; python setup.py install --user
-
-   If you have installed DistAlgo for both system and user, the user
-   installation takes precedence.
-
-## Adding DistAlgo root to `PYTHONPATH`
-
-   Simply add the DistAlgo root directory to your `PYTHONPATH` environment
-   variable:
-
-      export PYTHONPATH=<DAROOT>:${PYTHONPATH}
-
-   This takes precedence over `distutils` installations.
-
-  After installation, the `da` module will be available for use.
-  
-## Using `pip` to install DistAlgo
+## Optiona 1: Using `pip` to install DistAlgo
 
    `pip` is a command line utility for installing Python packages from the
    Python Package Index(PyPI). `pip` is the recommended method of installing
@@ -94,7 +66,35 @@ The following command installs DistAlgo for the current user:
    
      pip install --upgrade [--user] pyDistAlgo
 
-## Running DistAlgo without installation
+## Option 2: Adding DistAlgo root to `PYTHONPATH`
+
+   Simply add the DistAlgo root directory to your `PYTHONPATH` environment
+   variable:
+
+      export PYTHONPATH=<DAROOT>:${PYTHONPATH}
+
+   This takes precedence over `distutils` installations.
+
+  After installation, the `da` module will be available for use.
+  
+## Option 3: Using `setup.py`
+
+   To see full usage description, type:
+
+      cd <DAROOT>; python setup.py --help
+
+The following command installs DistAlgo as system-wide package:
+
+      cd <DAROOT>; python setup.py install
+
+The following command installs DistAlgo for the current user:
+
+      cd <DAROOT>; python setup.py install --user
+
+   If you have installed DistAlgo for both system and user, the user
+   installation takes precedence.
+   
+## Optiona 4: Running DistAlgo without installation
 
    Directory `<DAROOT>/bin` contains two scripts, `dac` and `dar`, that run
    the DistAlgo compiler and runtime, respectively. Running these scripts
