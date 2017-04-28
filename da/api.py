@@ -202,8 +202,8 @@ def _bootstrap_node(cls, nodename, trman):
             router.bootstrap_node(rhost, rport, timeout=ASYNC_TIMEOUT)
         except sim.BootstrapException as e:
             log.info("Bootstrapping attempt failed due to %r, "
-                     " continuing as a master node (use '--master' to "
-                     "disable bootstrapping at startup).", e)
+                     "continuing as a master node (use '--master' to force "
+                     "master node and skip bootstrapping at startup).", e)
     return router
 
 def _load_main_module():

@@ -125,6 +125,11 @@ def initialize_runtime_options(options):
     # Canonize hostname, essential for properly determining whether a ProcessId
     # is running on the local machine:
     import socket
+    if GlobalOptions['hostname'] is None:
+        if len(GlobalOptions['nodename']) > 0:
+            GlobalOptions['hostname'] = socket.getfqdn()
+        else:
+            GlobalOptions['hostname'] = 'localhost'
     GlobalOptions['hostname'] \
         = socket.gethostbyname(GlobalOptions['hostname'])
 

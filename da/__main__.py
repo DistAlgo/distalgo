@@ -105,9 +105,11 @@ def parseArgs():
     parser.add_argument("--inc-module-name",
                         help="name of the incrementalized interface module, "
                         "defaults to source module name + '_inc'. ")
-    parser.add_argument("-H", "--hostname", default='localhost',
+    parser.add_argument("-H", "--hostname", default=None,
                         help="hostname for binding network sockets, "
-                        "defaults to 'localhost'. This option is ignored "
+                        "default value is the fully qualified domain "
+                        "name (FQDN) of the "
+                        "running host if '--nodename' is set, or 'localhost' "
                         "if '--nodename' is not set.")
     parser.add_argument("-p", "--port", type=int, default=None,
                         help="port number for binding network sockets. "
