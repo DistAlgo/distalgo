@@ -32,13 +32,11 @@
 
 # 2. Installation
 
-  In all following commands, please replace `<DAROOT>` with the path of the
-  DistAlgo root directory (the directory containing this file).
-
-  Installation of DistAlgo is optional for running DistAlgo. You can install
-  DistAlgo by using the Python `distutils` module, by adding the DistAlgo
-  root directory to your `PYTHONPATH` environment variable, or by using the
-  Python package manager, `pip`.
+  Installation of DistAlgo is entirely optional. The installation process
+  consists of copying or extracting the DistAlgo files to a path in the
+  local filesystem (designated as `<DAROOT>` in the following texts), then
+  adding `<DAROOT>` to `PYTHONPATH` so that Python can load the `da` module.
+  You can accomplish this through either one of the following options:
 
 ## Option 1: Using `pip` to install DistAlgo
 
@@ -59,27 +57,18 @@
    
      pip install --user pyDistAlgo
 
-   Just as with `distutils`, if you have installed DistAlgo for both system
-   and the current user, the user installation will take precedence.
+   If you have installed DistAlgo for both system and the current user, the
+   user installation will take precedence.
 
-   To upgrade an existing DistAlgo installation:
+   To upgrade an existing DistAlgo installation to a newer version:
    
      pip install --upgrade [--user] pyDistAlgo
 
-## Option 2: Adding DistAlgo root to `PYTHONPATH`
+## Option 2: Using `setup.py`
 
-   Simply add the DistAlgo root directory to your `PYTHONPATH` environment
-   variable:
-
-      export PYTHONPATH=<DAROOT>:${PYTHONPATH}
-
-   This takes precedence over `distutils` installations.
-
-  After installation, the `da` module will be available for use.
-  
-## Option 3: Using `setup.py`
-
-   To see full usage description, type:
+   If you have already downloaded a DistAlgo distribution package, you can
+   install it using the included `setup.py` file. To see full usage
+   description, type:
 
       cd <DAROOT>; python setup.py --help
 
@@ -94,13 +83,34 @@ The following command installs DistAlgo for the current user:
    If you have installed DistAlgo for both system and user, the user
    installation takes precedence.
    
+## Option 3: Manually adding the DistAlgo root directory to `PYTHONPATH`
+
+   If you have downloaded and extracted the DistAlgo files to `<DAROOT>`,
+   you can simply add the DistAlgo root directory to your `PYTHONPATH`
+   environment variable by running the following command in your shell:
+
+      export PYTHONPATH=<DAROOT>:${PYTHONPATH}
+
+   Afterwards, the `da` module will be available in all `python` instances
+   launched from this shell. You can add the above command to the
+   initialization scripts for your shell to avoid typing this command in
+   each new shell instance.
+
+   The `<DAROOT>` directory installed using this method takes precedence
+   over any DistAlgo packages installed by `pip` or `setup.py`.
+  
 ## Option 4: Running DistAlgo without installation
 
-   Directory `<DAROOT>/bin` contains two scripts, `dac` and `dar`, that run
-   the DistAlgo compiler and runtime, respectively. Running these scripts
-   properly sets `sys.path` so no installation is needed. To avoid typing
-   `<DAROOT>/bin` in running the scripts, add it to your `PATH` environment
-   variable:
+   Alternatively, if you do not wish to install the DistAlgo package or
+   modify the `PYTHONPATH` environment variable, you can simply run DistAlgo
+   using the scripts provided under the directory `<DAROOT>/bin`. This
+   directory contains two Python scripts, `dac` and `dar`, that runs the
+   DistAlgo compiler and runtime, respectively. These scripts will
+   automatically detect `<DAROOT>` and add it to the Python variable
+   `sys.path` so no installation is required.
+   
+   To avoid typing `<DAROOT>/bin` in running the scripts, add it to your
+   `PATH` environment variable:
 
       export PATH=<DAROOT>/bin:${PATH}
 
@@ -121,15 +131,20 @@ The following command installs DistAlgo for the current user:
 # 3. Running DistAlgo
 
   The DistAlgo system consists of a compiler and a runtime. Under normal
-  circumstances, you do not need to invoke the compiler directly, because the
-  runtime will call the compiler if it detects that the generated Python code
-  for your DistAlgo source file is missing or outdated.
+  circumstances, you do not need to invoke the compiler directly, because
+  the runtime will invoke the compiler if necessary.
 
   For both the compiler and runtime, use command line argument `-h` to see a
   full description of available options.
 
 ## Invoking the compiler
 
+   You only need to run the compiler if you wish to see the generated Python
+   code for a DistAlgo source file. Note that the generated Python file is
+   for informational purposes only, it is *not* used by the runtime for the
+   purpose of running a DistAlgo module -- the runtime always compiles and
+   loads the code directly from the '.da' source file.
+   
    If you have installed DistAlgo, run module `da.compiler`, passing a
    DistAlgo source file `<SOURCE>` as argument:
 
@@ -166,8 +181,8 @@ The following command installs DistAlgo for the current user:
      
    The DistAlgo command line option '-m' mimics Python's own '-m' option.
    `<MODULE>` must be a DistAlgo module in dotted form and without the '.da'
-   suffix. The source file for the module is located for using the same
-   rules that govern Python's own module loading process.
+   suffix. The source file for the module is located by the same rules that
+   govern Python's own module loading process.
 
 ### Passing command line arguments to the DistAlgo program
 
@@ -246,7 +261,7 @@ The following command installs DistAlgo for the current user:
   command now include a "#Node1" suffix, to indicate that the processes are
   running on the 'Node1' node.
   
-  Node names can be used for the `at` argument when calling the `new`
+  Node names can be used as the `at` argument when calling the `new`
   function, which instructs the system to create the new processes on the
   named node(s) instead of locally. The following program, 'pingpong.da',
   creates a `Pong` process on the node named 'PongNode', then creates a
@@ -310,56 +325,10 @@ The following command installs DistAlgo for the current user:
   on the terminal running the 'PongNode' (the 5 hex-digit process id values
   may differ).
 
-#### Running nodes on multiple hosts
-
-By default, DistAlgo nodes and processes are only able to communicate with
-nodes and processes running on the same host. This is because they only
-listen for incoming messages on the interface named 'localhost'. The
-hostname 'localhost' usually resolves to the loopback interface '127.0.0.1',
-which can only receive messages that were sent from the local host.
-
-In order to run a distributed DistAlgo system with nodes on multiple hosts,
-you need to perform two additional operations:
-
-  1. instruct the DistAlgo processes to listen on an interface that is able
-     to receive network messages from remote hosts, by using the
-     '--hostname'(or equivalently, '-H') command line parameter;
-
-  2. instruct DistAlgo nodes to connect to an existing node running on a
-     remote host, by using the '--peer'(or equivalently, '-R') command line
-     parameter.
-
-You can specify either a hostname that resolves to a local interace, or the
-IP address of a local interface as argument to '-H'. To obtain a list of
-local interfaces and their corresponding IP addresses, use `ifconfig` on
-Linux systems, or `ipconfig` on Windows. The special IP address '0.0.0.0'
-can be used to indicate all available interfaces on the local host.
-
-As an example, consider the scenario of running the 'pingpong' program on
-two hosts, 'jupiter' and 'io'. First, start the 'PingNode' on host
-'jupiter', instructing the system to listen on all interfaces:
-
-    jupiter> python -m da -H 0.0.0.0 -n PingNode pingpong.da
-
-You can now start the 'PongNode' on host 'io', telling it to connect to the
-node on 'jupiter':
-
-    io> python -m da -H 0.0.0.0 -R jupiter -n PongNode -D pingpong.da
-
-The DistAlgo nodes network are conceptually fully connected, so for a new
-node to join a network of existing nodes, it is sufficient to specify the
-address of any node in the existing network. Continuing the previous
-example, suppose you want to start another node, 'PongNode2', on the host
-'thebe' and have it join the network of 'PingNode' and 'PongNode' already
-running on 'jupiter' and 'io', then the commands
-
-    thebe> python -m da -H 0.0.0.0 -R jupiter -n PongNode2 -D pingpong.da
-
-and
-
-    thebe> python -m da -H 0.0.0.0 -R io -n PongNode2 -D pingpong.da
-
-will have the same effect.
+  To specify nodes running on remote hosts, add the remote hostname as a
+  suffix to the node name using the `@` separator. For example
+  `PongNode@PongHost` specifies a node named 'PongNode' that is running on
+  the host named 'PongHost'.
 
 #### Cookies
 
