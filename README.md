@@ -40,7 +40,7 @@
   root directory to your `PYTHONPATH` environment variable, or by using the
   Python package manager, `pip`.
 
-## Optiona 1: Using `pip` to install DistAlgo
+## Option 1: Using `pip` to install DistAlgo
 
    `pip` is a command line utility for installing Python packages from the
    Python Package Index(PyPI). `pip` is the recommended method of installing
@@ -94,7 +94,7 @@ The following command installs DistAlgo for the current user:
    If you have installed DistAlgo for both system and user, the user
    installation takes precedence.
    
-## Optiona 4: Running DistAlgo without installation
+## Option 4: Running DistAlgo without installation
 
    Directory `<DAROOT>/bin` contains two scripts, `dac` and `dar`, that run
    the DistAlgo compiler and runtime, respectively. Running these scripts
