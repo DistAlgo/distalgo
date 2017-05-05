@@ -1,43 +1,18 @@
 import os
-import distutils
-import setuptools
+import os.path
+import sys
 import subprocess
+import setuptools
+import distutils.command.build
 import setuptools.command.build_py
+import setuptools.command.install_lib
 import setuptools.command.sdist
-from distutils.core import setup
+from setuptools import setup
+from distutils import log
 from distutils.cmd import Command
+from distutils.dep_util import newer
 
 import da
-
-class CompileDACommand(Command):
-  """A custom command to run `dac` on all .da files under da/."""
-
-  description = 'build all DistAlgo modules under da/.'
-  user_options = [
-      # The format is (long option, short option, description).
-      ('compiler-flags', 'F', 'options for the compiler'),
-  ]
-
-  def initialize_options(self):
-    """Set default values for options."""
-    # Each user option must be listed here with their default value.
-    self.compiler_flags = []
-
-  def finalize_options(self):
-    """Post-process options."""
-    pass
-
-  def run(self):
-    """Run command."""
-    import da.compiler
-    exroot = os.path.join(os.getcwd(), 'da/')
-    for root, dirs, files in os.walk(exroot):
-        for filename in files:
-            if filename.endswith('.da'):
-                target = os.path.join(root, filename)
-                self.announce('Compiling {}...'.format(target),
-                              level=distutils.log.INFO)
-                da.compiler.ui.main(self.compiler_flags + [str(target)])
 
 class CompileDocCommand(Command):
     """A custom command to run `pdflatex` on 'doc/language.tex'."""
@@ -59,20 +34,86 @@ class CompileDocCommand(Command):
         subprocess.check_call(command)
         os.chdir(rootdir)
 
-class DABuildCommand(setuptools.command.build_py.build_py):
+class DABuildCommand(distutils.command.build.build):
+    """build everything needed to install."""
+
+    sub_commands = [('build_doc', None)] + \
+                   distutils.command.build.build.sub_commands
+
+# auxiliary function adapted from `distutils.util.byte_compile`:
+def _byte_compile(files, optimize=-1, force=False, prefix=None,
+                  base_dir=None, dry_run=False):
+    from da.compiler import dafile_to_pycfile
+    from da.importer import da_cache_from_source
+
+    # XXX: do we need "indirect" mode??
+    for file in files:
+        if file[-3:] != ".da":
+            continue
+        if optimize >= 0:
+            opt = '' if optimize == 0 else optimize
+            cfile = da_cache_from_source(file, optimization=opt)
+        else:
+            cfile = da_cache_from_source(file)
+        dfile = file
+        if prefix:
+            if file[:len(prefix)] != prefix:
+                raise ValueError("invalid prefix: filename {} doesn't start with {}".format(file, prefix))
+            dfile = dfile[len(prefix):]
+        if base_dir:
+            dfile = os.path.join(base_dir, dfile)
+        if force or newer(file, cfile):
+            log.info("byte-compiling {} to {}".format(file, cfile))
+            if not dry_run:
+                dafile_to_pycfile(file, outname=cfile, optimize=optimize,
+                                  dfile=dfile)
+        else:
+            log.debug("skipping byte-compilation of {} to {}."
+                      .format(file, cfile))
+
+class DABuildPyCommand(setuptools.command.build_py.build_py):
     """Auto build all examples before packaging."""
 
-    def run(self):
-        self.run_command('compile_modules')
-        super().run()
+    def byte_compile(self, files):
+        super().byte_compile(files)
+        if sys.dont_write_bytecode:
+            self.warn('byte-compiling is disabled, skipping.')
+            return
+
+        prefix = self.build_lib
+        if prefix[-1] != os.sep:
+            prefix = prefix + os.sep
+        if self.compile:
+            _byte_compile(files, optimize=0, force=self.force,
+                          prefix=prefix, dry_run=self.dry_run)
+        if self.optimize:
+            _byte_compile(files, optimize=self.optimize, force=self.force,
+                          prefix=prefix, dry_run=self.dry_run)
+
+class DAInstallCommand(setuptools.command.install_lib.install_lib):
+    """Install all modules."""
+
+    def byte_compile(self, files):
+        super().byte_compile(files)
+        if sys.dont_write_bytecode:
+            self.warn('byte-compiling is disabled, skipping.')
+            return
+
+        install_root = self.get_finalized_command('install').root
+        if self.compile:
+            _byte_compile(files, optimize=0,
+                          force=self.force, prefix=install_root,
+                          dry_run=self.dry_run)
+        if self.optimize > 0:
+            _byte_compile(files, optimize=self.optimize,
+                          force=self.force, prefix=install_root,
+                          verbose=self.verbose, dry_run=self.dry_run)
 
 class DASdistCommand(setuptools.command.sdist.sdist):
     """Generate doc/language.pdf before packaging."""
 
-    def run(self):
-        self.run_command('compile_modules')
-        self.run_command('genpdf')
-        super().run()
+    sub_commands = [('build_doc', None)] + \
+                   setuptools.command.sdist.sdist.sub_commands
 
 setup(name = "pyDistAlgo",
       version = da.__version__,
@@ -88,12 +129,18 @@ setup(name = "pyDistAlgo",
           'Programming Language :: Python :: 3.6',
           'Topic :: Software Development :: Compilers',
       ],
-      packages = setuptools.find_packages(),
+
+      packages = ['da', 'da.compiler', 'da.examples'],
       include_package_data = True,
+      package_data = {
+        'da.examples' : ['**/*.da']
+      },
+
       cmdclass = {
-          'genpdf'          : CompileDocCommand,
-          'compile_modules' : CompileDACommand,
-          'build_py'        : DABuildCommand,
-          'sdist'           : DASdistCommand,
+          'build_doc'   : CompileDocCommand,
+          'build'       : DABuildCommand,
+          'build_py'    : DABuildPyCommand,
+          'install_lib' : DAInstallCommand,
+          'sdist'       : DASdistCommand,
       }
 )
