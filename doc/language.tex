@@ -47,7 +47,7 @@
 \newcommand{\body}[1]{} %
 
 \newcommand{\mysubsec}[1]{\subsection*{#1}}
-\newcommand{\myparag}[1]{\vspace{2ex}\noindent\b{#1.}~}
+\newcommand{\mypar}[1]{\vspace{2ex}\noindent\b{#1.}~}
 
  %
 
@@ -187,15 +187,15 @@
 
 \c{liu@cs.stonybrook.edu, bolin@cs.stonybrook.edu, stoller@cs.stonybrook.edu}
 
-{\small Revised January 16, 2017}
+{\small Revised March 24, 2017}
 \vspace{4ex}
 
-\def\da{\vspace{-2.5ex}in DistAlgo\vspace{-2.5ex}}
 \def\langmap{\vspace{.5ex}\m{\longrightarrow}~\b{in Python syntax:~}
   \vspace{.0ex}}
  %
 \renewcommand{\mysubsec}[1]{\section{#1}}
-\renewcommand{\myparag}[1]{\subsection{#1}}
+\renewcommand{\mypar}[1]{\vspace{-1ex}\subsection{#1}\vspace{-1ex}}
+\newcommand{\mysubpar}[1]{\vspace{-2ex}\paragraph{#1.}}
 
 
 DistAlgo is a language for distributed algorithms.  We describe DistAlgo
@@ -213,9 +213,10 @@ programming languages, such as Python, support high-level queries to some
 extent, but DistAlgo query constructs are more declarative, especially with
 the support of tuple patterns for messages.
 
+
 \mysubsec{Distributed processes and sending messages}
 
-\myparag{Process definition}
+\mypar{Process definition}
 
 A process definition is of the following form.  It defines a type of
 processes named \p{p}, by defining a class \p{p} that extends class
@@ -256,7 +257,7 @@ may be defined in \c{\p{process\_body}} for carrying out the main flow of
 execution.
 
 
-A special variable \c{self} refers to the current process.  
+A special variable \c{self} refers to the process itself.  
 Fields of the process may be defined by including the field name
 as a parameter of method \c{setup}, or by explicitly prefixing the field name 
 with \c{self} in an assignment to the field.
@@ -268,35 +269,35 @@ definitions implicitly include parameter \c{self}.
 
 
 
-\myparag{Process creation}
+\mypar{Process creation}
 
 Process creation consists of statements for creating, setting up, and
 starting processes. %
 
 A process creation statement is of the following form.  It creates \p{n}
 new processes of type \p{p} at each node in the value of \c{\p{node\_exp}},
-and assigns the resulting process
-or set of processes to variable \p{v}. %
+and returns\notes{} the resulting process
+or set of processes\notes{}. %
+\begin{code}
+    \p{n} new \p{p} at \p{node_exp}
+\end{code}
 Expression \c{\p{node\_exp}} evaluates to a node
 or a set of nodes, specifying where the new processes will be created.
 A node is a running DistAlgo program on a machine. %
 A node is identified by a string of the form \c{name@host}, where \c{name}
 can be specified on the command line when starting the node, and \c{host}
 is the host name of the machine running the node; \c{@host} can be omitted
-if the node is running on the same machine. %
+if the node is running on the local machine.
 All nodes communicating with each other must have the same cookie, which
 can be specified on the command line when starting the node.
 The number \p{n} and the \c{at} clause are optional; the defaults are 1 and
 local node, respectively.  When both are omitted, a single process is
-created and assigned to \p{v}; otherwise, a set of processes is created and
-assigned to \p{v}.
-\begin{code}
-    \p{v} = \p{n} new \p{p} at \p{node_exp}
-\end{code}
+created and returned\notes{}; otherwise, a set of
+processes is created and returned\notes{}.
 
 \langmap
 \begin{code}
-    \p{v} = new(\p{p}, num = \p{n}, at = \p{node_exp})
+    new(\p{p}, num = \p{n}, at = \p{node_exp})
 \end{code}
 
 
@@ -317,8 +318,7 @@ the call to \c{new}.
     setup(\p{pexp}, (\p{args}))        \normalfont{Note: You must add a trailing comma if \p{args} is a single argument.}
 \end{code}
 
-A process start statement is of the
- following form.  It starts the
+A process start statement is of the following form.  It starts the
 execution of the method \c{run} of the process or set of processes that is
 the value of expression \p{pexp}.
 \begin{code}
@@ -332,7 +332,7 @@ the value of expression \p{pexp}.
 
 \notes{}
 
-\myparag{Sending messages}
+\mypar{Sending messages}
 
 A statement for sending messages is of the following form.  It sends the
 message that is value of expression \p{mexp} to the process or set of
@@ -352,7 +352,11 @@ called a tag, indicating the kind of the message.
 
 \mysubsec{Control flows and receiving messages}
 
-\myparag{Yield points}
+Received messages can be handled both asynchronously, using yield points
+and \c{receive} definitions, and synchronously, using \c{await} statements.
+
+
+\mypar{Yield points}
 
 A yield point preceding a statement is of the following form, where
 identifier \p{l} is a label and is optional.  It specifies that point in
@@ -373,18 +377,15 @@ identifier.
 \notes{}
 
 
-\myparag{Handling messages received}
+\mypar{Handling received messages}
 
-Handling messages received can be done using handler definitions and
-message history variables.
 
 A handler definition, also called a \c{receive} definition, is of the
 following form.
 It handles, at yield points labeled \p{l\sb{1}}, ..., \p{l\sb{j}},
-un-handled messages that match \p{mexp} sent from \p{pexp}, where
-\p{mexp} and \p{pexp} are parts of a pattern;
-previously unbound variables in a pattern are bound to the corresponding
-components in the value matched.
+un-handled messages that match \p{mexp} %
+from \p{pexp}, where \p{mexp} and \p{pexp} are parts of a pattern,
+to be described.
 The \c{from} and \c{at} clauses are optional; the defaults are any process
 and all yield points.  The \c{\p{handler\_body}} is a sequence of
 statements to be executed for the matched messages.
@@ -393,7 +394,7 @@ statements to be executed for the matched messages.
       \p{handler_body}
 \end{code}
 
-\langmap\newpage
+\langmap
 \begin{code}
     def receive(msg = \p{mexp}, from_ = \p{pexp}, at = (\p{l\sb{1}}, ..., \p{l\sb{j}})):
       \p{handler_body}
@@ -401,47 +402,9 @@ statements to be executed for the matched messages.
 \quad\quad where \c{\_} is added after \c{from} because \c{from} is a
 reserved word in Python.
 
-Message histories, i.e., the sequences of messages received and sent, in
-variables \c{received}
-and \c{sent}, respectively, can be used in expressions.
-Sequence \c{received} is updated at the next yield point if there are
-un-handled messages, by adding un-handled messages before any matching
-receive handler executes.
-Sequence \c{sent} is updated at each \c{send} statement, by adding each
-message sent to a process.
 
-In particular, the following two equivalent expressions return true iff a
-message that matches \p{mexp} sent from \p{pexp} is in \c{received}.  The
-\c{from} clause is optional; the default is any process.
-\begin{code}
-    received \p{mexp} from \p{pexp}
-    \p{mexp} from \p{pexp} in received
-\end{code}
+\mypar{Synchronization}
 
-\langmap
-\begin{code}
-    received(\p{mexp}, from_ = \p{pexp})
-    (\p{mexp}, \p{pexp}) in received
-\end{code}
-
-Similarly, the following expressions use \c{sent}.
-\begin{code}
-    sent \p{mexp} to \p{pexp}
-    \p{mexp} to \p{pexp} in sent
-\end{code}
-
-\langmap
-\begin{code}
-    sent(\p{mexp}, to = \p{pexp})
-    (\p{mexp}, \p{pexp}) in sent
-\end{code}
-\todo{}
-
-
-\myparag{Synchronization}
-
-Synchronization and associated actions can be expressed using general,
-non\-deterministic \c{await} statements.
 
 A simple \c{await} statement is of the following form.  It waits for the
 value of Boolean-valued expression \p{bexp} to become true.
@@ -486,57 +449,119 @@ default is that all message handlers can be executed at this point.
 
 \mysubsec{High-level queries of message histories}
 
-\myparag{Comprehensions}
+High-level queries can be used over message histories, and patterns
+can be used for matching the messages.
 
-A comprehension is a query of the following form, plus a set of
-\defn{parameters}---variables whose values are bound before the query.
-For a query to be well-formed, every variable in it must be
-\defn{reachable} from a parameter---be a parameter or be the left-side
-variable of a membership clause whose right-side variables are reachable.
-Given values of parameters, the query returns the set of values of \p{exp}
-for all combinations of values of variables that satisfy all membership
-clauses \c{\p{v_i} in \p{sexp\sb{i}}} and condition \p{bexp}.
-When \p{sexp_i} is a variable \p{s_i}, clause \c{\p{v_i} in \p{s_i}} can
-also be written as \p{s_i(v_i)}.
-When \p{bexp} is \c{true}, \c{, \p{bexp}} can be omitted.
+
+\mypar{Message histories}
+Histories of message sent and received by a process are kept in variables
+\c{sent} and \c{received}, respectively.
+Sequence \c{sent} is updated at each \c{send} statement, by adding each
+message sent to a process.
+Sequence \c{received} is updated at the next yield point if there are
+un-handled messages, by adding un-handled messages before any matching
+receive handler executes.
+
+The following two expressions are equivalent and return true iff a message
+that matches \p{mexp} to \p{pexp} is in \c{sent}.  The \c{to} clause is
+optional; the default is any process.
 \begin{code}
-    \{\p{exp}: \p{v\sb{1}} in \p{sexp\sb{1}}, ..., \p{v\sb{k}} in \p{sexp\sb{k}}, \p{bexp}\}
+    sent \p{mexp} to \p{pexp}
+    \p{mexp} to \p{pexp} in sent
 \end{code}
-To indicate that a variable \c{x} on the left side of a membership
-clause is a parameter, add prefix \c{=} to \c{x}; this is only needed
-for the first occurrence of such a variable.
-Notation \c{=x} means a value that is equal to the value of parameter
-\c{x}; it is equivalent to using a fresh variable \c{y} in its place and
-adding a conjunct \c{y=x} in condition \p{bexp}.
+
+\langmap
+\begin{code}
+    sent(\p{mexp}, to = \p{pexp})
+    (\p{mexp}, \p{pexp}) in sent
+\end{code}
+
+Similarly, the following expressions use \c{received}.
+\begin{code}
+    received \p{mexp} from \p{pexp}
+    \p{mexp} from \p{pexp} in received
+\end{code}
+
+\langmap
+\begin{code}
+    received(\p{mexp}, from_ = \p{pexp})
+    (\p{mexp}, \p{pexp}) in received
+\end{code}
+\todo{}
+
+
+\mypar{Patterns}
+A pattern can be used to match a message, in \c{sent} and \c{received}, and
+by a \c{receive} definition.  A constant value, such as \c{'ack'}, or a
+previously bound variable, indicated with prefix \c{=}, in the pattern must
+match the corresponding components of the message.  An underscore (\c{\_})
+matches anything.
+Previously unbound variables in a pattern are bound to the corresponding
+components in the matched message. %
+In general, any data construction expression %
+can be used as a pattern; we use only tuple patterns because messages are
+by convention tuples.
+
+For example, \c{received ('ack',=n,\_) from a} matches every triple in
+\c{received} whose first two components are \c{'ack'} and the value of
+\c{n}, and binds \c{a} to the sender.
+
+Notation \c{=x} means a value that is equal to the value of variable \c{x};
+it is equivalent to using a fresh variable \c{y} in its place and adding a
+test \c{y=x} before \c{x} is used.
 This notation can generalize: one can add as prefix any binary operator
 that is a symbol not allowed in identifiers, uses the parameter value as
 the right operand, and returns a Boolean value.  For example, \c{>x} means
 a value that is greater than the value of parameter \c{x}.
 
 \langmap
+\c{\_} is used in place of \c{=} to indicate previously bound variables.
+This forbids the use of variable names that start with \c{\_} in the query.
+Other binary operators cannot be used as prefix.
+
+
+\mypar{Comprehension, aggregation, and quantification}
+A query is over sets or sequences.  It can be a comprehension, aggregation,
+or quantification, plus a set of \defn{parameters}---variables whose values
+are bound before the query.
+For a query to be well-formed, every variable in it must be
+\defn{reachable} from a parameter---be a parameter or be the left-side
+variable of a membership clause whose right-side variables are reachable.
+
+To indicate that a variable \c{x} on the left side of a membership
+clause is a parameter, add prefix \c{=} to \c{x}; this is only needed
+for the first occurrence of such a variable.
+Use of \c{=} to indicate parameters is consistent with use of \c{=} in
+patterns.
+
+\pagebreak
+\mysubpar{Comprehension}
+A comprehension is a query of the following form.  Given values of
+parameters, the comprehension returns the set of values of \p{exp} for all
+combinations of values of variables that satisfy all membership clauses
+\c{\p{v_i} in \p{sexp\sb{i}}} and condition \p{bexp}.
+\begin{code}
+    \{\p{exp}: \p{v\sb{1}} in \p{sexp\sb{1}}, ..., \p{v\sb{k}} in \p{sexp\sb{k}}, \p{bexp}\}
+\end{code}
+
+\langmap
 \begin{code}
     setof(\p{exp}, \p{v\sb{1}} in \p{sexp\sb{1}}, ..., \p{v\sb{k}} in \p{sexp\sb{k}}, \p{bexp})
 \end{code}
-\quad\quad where \c{\_} is used in place of \c{=} to indicate parameters.
-This forbids the use of variable names that start with \c{\_} in the query.
-Also, only for \p{sexp_i} being variable \c{received} or \c{sent} can
-clause \c{\p{v_i} in received} or \c{\p{v_i} in sent} be written as
-\c{received(\p{v_i})} or \c{sent(\p{v_i})}, respectively.
 
 
 
 
 
-\myparag{Aggregations}
-
+\mysubpar{Aggregation}
 An aggregation is a query of one of the following two forms, where
 \c{\p{agg}} is an aggregation operator, including \c{count}, \c{sum},
 \c{min}, and \c{max}.
-Given values of parameters, the query returns the value of applying
-\c{\p{agg}} to the set value of \c{\p{sexp}}, for the first form, or
-to the multiset of values of \p{exp} for all combinations of values of
-variables that satisfy all membership clauses \c{\p{v\sb{i}} in
-  \p{sexp\sb{i}}} and condition \p{bexp}, for the second form.
+Given values of parameters, the aggregation returns the value of applying
+\c{\p{agg}} to the set value of \c{\p{sexp}}, for the first form, or to the
+multiset of values of \p{exp} for all combinations of values of variables
+that satisfy all membership clauses \c{\p{v\sb{i}} in \p{sexp\sb{i}}} and
+condition \p{bexp}, for the second form.
 \begin{code}
     \p{agg} \p{sexp}
     \p{agg} (\p{exp}: \p{v\sb{1}} in \p{sexp\sb{1}}, ..., \p{v\sb{k}} in \p{sexp\sb{k}}, \p{bexp})
@@ -550,14 +575,13 @@ variables that satisfy all membership clauses \c{\p{v\sb{i}} in
 \quad\quad where \c{len} is used in place of \c{count}.
 
 
-\myparag{Quantifications}
-
-A quantification is a query of one of the following two forms.
-The two forms are called existential and universal quantifications,
-respectively.
-Given values of parameters, the query returns \c{true} iff for some or
-all, respectively, combinations of values of variables that satisfy
-all membership clauses \c{\p{v\sb{i}} in \p{sexp\sb{i}}}, expression
+\mysubpar{Quantification}
+A quantification is a query of one of the following two forms, called
+existential and universal quantifications, respectively.
+Given values of parameters, the quantification returns \c{true} iff for
+some or all, respectively, combinations of values of variables that satisfy
+all membership clauses \c{\p{v\sb{i}} in \p{sexp\sb{i}}},
+condition %
 \p{bexp} evaluates to \c{true}.
 When an existential quantification returns \c{true}, all variables in
 the query are also bound to a combination of values, called a witness,
@@ -572,33 +596,30 @@ that satisfy all the membership clauses and condition \p{bexp}.
     some(\p{v\sb{1}} in \p{sexp\sb{1}}, ..., \p{v\sb{k}} in \p{sexp\sb{k}}, has = \p{bexp})
     each(\p{v\sb{1}} in \p{sexp\sb{1}}, ..., \p{v\sb{k}} in \p{sexp\sb{k}}, has = \p{bexp})
 \end{code}
-\quad\quad where prefix \c{\_} or a \c{params} clause is used to indicate
-parameters, as for comprehensions.
-
 \notes{}
 
+\mysubpar{Other forms for membership and condition}
+In all of comprehension, aggregation, and quantification, 
+in membership clause \c{\p{v\sb{i}} in \p{sexp\sb{i}}},
+if \p{sexp_i} is a variable \p{s_i}, then clause \c{\p{v_i} in \p{s_i}} can
+also be written as \p{s_i(v_i)}.
+Also, 
+a tuple pattern may be used in place of variable \p{v_i}.
+When condition \p{bexp} is \c{true}, the clause with \p{bexp} can be
+omitted.
 
-\myparag{Patterns}
-\label{sec-patterns}
+\langmap
+Only for \p{sexp_i} being variable \c{sent} or \c{received} can clause
+\c{\p{v_i} in received} or \c{\p{v_i} in sent} be written as
+\c{received(\p{v_i})} or \c{sent(\p{v_i})}, respectively.
 
-In the clauses \c{\p{v\sb{1}} in \p{sexp\sb{1}}, \ldots, \p{v\sb{k}}
-  in \p{sexp\sb{k}}} in all of comprehensions, aggregations, and
-quantifications, a pattern, in particular a tuple expression
-\p{texp_i}, called a tuple pattern, may occur in place of variable
-\p{v_i}.  Previously unbound variables in \p{texp_i} are bound to the
-corresponding components in %
-the matched elements of the value of \p{sexp\sb{i}}.
-The underscore (\c{\_}) is used as a wild card that can be bound to anything.
-In general, any data construction expression 
-can be used as a pattern; we use only tuple patterns because messages are
-by convention tuples.
 
 
 \mysubsec{Configurations}
 
 
 
-\myparag{Channel types}
+\mypar{Channel types}
 
 The following statement configures all channels to be
 first-in-first-out (FIFO).
@@ -621,7 +642,7 @@ processes or a set of types of processes.  Each of these clauses is
 optional; the default is all types of processes.
 
 
-\myparag{Message handling}
+\mypar{Message handling}
 
 The following statement configures the system to handle all un-handled
 messages at each yield point; this is the default.
@@ -636,7 +657,7 @@ Other options for \c{handling} include \c{one}.
 \end{code}
 
 
-\myparag{Logical clocks}
+\mypar{Logical clocks}
 
 The following statement configures the system to use Lamport clock.  Other
 options for \c{clock} include \c{vector}; it is currently not supported.
@@ -653,7 +674,7 @@ A call \c{logical\_time()} returns the current value of the logical
 clock.
 
 
-\myparag{Overall}
+\mypar{Overall}
 
 A DistAlgo program is written in files named with extension \c{.da}.  It
 consists of a set of process definitions, a method \c{main}, and possibly
@@ -670,7 +691,7 @@ conventional semantics.
 
 \mysubsec{Other useful functions in Python}
 
-\myparag{Logging output}
+\mypar{Logging output}
 
 The following method prints the values of expressions \c{\p{exp_1}} through
 \c{\p{exp_k}} in their \c{str()} representation, separated by the value of
@@ -691,16 +712,18 @@ value 20, in the Python logging module; see
 predefined level names.
 
 
-\myparag{Importing modules}
+\mypar{Importing modules}
 
-The following statement is equivalent to Python statement \c{import
-  \p{module} as \p{m}}.\linebreak It takes DistAlgo module \p{module},
-which must end in a DistAlgo program file name excluding extension \c{.da},
-compiles the program file if an up-to-date compiled file does not already
-exist, and assigns to \p{m} the resulting module object if successful or
-raises \c{ImportError} otherwise.
+A DistAlgo module \p{module} is a DistAlgo file 
+named \c{\p{module}.da}.  DistAlgo files can be imported just as Python
+files.
+
+For example, the following statement takes DistAlgo module \p{module} in
+file \c{\p{module}.da}, compiles it if an up-to-date compiled file does not
+already exist, and assigns to \p{m} the resulting module object if
+successful or raises \c{ImportError} otherwise.
 \begin{code}
-    \p{m} = import_da(\p{module})
+  import \p{module} as \p{m}
 \end{code}
 
 
