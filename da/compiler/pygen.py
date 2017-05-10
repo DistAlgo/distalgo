@@ -25,8 +25,8 @@
 import sys
 from ast import *
 from itertools import chain
-from da.compiler import dast
-from da.compiler.utils import printd, printw, printe
+from . import dast, symtab
+from .utils import printd, printw, printe
 
 OperatorMap = {
     dast.AddOp      : Add,
@@ -433,13 +433,6 @@ class PythonGenerator(NodeVisitor):
         fixup_locations_in_block(res)
         return res
 
-    def bases(self, bases):
-        """Process base classes of a class definition."""
-        res = []
-        for expr in bases:
-            res.append(self.visit(expr))
-        return res
-
     def visit_Program(self, node):
         self.module_args = node._compiler_options
         mainbody = self.body(node.body)
@@ -539,7 +532,7 @@ class PythonGenerator(NodeVisitor):
         printd("has methods:%r" % node.methods)
         cd = ClassDef()
         cd.name = node.name
-        cd.bases = self.bases(node.bases)
+        cd.bases = [self.visit(e) for e in node.bases]
         if node is node.immediate_container_of_type(dast.Program).nodecls:
             cd.bases.append(pyAttr("da", "NodeProcess"))
         else:
@@ -604,7 +597,7 @@ class PythonGenerator(NodeVisitor):
 
     def visit_ClassStmt(self, node):
         cd = pyClassDef(name=node.name,
-                        bases=self.bases(node.bases),
+                        bases=[self.visit(e) for e in node.bases],
                         body=self.body(node.body))
         # ########################################
         # TODO: just pass these through until we figure out a use for them:
