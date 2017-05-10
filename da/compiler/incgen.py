@@ -424,7 +424,7 @@ def generate_update_stub(updnode, state):
 def process_updates(state):
     # Accumulate all updates:
     for vobj in state.parameters:
-        for node, _, _ in vobj.updates:
+        for node, _ in vobj.updates:
             if state.updates.get(node) is None:
                 state.updates[node] = list()
             state.updates[node].append(vobj)
@@ -522,7 +522,7 @@ def process_assignments_and_deletions(state):
         has_assign, has_del = False, False
 
         # Inject call to stub at all assignments to vobj:
-        for node, ctx in vobj.assignments:
+        for node, _ in vobj.assignments:
             if (isinstance(node.parent, dast.Program) or
                 (isinstance(node, dast.Function) and
                  isinstance(node.parent, dast.Process))):
@@ -769,7 +769,7 @@ class OpAssignmentTransformer(NodeTransformer):
         newstmt.targets = [node.target.clone()]
         newstmt.targets[0]._parent = newstmt
         for nobj in newstmt.nameobjs:
-            nobj.replace_node(node, newstmt)
+            nobj.index_replace_node(node, newstmt)
         return newstmt
 
 class StubcallGenerator(PythonGenerator):

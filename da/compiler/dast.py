@@ -22,7 +22,7 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-from ast import AST
+from ast import AST, iter_fields
 from itertools import chain
 
 ##################################################
@@ -86,6 +86,33 @@ class DistNode(AST):
         if hasattr(ast, "col_offset"):
             self.col_offset = ast.col_offset
 
+    def transform(self, predicate, transformer):
+        """Transform the subtree rooted at this node.
+
+        :param predicate: should be a function that takes a single argument, a
+        DistNode object, and returns True if the `transformer` should be applied
+        to that node, or False if not, in which case the node will be
+        recursively transformed.
+
+        :param transformer: should be a function that takes a single argument, a
+        DistNode object that satisfied `predicate`, and returns the transformed
+        node.
+
+        """
+        for fname, fvalue in iter_fields(self):
+            if isinstance(fvalue, list):
+                for idx, node in enumerate(fvalue):
+                    if isinstance(node, DistNode):
+                        if predicate(node):
+                            fvalue[idx] = transformer(node)
+                        else:
+                            node.transform(predicate, transformer)
+            elif isinstance(fvalue, DistNode):
+                if predicate(fvalue):
+                    setattr(self, fname , transformer(fvalue))
+                else:
+                    fvalue.transform(predicate, transformer)
+
     def replace_child(self, oldnode, newnode):
         """Replace all occurances of 'oldnode' with 'newnode' in the subtree
         rooted at this node.
@@ -95,15 +122,7 @@ class DistNode(AST):
         to NamedVar defined in outer scopes.
 
         """
-        for fname, fvalue in iter_fields(self):
-            if isinstance(fvalue, list):
-                for idx, node in enumerate(fvalue):
-                    if node is oldnode:
-                        fvalue[idx] = newnode
-                    elif isinstance(node, DistNode):
-                        node.replace_child(oldnode, newnode)
-            elif fvalue is oldnode:
-                setattr(self, fname , newnode)
+        self.transform(lambda n: n is oldnode, lambda n: newnode)
 
     def immediate_container_of_type(self, nodetype):
         node = self
@@ -240,23 +259,23 @@ class NameScope(DistNode):
 
         If the name already exists in the current scope, the info from the
         existing name object is merged into the new object and all pointers to
-        the old name is updated to the new name. This method is mainly used to
-        implement Python rules for "global" and "nonlocal" declarations.
+        the old name is updated to the new name.
+
+        This method is mainly used to implement Python rules for "global" and
+        "nonlocal" declarations.
 
         """
         assert isinstance(namedvar, NamedVar)
         oldname = self.find_name(namedvar.name, local=True)
         if oldname is not None and oldname is not namedvar:
             namedvar.merge(oldname)
-            for node in chain(oldname.assignments,
-                              oldname.updates,
-                              oldname.reads):
-                node.replace_child(oldname, namedvar)
+            self.replace_child(oldname, namedvar)
         self._names[namedvar.name] = namedvar
         return oldname
 
     def merge_scope(self, target):
         """Merges names defined in 'target' scope into this scope.
+
         """
 
         if self is target:
@@ -265,8 +284,23 @@ class NameScope(DistNode):
         for name in target._names:
             if name not in self._names:
                 self._names[name] = target._names[name]
-            else:
-                self._names[name].merge(target._names[name])
+
+    def rebind_name(self, namedvar):
+        assert isinstance(namedvar, NamedVar)
+        oldname = self.find_name(namedvar.name, local=True)
+        if oldname is None:
+            # name did not exist in this scope, recurse into sub-scopes:
+            def transformer(nobj):
+                namedvar.merge(nobj)
+                return namedvar
+            self.transform(
+                (lambda n: isinstance(n, NamedVar) and
+                 n.name == namedvar.name and n is not namedvar),
+                transformer)
+        elif oldname is not namedvar:
+            namedvar.merge(oldname)
+            self.replace_child(oldname, namedvar)
+        return oldname
 
     @property
     def skip(self):
@@ -464,6 +498,11 @@ class ArgumentsContainer(NameScope):
     def names(self):
         return self.args.names
 
+class ContextType: pass
+class AssignmentCtx(ContextType): pass
+class UpdateCtx(ContextType): pass
+class ReadCtx(ContextType): pass
+
 class NamedVar(DistNode):
     """Node representing a named variable.
 
@@ -481,10 +520,19 @@ class NamedVar(DistNode):
         super().__init__(parent, ast=ast)
         self.name = name
         self._scope = None
-        self.assignments = []
-        self.updates = []
-        self.reads = []
-        self.aliases = []
+        self._indexes = []
+
+    @property
+    def assignments(self):
+        return [item for ctx, item in self._indexes if ctx is AssignmentCtx]
+
+    @property
+    def updates(self):
+        return [item for ctx, item in self._indexes if ctx is UpdateCtx]
+
+    @property
+    def reads(self):
+        return [item for ctx, item in self._indexes if ctx is ReadCtx]
 
     def clone(self):
         # NamedVar instances should not be cloned:
@@ -495,41 +543,24 @@ class NamedVar(DistNode):
 
         """
         assert isinstance(target, NamedVar)
-        self.assignments.extend(target.assignments)
-        self.updates.extend(target.updates)
-        self.reads.extend(target.reads)
-        self.aliases.extend(target.aliases)
+        self._indexes.extend(target._indexes)
 
-    def replace_node(self, oldnode, newnode=None):
-        """Replaces all references to 'oldnode' with 'newnode'.
+    def index_replace_node(self, oldnode, newnode=None):
+        """Replaces all references to 'oldnode' with 'newnode' in the index.
 
-        If 'newnode' is None then delete all 'oldnode' references.
+        If 'newnode' is None then remove all 'oldnode' references from the
+        index.
+
         """
 
-        pairs = ['assignments', 'reads', 'aliases']
-        triples = ['updates']
-        if newnode is None:
-            for attr in pairs:
-                setattr(self, attr,
-                        [(node, ctx)
-                         for node, ctx in getattr(self, attr)
-                         if node is not oldnode])
-            for attr in triples:
-                setattr(self, attr,
-                        [(node, ctx, val)
-                         for node, ctx, val in getattr(self, attr)
-                         if node is not oldnode])
-        else:
-            for attr in pairs:
-                setattr(self, attr,
-                        [(node, ctx) if node is not oldnode else
-                         (newnode, ctx)
-                         for node, ctx in getattr(self, attr)])
-            for attr in triples:
-                setattr(self, attr,
-                        [(node, ctx, val) if node is not oldnode else
-                         (newnode, ctx, val)
-                         for node, ctx, val in getattr(self, attr)])
+        res = []
+        for indextyp, (node, ctx) in self._indexes:
+            if node is oldnode:
+                if newnode is not None:
+                    res.append((indextyp, (newnode, ctx)))
+            else:
+                res.append((indextyp, (node, ctx)))
+        self._indexes = res
 
     def set_scope(self, scope):
         self._scope = scope
@@ -538,14 +569,15 @@ class NamedVar(DistNode):
         """Add a node where this variable is being assigned to.
 
         An 'assignment' is a point in the program where a new value is
-        assigned to this variable. This includes assignment statements, delete
-        statements, and argument definitions.
+        "assigned" to this variable. This includes for example assignment
+        statements, delete statements, function arguments, and also function
+        definitions.
 
         """
         assert node.parent is not None
-        self.assignments.append((node, typectx))
+        self._indexes.append((AssignmentCtx, (node, typectx)))
 
-    def add_update(self, node, attr=None, attrtype=None):
+    def add_update(self, node, typectx=None):
         """Add a node where this variable is being updated.
 
         An 'update' is a point in the program where the state of the object
@@ -556,13 +588,13 @@ class NamedVar(DistNode):
 
         """
         assert node.parent is not None
-        self.updates.append((node, attr, attrtype))
+        self._indexes.append((UpdateCtx, (node, typectx)))
 
     def add_read(self, node, typectx=None):
         """Add a node where the value of this variable is being read.
         """
         assert node.parent is not None
-        self.reads.append((node, typectx))
+        self._indexes.append((ReadCtx, (node, typectx)))
 
     def purge_reads(self, scope):
         """Purges all read references in given scope from this NamedVar.
@@ -579,6 +611,16 @@ class NamedVar(DistNode):
                 remain.append(ref)
         self.reads = remain
         return removed
+
+    def last_assignment_before(self, place):
+        """Returns the assignment that affects `place`."""
+        last = None
+        for idxtype, (node, typctx) in self._indexes:
+            if node.is_contained_in(place):
+                break
+            if idxtype is AssignmentCtx:
+                last = node
+        return last
 
     def is_assigned_in(self, node):
         """True if this name is being assigned to inside 'node'."""
@@ -636,7 +678,7 @@ class NamedVar(DistNode):
         for _, typectx in self.assignments:
             if typectx is not None:
                 return typectx
-        for _, _, typectx in self.updates:
+        for _, typectx in self.updates:
             if typectx is not None:
                 return typectx
         for _, typectx in self.reads:
@@ -835,6 +877,8 @@ class SimpleExpr(Expression):
     def ordered_freevars(self):
         return []
 
+class NameExpr(SimpleExpr): pass
+
 class AttributeExpr(SimpleExpr):
 
     _attributes = ['attr'] + SimpleExpr._attributes
@@ -842,6 +886,19 @@ class AttributeExpr(SimpleExpr):
     def __init__(self, parent, ast=None):
         super().__init__(parent, ast)
         self.attr = None
+
+    @property
+    def text_repr(self):
+        comps = [self.attr]
+        base = self.value
+        while isinstance(base, AttributeExpr):
+            comps.append(base.attr)
+            base = base.value
+        if isinstance(base, NameExpr):
+            comps.append(base.value.name)
+        else:
+            comps.append(str(base))
+        return '.'.join(reversed(comps))
 
     def clone(self):
         node = super().clone()
@@ -1935,8 +1992,7 @@ class Program(CompoundStmt, NameScope):
     """The global NameScope.
     """
 
-    _fields = ['processes', 'entry_point'] + \
-              CompoundStmt._fields
+    _fields = ['entry_point'] + CompoundStmt._fields
     _attributes = ['configurations', 'directives'] + \
                   CompoundStmt._attributes
 
@@ -1958,7 +2014,7 @@ class InteractiveProgram(CompoundStmt, NameScope):
     """For interactive code.
     """
 
-    _fields = ['processes', 'entry_point', 'body']
+    _fields = ['entry_point', 'body']
 
     def __init__(self, parent=None, ast=None):
         super().__init__(parent, ast)
@@ -2418,9 +2474,8 @@ class EventHandler(Function):
 
 class Process(CompoundStmt, ArgumentsContainer):
 
-    _fields = ['bases', 'decorators', 'initializers', 'methods',
-               'events', 'entry_point'] + \
-        CompoundStmt._fields + ArgumentsContainer._fields
+    _fields = ['bases', 'decorators', 'methods',
+               'events', 'entry_point'] + ArgumentsContainer._fields
     _attributes = ['name', 'configurations'] + CompoundStmt._attributes
 
     def __init__(self, parent=None, ast=None, name="", bases=[]):

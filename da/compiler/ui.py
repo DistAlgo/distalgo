@@ -32,7 +32,6 @@ import argparse
 from .. import __version__
 from ..importer import da_cache_from_source
 from .utils import is_valid_debug_level, set_debug_level, to_source, to_file
-from .parser import Parser
 from .parser import daast_from_file
 from .parser import daast_from_str
 from .pygen import PythonGenerator
@@ -382,6 +381,8 @@ def _add_compiler_args(parser):
                     help="Disable all quantification transformations. "
                     "Only useful with '-i'.",
                     action='store_true')
+    ap.add_argument('--module-name', type=str, default='__main__',
+                    help="Name of the module to be compiled.")
 
 def parse_compiler_args(argv):
     ap = argparse.ArgumentParser(argument_default=argparse.SUPPRESS)

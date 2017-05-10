@@ -29,8 +29,11 @@ from ast import *
 from collections import abc
 
 from da import common
-from da.compiler import dast
-from da.compiler.utils import printe, printw, printd, Namespace
+from . import dast
+from .utils import Namespace
+from .utils import CompilerMessagePrinter
+from .utils import MalformedStatementError
+from .utils import ResolverException
 
 # DistAlgo keywords
 KW_ENTRY_POINT = "main"
@@ -83,6 +86,18 @@ def is_setup_func(node):
 
     return (isinstance(node, FunctionDef) and
             node.name == KW_SETUP)
+
+def is_process_class(node):
+    """True if `node` is a process class.
+
+    A process class is a class whose bases contain the name $KW_PROCESS_DEF.
+
+    """
+    if isinstance(node, ClassDef):
+        for b in node.bases:
+            if isinstance(b, Name) and b.id == KW_PROCESS_DEF:
+                return True
+    return False
 
 def extract_label(node):
     """Returns the label name specified in 'node', or None if 'node' is not a
@@ -208,16 +223,6 @@ ComprehensionTypes = {KW_COMP_SET, KW_COMP_TUPLE, KW_COMP_DICT, KW_COMP_LIST}
 EventKeywords = {KW_EVENT_DESTINATION, KW_EVENT_SOURCE, KW_EVENT_LABEL,
                  KW_EVENT_TIMESTAMP}
 Quantifiers = {KW_UNIVERSAL_QUANT, KW_EXISTENTIAL_QUANT}
-
-##########
-# Exceptions:
-class MalformedStatementError(Exception):
-    def __init__(self, reason=None, node=None, name=None, msg=None):
-        super().__init__(reason, node, name, msg)
-        self.reason = reason
-        self.node = node
-        self.name = name
-        self.msg = msg
 
 ##########
 # Name context types:
@@ -414,7 +419,7 @@ class Pattern2Constant(NodeVisitor):
         return expr
 
     def visit_BoundPattern(self, node):
-        return das.SimpleExpr(node.parent, value=node.value)
+        return dast.NameExpr(node.parent, value=node.value)
 
     def visit_FreePattern(self, node):
         # This really shouldn't happen
@@ -459,13 +464,14 @@ class PatternFinder(NodeVisitor):
     visit_NameConstant = visit_Constant
 
 
-class Parser(NodeVisitor):
+class Parser(NodeVisitor, CompilerMessagePrinter):
     """The main parser class.
     """
 
-    def __init__(self, filename="", options=None, execution_context=None):
+    def __init__(self, filename="", options=None, execution_context=None,
+                 _package=None, _parent=None):
         # used in error messages:
-        self.filename = filename
+        CompilerMessagePrinter.__init__(self, filename, _parent=_parent)
         # used to construct statement tree, also used for symbol table:
         self.state_stack = []
         # new statements are appended to this list:
@@ -474,11 +480,13 @@ class Parser(NodeVisitor):
         self.current_label = None
         # Allows temporarily overriding `current_process`:
         self._dummy_process = None
-        self.errcnt = 0
-        self.warncnt = 0
         self.program = execution_context
         self.cmdline_args = options
         self.module_args = Namespace()
+        from .symtab import Resolver
+        self.resolver = Resolver(filename, options,
+                                 _package if _package else options.module_name,
+                                 _parent=self)
 
     def get_option(self, option, default=None):
         if hasattr(self.cmdline_args, option):
@@ -607,20 +615,24 @@ class Parser(NodeVisitor):
                 self.debug("option not recognized: " + o, node.body[0])
         del node.body[0]
 
-    def parse_bases(self, node):
-        """Scans a ClassDef's bases list and checks whether the class defined by
-           'node' is a DistProcess.
-
-        A DistProcess is a class whose bases contain the name $KW_PROCESS_DEF.
-        """
-        isproc = False
+    def parse_bases(self, node, clsobj):
+        """Processes a ClassDef's bases list."""
         bases = []
         for b in node.bases:
-            if (isinstance(b, Name) and b.id == KW_PROCESS_DEF):
-                isproc = True
-            else:
+            if not (isinstance(b, Name) and b.id == KW_PROCESS_DEF):
+                self.current_context = Read(clsobj)
                 bases.append(self.visit(b))
-        return isproc, bases
+        if isinstance(clsobj, dast.Process):
+            # try to resolve the base classes:
+            for b in bases:
+                try:
+                    pd = self.resolver.find_process_definiton(b)
+                    clsobj.merge_scope(pd)
+                except ResolverException as e:
+                    self.warn('unable to resolve base class spec, '
+                              'compilation may be incomplete: {}.'
+                              .format(e.reason), e.node if e.node else b)
+        return bases
 
     def parse_pattern_expr(self, node, literal=False):
         expr = self.create_expr(dast.PatternExpr, node)
@@ -821,8 +833,7 @@ class Parser(NodeVisitor):
     # Top-level blocks:
 
     def visit_ClassDef(self, node):
-        isproc, bases = self.parse_bases(node)
-        if isproc:
+        if is_process_class(node):
             if type(self.current_parent) is not dast.Program:
                 self.error("Process definition must be at top level.", node)
 
@@ -839,13 +850,13 @@ class Parser(NodeVisitor):
                 self.warn("Process missing 'setup()' definition.", node)
 
             n = self.current_scope.add_name(node.name)
-            proc = dast.Process(self.current_parent, node,
-                                name=node.name, bases=bases)
-            n.add_assignment(proc)
+            proc = dast.Process(self.current_parent, node, name=node.name)
+            n.add_assignment(proc, proc)
             proc.decorators, _, _ = self.parse_decorators(node)
             self.push_state(proc)
             self.program.processes.append(proc)
             self.program.body.append(proc)
+            proc.bases = self.parse_bases(node, proc)
 
             if initfun is not None:
                 self.signature(initfun.args)
@@ -869,16 +880,16 @@ class Parser(NodeVisitor):
                           (proc.name, KW_PROCESS_ENTRY_POINT), node)
 
         else:
-            clsobj = dast.ClassStmt(self.current_parent, node,
-                                    name=node.name, bases=bases)
+            clsobj = dast.ClassStmt(self.current_parent, node, name=node.name)
             if self.current_block is None or self.current_parent is None:
                 self.error("Statement not allowed in this context.", ast)
             else:
                 self.current_block.append(clsobj)
                 n = self.current_scope.add_name(node.name)
-                n.add_assignment(clsobj)
+                n.add_assignment(clsobj, clsobj)
             clsobj.decorators, _, _ = self.parse_decorators(node)
             self.push_state(clsobj)
+            clsobj.bases = self.parse_bases(node, clsobj)
             self.current_block = clsobj.body
             self.body(node.body)
             dbgstr = ["Class ", clsobj.name, " has names: "]
@@ -902,7 +913,7 @@ class Parser(NodeVisitor):
             n = self.current_scope.add_name(node.name)
             s = self.create_stmt(dast.Function, node,
                                  params={"name" : node.name})
-            n.add_assignment(s)
+            n.add_assignment(s, s)
             s.process = self.current_process
             if isinstance(s.parent, dast.Process):
                 if s.name == KW_PROCESS_ENTRY_POINT:
@@ -1050,15 +1061,23 @@ class Parser(NodeVisitor):
             stmtobj = self.create_stmt(dast.ImportStmt, node)
         for alias in node.names:
             if alias.asname is not None:
+                # `alias.asname` can only be a normal (i.e. doesn't contain
+                # dots) name, so we just register that:
                 nobj = self.current_scope.add_name(alias.asname)
                 nalias = dast.Alias(stmtobj, alias,
-                                    name=alias.name, asname=nobj)
+                                    name=alias.name, asname=nobj.name)
             else:
-                nobj = self.current_scope.add_name(alias.name)
-                nalias = dast.Alias(stmtobj, alias, name=nobj)
+                # `alias.name` could be a dotted name, in which case we should
+                # register the top-level component instead of the full name,
+                # since any use of the dotted-name will appear as an Attribute
+                # in the AST
+                toplevel = alias.name.split('.')[0]
+                nobj = self.current_scope.add_name(toplevel)
+                nalias = dast.Alias(stmtobj, alias, name=alias.name)
             nobj.add_assignment(stmtobj)
             stmtobj.items.append(nalias)
         if hasattr(node, 'module'):
+            # This is an 'import from' statement:
             stmtobj.module = node.module
             stmtobj.level = node.level
         self.pop_state()
@@ -1498,6 +1517,7 @@ class Parser(NodeVisitor):
 
     def visit_Attribute(self, node):
         expr = self.create_expr(dast.AttributeExpr, node)
+        oldctx = self.current_context
         if (isinstance(self.current_context, FunCall) and
                 node.attr in KnownUpdateMethods):
             # Calling a method that is known to update an object's state is an
@@ -1519,29 +1539,29 @@ class Parser(NodeVisitor):
                 return expr.value
             # Need to update the namedvar object
             n = self.current_process.find_name(expr.attr)
-            expr = self.create_expr(dast.SimpleExpr, node)
+            expr = self.create_expr(dast.NameExpr, node)
             if n is None:
-                if (self.is_in_setup() and
-                        isinstance(self.current_context, Assignment)):
+                if (self.is_in_setup() and isinstance(oldctx, Assignment)):
                     self.debug("Adding name '%s' to process scope"
                                " from setup()." % node.attr, node)
                     n = self.current_process.add_name(node.attr)
-                    n.add_assignment(self.current_context.node,
-                                     self.current_context.type)
+                    n.add_assignment(oldctx.node, oldctx.type)
                     n.set_scope(self.current_process)
+                elif isinstance(oldctx, FunCall):
+                    self.debug("Explicitly calling method '%s' defined "
+                               "in superclass." % node.attr, node)
+                    n = self.current_process.add_name(node.attr)
+                    n.add_read(expr)
                 else:
                     self.error("Undefined process state variable: " +
                                str(node.attr), node)
             else:
-                if isinstance(self.current_context, Assignment) or \
-                   isinstance(self.current_context, Delete):
+                if isinstance(oldctx, Assignment) or isinstance(oldctx, Delete):
                     self.debug("Assignment to variable '%s'" % str(n), node)
-                    n.add_assignment(self.current_context.node,
-                                     self.current_context.type)
-                elif isinstance(self.current_context, Update):
+                    n.add_assignment(oldctx.node, oldctx.type)
+                elif isinstance(oldctx, Update):
                     self.debug("Update to process variable '%s'" % str(n), node)
-                    n.add_update(self.current_context.node,
-                                 self.current_context.type)
+                    n.add_update(oldctx.node, oldctx.type)
                 else:
                     n.add_read(expr)
             expr.value = n
@@ -2058,8 +2078,8 @@ class Parser(NodeVisitor):
             return expr
 
         # NamedVar is not by itself an Expression, we'll have to wrap it in a
-        # SimpleExpr:
-        expr = self.create_expr(dast.SimpleExpr, node)
+        # NameExpr:
+        expr = self.create_expr(dast.NameExpr, node)
         n = self.current_scope.find_name(node.id, local=False)
         if isinstance(self.current_context, Assignment) or\
            isinstance(self.current_context, Delete):
@@ -2075,7 +2095,7 @@ class Parser(NodeVisitor):
                           node.id, node)
                 self.debug(str(self.current_scope.parent_scope), node)
                 n = self.current_scope.add_name(node.id)
-            n.add_update(self.current_context.node, None,
+            n.add_update(self.current_context.node,
                          self.current_context.type)
         elif isinstance(self.current_context, Read) or \
              isinstance(self.current_context, FunCall):
@@ -2246,7 +2266,8 @@ class Parser(NodeVisitor):
         if isinstance(self.current_context, Assignment) or\
            isinstance(self.current_context, Delete):
             # Assignment to an index position is an update to the container:
-            self.current_context = Update(self.current_context.node)
+            self.current_context = Update(self.current_context.node,
+                                          self.current_context.type)
         expr.value = self.visit(node.value)
         self.current_context = Read(expr)
         expr.index = self.visit(node.slice)
@@ -2348,28 +2369,6 @@ class Parser(NodeVisitor):
         expr.value = self.visit(node.value)
         self.pop_state()
         return expr
-
-    # Helper Nodes
-
-    def error(self, mesg, node):
-        self.errcnt += 1
-        if node is not None:
-            printe(mesg, node.lineno, node.col_offset, self.filename)
-        else:
-            printe(mesg, 0, 0, self.filename)
-
-    def warn(self, mesg, node):
-        self.warncnt += 1
-        if node is not None:
-            printw(mesg, node.lineno, node.col_offset, self.filename)
-        else:
-            printw(mesg, 0, 0, self.filename)
-
-    def debug(self, mesg, node=None):
-        if node is not None:
-            printd(mesg, node.lineno, node.col_offset, self.filename)
-        else:
-            printd(mesg, 0, 0, self.filename)
 
 if __name__ == "__main__":
     pass

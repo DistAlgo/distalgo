@@ -606,7 +606,7 @@ class PythonGenerator(NodeVisitor):
         cd.decorator_list = [self.visit(d) for d in node.decorators]
         return [cd]
 
-    def visit_SimpleExpr(self, node):
+    def visit_NameExpr(self, node):
         # `visit()` will overwrite the location attributes of the generated AST
         # using the location of `node`:
         return self.visit(node.value)
@@ -1270,16 +1270,16 @@ class PythonGenerator(NodeVisitor):
         names = []
         for item in node.items:
             if item.asname is None:
-                names.append(alias(item.name.name, None))
+                names.append(alias(item.name, None))
             else:
-                names.append(alias(item.name, item.asname.name))
+                names.append(alias(item.name, item.asname))
         return [Import(names)]
 
     def visit_ImportFromStmt(self, node):
         names = []
         for item in node.items:
             if item.asname is None:
-                names.append(alias(item.name.name, None))
+                names.append(alias(item.name, None))
             else:
                 names.append(alias(item.name, item.asname.name))
         return [ImportFrom(node.module, names, node.level)]
