@@ -63,6 +63,18 @@ def parseArgs():
                         help="replays the recorded message traces "
                         "instead of running the `main` method. ")
 
+    parser.add_argument("-P", "--dump-trace", action='store_true', default=False,
+                        help="print the contents of DistAlgo trace files. "
+                        "The files to print are specified by '--replay_traces'.")
+    parser.add_argument("-Sm", "--substitute-modules", nargs='+', default=[],
+                        help="a list of ORIGMOD:NEWMOD pairs, such that all "
+                        "references to ORIGMOD will be replaced by NEWMOD "
+                        "when unpickling messages or replaying traces. ")
+    parser.add_argument("-Sc", "--substitute-classes", nargs='+', default=[],
+                        help="a list of ORIGCLS:NEWCLS pairs, such that all "
+                        "references to ORIGCLS will be replaced by NEWCLS "
+                        "when unpickling messages or replaying traces. ")
+
     parser.add_argument("--logfilename",
                         help="file name of the log file, defaults to appending"
                         "'.log' to the source file name.")
@@ -199,9 +211,6 @@ def parseArgs():
     group.add_argument("-B", "--help-builtins", action='store_true', default=False,
                        help="print a list of DistAlgo built-in functions and "
                        "exit.")
-    group.add_argument("-P", "--dump-trace", action='store_true', default=False,
-                       help="print the contents of DistAlgo trace files. "
-                       "The files to print are specified by '--replay_traces'.")
     group.add_argument("file", nargs='?',
                         help="DistAlgo source file to run.")
     parser.add_argument("args", nargs=argparse.REMAINDER,
@@ -210,8 +219,6 @@ def parseArgs():
     args = parser.parse_args()
     if args.help_builtins:
         return help_builtins()
-    elif args.dump_trace:
-        return dump_traces(args.replay_traces)
     elif not args.idle and args.module is None and args.file is None:
         parser.print_usage()
         return 1
@@ -230,16 +237,6 @@ def help_builtins():
         sig = ", ".join([arg for arg in signature(func).parameters
                          if arg != 'self'])
         print("{}({}):\n\t{}\n".format(fname, sig, func.__doc__))
-    return 0
-
-def dump_traces(traces):
-    if not traces:
-        die('No trace files specified.')
-    for filename in traces:
-        try:
-            dump_trace(filename)
-        except OSError as e:
-            sys.stderr.write('{}: {}\n'.format(type(e).__name__, e))
     return 0
 
 def libmain():

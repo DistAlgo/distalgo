@@ -26,14 +26,17 @@ import os
 import sys
 import time
 import stat
-import pickle
 import logging
 import collections.abc
 import os.path
 
 from sys import stderr
 from . import common, sim, endpoint
-from .common import api, deprecated, get_runtime_option, ProcessId
+from .common import api
+from .common import deprecated
+from .common import get_runtime_option
+from .common import ProcessId
+from .common import ObjectLoader
 
 PYTHON_SUFFIX = ".py"
 NODECLS = "Node_"
@@ -260,6 +263,10 @@ def entrypoint():
     traces = get_runtime_option('replay_traces')
     router = None
     trman = None
+
+    if get_runtime_option('dump_trace'):
+        return dump_traces(traces)
+
     if len(nodename) == 0:
         # Safety precaution: disallow distributed messaging when no node name
         # specified (i.e. run an isolated node), by setting the cookie to a
@@ -383,6 +390,20 @@ def entrypoint():
 
     return 0
 
+def dump_traces(traces):
+    if not traces:
+        die('No trace files specified.')
+    for filename in traces:
+        try:
+            dump_trace(filename)
+        except (ImportError, AttributeError) as e:
+            sys.stderr.write("{}, please check the "
+                             "-m, -Sm, -Sc, or 'file' command line arguments.\n"
+                             .format(e))
+        except OSError as e:
+            sys.stderr.write('{}: {}\n'.format(type(e).__name__, e))
+    return 0
+
 def dump_trace(filename):
     with open(filename, 'rb') as stream:
         print('Dumping {}:'.format(filename))
@@ -405,12 +426,13 @@ def dump_trace(filename):
         else:
             stderr.write("Error: unknown trace type {}\n".format(tracetyp))
             return
-        pid = pickle.load(stream)
-        parent = pickle.load(stream)
+        loader = ObjectLoader(stream)
+        pid = loader.load()
+        parent = loader.load()
         print("  Running process: {}\tParent process: {}\n".format(pid, parent))
         while True:
             try:
-                dump_item(stream)
+                dump_item(loader)
             except EOFError:
                 break
             except Exception as e:
@@ -419,7 +441,7 @@ def dump_trace(filename):
         print("END OF TRACE")
 
 def dump_recv_item(stream):
-    delay, item = pickle.load(stream)
+    delay, item = stream.load()
     if isinstance(item, common.QueueEmpty):
         print("-- {!r} ".format(item), end='')
     else:
@@ -431,7 +453,7 @@ def dump_recv_item(stream):
 
 RESULT_STR = { True:'Succeeded', False:'Failed'}
 def dump_send_item(stream):
-    event, value = pickle.load(stream)
+    event, value = stream.load()
     if event == sim.Command.Message:
         print(" ({}) => ".format(RESULT_STR[value]))
     elif event == sim.Command.New:

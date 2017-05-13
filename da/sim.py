@@ -22,12 +22,13 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+import io
 import sys
 import copy
 import enum
 import time
-import random
 import pickle
+import random
 import logging
 import functools
 import threading
@@ -37,7 +38,8 @@ import os.path
 
 from . import common, pattern, endpoint
 from .common import (builtin, internal, name_split_host, name_split_node,
-                     ProcessId, get_runtime_option)
+                     ProcessId, get_runtime_option,
+                     ObjectDumper, ObjectLoader)
 from .endpoint import ChannelCaps
 
 logger = logging.getLogger(__name__)
@@ -1052,10 +1054,16 @@ def process_trace_header(tracefd, trace_type):
     if typ != trace_type:
         raise TraceFormatException('{}: expecting type {} but is {}'
                                    .format(typ, trace_type))
-    pid = pickle.load(tracefd)
+    loader = ObjectLoader(tracefd)
+    try:
+        pid = loader.load()
+    except (ImportError, AttributeError) as e:
+        raise TraceMismatchException(
+            "{}, please check the "
+            "-m, -Sm, -Sc, or 'file' command line arguments.\n".format(e))
     if not isinstance(pid, ProcessId):
         raise TraceCorruptedException(tracefd.name)
-    parentid = pickle.load(tracefd)
+    parentid = loader.load()
     if not isinstance(parentid, ProcessId):
         raise TraceCorruptedException(tracefd.name)
     return pid, parentid
@@ -1064,8 +1072,9 @@ def write_trace_header(pid, parent, trace_type, stream):
     stream.write(TRACE_HEADER)
     stream.write(common.VERSION_BYTES)
     stream.write(bytes([trace_type]))
-    pickle.dump(pid, stream)
-    pickle.dump(parent, stream)
+    dumper = ObjectDumper(stream)
+    dumper.dump(pid)
+    dumper.dump(parent)
 
 class ReplayQueue:
     """A queue that simply replays recorded messages in order.
@@ -1074,10 +1083,12 @@ class ReplayQueue:
     def __init__(self, in_stream, out_stream):
         self._in_file = in_stream
         self._out_file = out_stream
+        self._in_loader = ObjectLoader(in_stream)
+        self._out_loader = ObjectLoader(out_stream)
 
     def pop(self, block=True, timeout=None):
         try:
-            delay, item = pickle.load(self._in_file)
+            delay, item = self._in_loader.load()
             if delay:
                 time.sleep(delay)
             if isinstance(item, common.QueueEmpty):
@@ -1285,7 +1296,7 @@ class Router(threading.Thread):
         # This test is necessary because a dead process might still be active
         # one user-created threads:
         if queue is not None:
-            pickle.dump((rectype, res), queue._out_file)
+            queue._out_dumper.dump((rectype, res))
 
     def replay_send(self, src, dest, mesg, params=dict(), flags=0,
                      impersonate=None):
@@ -1300,7 +1311,7 @@ class Router(threading.Thread):
         queue = self.local_procs.get(targetpid, None)
         assert queue is not None
         try:
-            return pickle.load(queue._out_file)
+            return queue._out_loader.load()
         except EOFError as e:
             raise TraceEndedException("No more items in send trace.") from e
 

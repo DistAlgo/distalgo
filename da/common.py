@@ -108,6 +108,16 @@ def _version_as_bytes():
             ((PATCH_VERSION & 0xff) << 8) | prerelease).to_bytes(4, 'big')
 VERSION_BYTES = _version_as_bytes()
 
+def _parse_items(items):
+    subs = dict()
+    for item in items:
+        parts = item.split(':')
+        if len(parts) != 2:
+            raise InvalidStateException('unrecognized substitute spec: {}'
+                                        .format(item))
+        subs[parts[0]] = parts[1]
+    return subs
+
 def initialize_runtime_options(options):
     """Sets and sanitizes runtime options.
 
@@ -132,6 +142,12 @@ def initialize_runtime_options(options):
             GlobalOptions['hostname'] = 'localhost'
     GlobalOptions['hostname'] \
         = socket.gethostbyname(GlobalOptions['hostname'])
+
+    # Parse '--substitute-classes' and '--substitute-modules':
+    GlobalOptions['substitute_classes'] = \
+                            _parse_items(GlobalOptions['substitute_classes'])
+    GlobalOptions['substitute_modules'] = \
+                            _parse_items(GlobalOptions['substitute_modules'])
 
     # Configure multiprocessing package to use chosen semantics:
     import multiprocessing
@@ -314,6 +330,36 @@ def name_split_node(name):
         return (comps[0], comps[0])
     else:
         return (None, None)
+
+#########################
+# Custom pickling
+
+class _ObjectLoader(pickle.Unpickler):
+    """Unpickler that honors the '--substitute_classes' command line option."""
+
+    def __init__(self, file, **rest):
+        super().__init__(file, **rest)
+        if GlobalOptions['substitute_classes'] or \
+           GlobalOptions['substitute_modules']:
+            self.find_class = self._find_class
+
+    def _find_class(self, module, name):
+        module = GlobalOptions['substitute_modules'].get(module, module)
+        name = GlobalOptions['substitute_classes'].get(name, name)
+        return super().find_class(module, name)
+
+def _loads(buf):
+    file = io.BytesIO(buf)
+    return _ObjectLoader(file).load()
+
+# default to the standard library if we don't need to do anything wacky:
+ObjectLoader = _ObjectLoader
+ObjectDumper = pickle.Pickler
+loads = pickle.loads
+dumps = pickle.dumps
+
+#####################
+# Process Id
 
 class ProcessId(namedtuple("_ProcessId",
                            'uid, seqno, pcls, \
@@ -625,6 +671,8 @@ class WaitableQueue:
         self._num_waiting = 0
         if trace_files is not None:
             self._in_file, self._out_file = trace_files
+            self._in_dumper = ObjectDumper(self._in_file)
+            self._out_dumper = ObjectDumper(self._out_file)
             self.__pop = self.pop
             self.pop = self._pop_and_record
         else:
@@ -679,14 +727,14 @@ class WaitableQueue:
             item = self.__pop(block, timeout)
             if delay:
                 delay = time.time() - delay
-            pickle.dump((delay, item), self._in_file)
+            self._in_dumper.dump((delay, item))
             return item
         except QueueEmpty as e:
             # We must record all `QueueEmpty` events as well, in order for the
             # execution to be fully reproduced:
             if delay:
                 delay = time.time() - delay
-            pickle.dump((delay, e), self._in_file)
+            self._in_dumper.dump((delay, e))
             raise e
 
     def __len__(self):
