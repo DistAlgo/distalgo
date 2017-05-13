@@ -1541,7 +1541,7 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
             n = self.current_process.find_name(expr.attr)
             expr = self.create_expr(dast.NameExpr, node)
             if n is None:
-                if (self.is_in_setup() and isinstance(oldctx, Assignment)):
+                if isinstance(oldctx, Assignment):
                     self.debug("Adding name '%s' to process scope"
                                " from setup()." % node.attr, node)
                     n = self.current_process.add_name(node.attr)
