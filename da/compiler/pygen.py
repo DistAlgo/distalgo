@@ -321,7 +321,7 @@ def translate(distalgo_ast, filename="", options=None):
         raise PythonGeneratorException(str(pg.current_node)) from ex
 
 # List of arguments needed to initialize a process:
-PROC_INITARGS = ["procimpl"]
+PROC_INITARGS = ["procimpl", "forwarder"]
 
 PREAMBLE = parse(
     """

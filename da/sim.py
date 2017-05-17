@@ -30,6 +30,7 @@ import time
 import pickle
 import random
 import logging
+import itertools
 import functools
 import threading
 import collections
@@ -103,7 +104,7 @@ class DistProcess():
     be created by calling `new`.
 
     """
-    def __init__(self, procimpl, is_replay=False, **props):
+    def __init__(self, procimpl, forwarder, **props):
         self.__procimpl = procimpl
         self.__id = procimpl.dapid
         self._log = logging.LoggerAdapter(
@@ -111,21 +112,14 @@ class DistProcess():
             .getChild(self.__class__.__qualname__), {'daPid' : self._id})
         self.__newcmd_seqno = procimpl.seqno
         self.__messageq = procimpl.router.get_queue_for_process(self._id)
-        if is_replay:
-            self.__forwarder = procimpl.router.replay_send
-            self._create_cmd_seqno = self.__create_dummy_cmd_seqno_for_recording
-        elif get_runtime_option('record_trace'):
-            self.__forwarder = procimpl.router.send
-            self._create_cmd_seqno = self.__create_dummy_cmd_seqno_for_recording
-        else:
-            self.__forwarder = procimpl.router.send
+        self.__forwarder = forwarder
         self.__properties = props
         self.__jobq = collections.deque()
         self.__lock = threading.Lock()
         self.__local = threading.local()
         self.__local.timer = None
         self.__local.timer_expired = False
-        self.__local.seqcnt = 0
+        self.__seqcnt = itertools.count(start=0)
         self.__setup_called = False
         self.__running = False
         self.__parent = procimpl.daparent
@@ -707,21 +701,23 @@ class DistProcess():
 
     @internal
     def _create_cmd_seqno(self):
-        cnt = self.__local.seqcnt = (self.__local.seqcnt + 1) % 1024
-        return (threading.current_thread().ident << 10) | cnt
-
-    def __create_dummy_cmd_seqno_for_recording(self):
-        """Version of `_create_cmd_seqno` for recording and replaying traces.
-
-        In order for sequence numbers to be reproducible, we remove the
-        randomizing factor (i.e. the current thread id) in their generation.
-        This version will not be safe if there are user-created threads, but it
-        is fine since it is impossible to have reproducible traces in the
-        presence of user-created threads anyway.
+        """Returns a unique sequence number for pairing command messages to their
+    replies.
 
         """
-        cnt = self.__local.seqcnt = (self.__local.seqcnt + 1) % 0xffffffff
-        return cnt
+        cnt = self.__seqcnt
+        # we piggyback off the GIL for thread-safety:
+        seqno = next(cnt)
+        # when the counter value gets too big, itertools.count will switch into
+        # "slow mode"; we don't want slow, and we don't need that many unique
+        # values simultaneously, so we just reset the counter once in a while:
+        if seqno > 0xfffffff0:
+            with self.__lock:
+                # this test checks that nobody else has reset the counter before
+                # we acquired the lock:
+                if self.__seqcnt is cnt:
+                    self.__seqcnt = itertools.count(start=0)
+        return seqno
 
     @internal
     def _register_async_event(self, msgtype, seqno):
@@ -931,8 +927,8 @@ class NodeProcess(DistProcess):
 
     AckCommands = DistProcess.AckCommands + [Command.NodeAck]
 
-    def __init__(self, procimpl, **props):
-        super().__init__(procimpl, **props)
+    def __init__(self, procimpl, forwarder, **props):
+        super().__init__(procimpl, forwarder, **props)
         self._router = procimpl.router
         self._nodes = set()
 
@@ -1076,37 +1072,6 @@ def write_trace_header(pid, parent, trace_type, stream):
     dumper.dump(pid)
     dumper.dump(parent)
 
-class ReplayQueue:
-    """A queue that simply replays recorded messages in order.
-
-    """
-    def __init__(self, in_stream, out_stream):
-        self._in_file = in_stream
-        self._out_file = out_stream
-        self._in_loader = ObjectLoader(in_stream)
-        self._out_loader = ObjectLoader(out_stream)
-
-    def pop(self, block=True, timeout=None):
-        try:
-            delay, item = self._in_loader.load()
-            if delay:
-                time.sleep(delay)
-            if isinstance(item, common.QueueEmpty):
-                raise item
-            else:
-                return item
-        except (EOFError, pickle.UnpicklingError) as e:
-            self.close()
-            raise TraceEndedException("No more items in receive trace.") from e
-
-    def close(self):
-        if self._in_file is not None:
-            self._in_file.close()
-            self._in_file = None
-        if self._out_file is not None:
-            self._out_file.close()
-            self._out_file = None
-
 class Router(threading.Thread):
     """The router thread.
 
@@ -1148,7 +1113,7 @@ class Router(threading.Thread):
         with self.lock:
             if pid in self.local_procs:
                 self.log.warning("Registering duplicate process: %s.", pid)
-            self.local_procs[pid] = ReplayQueue(in_stream, out_stream)
+            self.local_procs[pid] = common.ReplayQueue(in_stream, out_stream)
         self.log.debug("Process %s registered.", pid)
 
     def _record_local_process(self, pid, parent=None):
@@ -1510,7 +1475,6 @@ class ProcessContainer:
                 .format(tracename, sndname)
             )
         self._dacls = self.dapid.pcls
-        self._properties['is_replay'] = True
 
     def cleanup(self):
         if self._trace_in_fd:
@@ -1690,13 +1654,15 @@ class ProcessContainer:
 
             self.init_router()
             if not self._trace_out_fd:
+                forwarder = self.router.send
                 self.router.register_local_process(self.dapid, self.daparent)
             else:
+                forwarder = self.router.replay_send
                 self.router.replay_local_process(self.dapid,
                                                  self._trace_in_fd,
                                                  self._trace_out_fd)
             self.start_router()
-            self._daobj = self._dacls(self, **(self._properties))
+            self._daobj = self._dacls(self, forwarder, **(self._properties))
             self._log.debug("Process object initialized.")
 
             return self._daobj._delayed_start()

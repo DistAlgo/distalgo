@@ -43,7 +43,7 @@ from functools import wraps
 MAJOR_VERSION = 1
 MINOR_VERSION = 1
 PATCH_VERSION = 0
-PRERELEASE_VERSION = "b7"
+PRERELEASE_VERSION = "b9"
 
 __version__ = "{}.{}.{}{}".format(MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION,
                                    PRERELEASE_VERSION)
@@ -739,6 +739,41 @@ class WaitableQueue:
 
     def __len__(self):
         return self._q.__len__()
+
+class ReplayQueue:
+    """A queue that simply replays recorded messages in order.
+
+    """
+    def __init__(self, in_stream, out_stream):
+        self._in_file = in_stream
+        self._out_file = out_stream
+        self._in_loader = ObjectLoader(in_stream)
+        self._out_loader = ObjectLoader(out_stream)
+
+    def pop(self, block=True, timeout=None):
+        try:
+            delay, item = self._in_loader.load()
+            if delay:
+                time.sleep(delay)
+            if isinstance(item, common.QueueEmpty):
+                raise item
+            else:
+                return item
+        except (EOFError, pickle.UnpicklingError) as e:
+            self.close()
+            raise TraceEndedException("No more items in receive trace.") from e
+
+    def close(self):
+        if self._in_file is not None:
+            self._in_file.close()
+            self._in_file = None
+        if self._out_file is not None:
+            self._out_file.close()
+            self._out_file = None
+
+
+#########################
+# LRU queue:
 
 class Node(object):
     __slots__ = ['prev', 'next', 'me']
