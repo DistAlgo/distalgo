@@ -604,12 +604,16 @@ class NamedVar(DistNode):
         """
         removed = []
         remain = []
-        for ref in self.reads:
-            if ref[0].scope is scope:
-                removed.append(ref)
+        for ref in self._indexes:
+            idxtype, (node, typectx) = ref
+            if idxtype is ReadCtx:
+                if node.scope is scope:
+                    removed.append((node, typectx))
+                else:
+                    remain.append(ref)
             else:
                 remain.append(ref)
-        self.reads = remain
+        self._indexes = remain
         return removed
 
     def last_assignment_before(self, place):
@@ -877,7 +881,18 @@ class SimpleExpr(Expression):
     def ordered_freevars(self):
         return []
 
-class NameExpr(SimpleExpr): pass
+class NameExpr(SimpleExpr):
+    @property
+    def name(self):
+        return self.value.name
+
+    @name.setter
+    def name(self, name):
+        nobj = self.scope.find_name(name)
+        if nobj is not None:
+            self.value = nobj
+        else:
+            self.value = self.scope.add_name(name)
 
 class AttributeExpr(SimpleExpr):
 
