@@ -309,7 +309,8 @@ def entrypoint():
                                                  router=router)
                 nodeimpl.start()
                 log.info("Waiting for remaining child processes to terminate..."
-                         "(Press \"Ctrl-C\" to force kill)")
+                         "(Press \"Ctrl-%s\" to force kill)",
+                         "Brk" if sys.platform == 'win32' else 'C')
                 nodeimpl.join()
                 nodeimpl = None
                 log.info("Main process terminated.")
