@@ -856,6 +856,7 @@ class DistProcess():
                 self._log.debug("`setup` complete.")
             except Exception as e:
                 self._log.error("Exception during setup(%r): %r", args, e)
+                self._log.debug("%r", e, exc_info=1)
         self._send1(msgtype=Command.SetupAck,
                     message=(seqno, True),
                     to=src,
