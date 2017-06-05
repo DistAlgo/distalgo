@@ -846,6 +846,7 @@ class DistProcess():
     @internal
     def _cmd_Setup(self, src, args):
         seqno, realargs = args
+        res = True
         if self.__setup_called:
             self._log.warning("`setup` already called for this process!")
         else:
@@ -857,8 +858,13 @@ class DistProcess():
             except Exception as e:
                 self._log.error("Exception during setup(%r): %r", args, e)
                 self._log.debug("%r", e, exc_info=1)
+                res = False
+            if hasattr(sys.stdout, 'flush'):
+                sys.stdout.flush()
+            if hasattr(sys.stderr, 'flush'):
+                sys.stderr.flush()
         self._send1(msgtype=Command.SetupAck,
-                    message=(seqno, True),
+                    message=(seqno, res),
                     to=src,
                     flags=ChannelCaps.RELIABLEFIFO)
 
