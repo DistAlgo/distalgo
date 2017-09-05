@@ -31,6 +31,7 @@ class Server(process):
         # Leader states:
         self.nextIndex = dict((p, 1) for p in peers)
         self.matchIndex = dict((p, 0) for p in peers)
+        self.has_idled = False  # True if the leader needs to broadcast a heartbeat
 
         self.last_seen_leader = None # Shortcut for informing clients
         self._dispatch_table = {Follower  : self.follower_term,
@@ -72,6 +73,7 @@ class Server(process):
             # Reinitialize volatile Leader states:
             nextIndex = dict((p, len(log)) for p in peers)
             matchIndex = dict((p, 0) for p in peers)
+            has_idled = True    # Force initial heartbeat
         elif some(received(('AppendEntries', term, leader, _, _, _, _)),
                   has= term >= currentTerm):
             output("Elected leader:", leader, "Reverting to Follower.")
@@ -82,24 +84,28 @@ class Server(process):
 
     def leader_term(termTimeout):
         for server, index in nextIndex.items():
-            AppendEntriesRPC(target=server,
-                             term=currentTerm,
-                             leaderId=self,
-                             prevLogIndex=index-1,
-                             prevLogTerm=log[index-1].term,
-                             entries=log[index:],
-                             leaderCommit=commitIndex)
-
+            if has_idled or index < len(log):
+                AppendEntriesRPC(target=server,
+                                 term=currentTerm,
+                                 leaderId=self,
+                                 prevLogIndex=index-1,
+                                 prevLogTerm=log[index-1].term,
+                                 entries=log[index:],
+                                 leaderCommit=commitIndex)
+        has_idled = False
         if await(currentRole is not Leader):
             return
+        elif some(n in range(len(log) - 1),
+                  has= (n > commitIndex and
+                        len(setof(i, i in matchIndex, matchIndex[i] >= n)) >
+                        len(peers) / 2 and
+                        log[n].term == currentTerm)):
+            debug("Updating commitIndex from %d to %d" % (commitIndex, n))
+            commitIndex = n
         # Idle timeout is half of normal term timeout:
         elif timeout(termTimeout/2):
-            if some(n in range(len(log) - 1),
-                    has= (n > commitIndex and
-                          len(setof(i, i in matchIndex, matchIndex[i] >= n)) >
-                          len(peers) / 2 and
-                          log[n].term == currentTerm)):
-                commitIndex = n
+            debug("Idle timeout triggered.")
+            has_idled = True
 
     def receive(msg= ('RequestVote', term, candidateId,
                       lastLogIndex, lastLogTerm)):
@@ -212,7 +218,7 @@ class Client(process):
                 output("Request", req + 1, "complete.")
                 req += 1
             elif timeout(timeout/1000):
-                debug("Timeout, new random.")
+                debug("Server", target, "timed out, choosing new one randomly.")
                 target = random.choice(servers)
 
         send(('Done',), to=parent())
