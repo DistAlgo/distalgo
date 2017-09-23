@@ -1386,6 +1386,7 @@ class Router(threading.Thread):
         else:
             timeleft = None
         while True:
+            transport, remote = "<unknown>", "<unknown>"
             try:
                 transport, chunk, remote = incomingq.pop(block=True,
                                                          timeout=timeleft)
@@ -1396,8 +1397,10 @@ class Router(threading.Thread):
                 self._dispatch(src, dest, mesg)
             except common.QueueEmpty:
                 pass
-            except (ValueError, pickle.UnpicklingError) as e:
-                self.log.warning("Dropped invalid message: %r", chunk)
+            except (ImportError, ValueError, pickle.UnpicklingError) as e:
+                self.log.warning(
+                    "Dropped invalid message from %s through %s: %r",
+                    remote, transport, e)
             if until():
                 break
             if timeout is not None:
