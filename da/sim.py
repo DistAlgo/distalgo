@@ -1176,7 +1176,7 @@ class Router(threading.Thread):
                             tuple(port for _ in range(len(nid.transports))))
         self.log.debug("Dummy id: %r", dummyid)
         for transport in self.endpoint.transports:
-            self.log.debug("Attempting bootstrap using %r...", transport)
+            self.log.debug("Attempting bootstrap using %s...", transport)
             try:
                 self._send_remote(src=nid,
                                   dest=dummyid,
@@ -1191,14 +1191,14 @@ class Router(threading.Thread):
                     return
                 else:
                     self.log.debug(
-                        "Bootstrap attempt to %s:%d with %r timed out. ",
+                        "Bootstrap attempt to %s:%d with %s timed out. ",
                         hostname, port, transport)
                     self.bootstrap_peer = None
             except endpoint.AuthenticationException as e:
                 # Abort immediately:
                 raise e
             except (CircularRoutingException, endpoint.TransportException) as e:
-                self.log.debug("Bootstrap attempt to %s:%d with %r failed "
+                self.log.debug("Bootstrap attempt to %s:%d with %s failed "
                                ": %r", hostname, port, transport, e)
         if self.bootstrap_peer is None:
             raise BootstrapException("Unable to contact a peer node.")
@@ -1387,13 +1387,13 @@ class Router(threading.Thread):
             timeleft = None
         while True:
             transport, remote = "<unknown>", "<unknown>"
+            chunk = None
             try:
                 transport, chunk, remote = incomingq.pop(block=True,
                                                          timeout=timeleft)
                 if transport.data_offset > 0:
                     chunk = memoryview(chunk)[transport.data_offset:]
                 src, dest, mesg = pickle.loads(chunk)
-                chunk = None
                 self._dispatch(src, dest, mesg)
             except common.QueueEmpty:
                 pass

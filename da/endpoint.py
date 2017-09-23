@@ -480,7 +480,7 @@ class UdpTransport(SocketTransport):
                 else:
                     try:
                         self._verify_packet(chunk, remote)
-                        self.queue.append((self.__class__, chunk, remote))
+                        self.queue.append((self, chunk, remote))
                     except TransportException as e:
                         self._log.warning("Packet from %s dropped due to: %r",
                                           remote, e)
@@ -813,7 +813,7 @@ class TcpTransport(SocketTransport):
             if psize > 0:
                 if pend <= datalen:
                     chunk = bytes(view[pstart:pend])
-                    self.queue.append((self.__class__, chunk, remote))
+                    self.queue.append((self, chunk, remote))
                     cnt += 1
                 else:
                     break
