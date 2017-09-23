@@ -1238,7 +1238,7 @@ class Router(threading.Thread):
             self.prestart_mesg_sink = []
             self.mesgloop(until=(lambda: not self.running))
         except Exception as e:
-            self.log.debug("Unhandled exception: %r.", e)
+            self.log.debug("Unhandled exception: %r.", e, exc_info=1)
         self.terminate_local_processes()
 
     def stop(self):
