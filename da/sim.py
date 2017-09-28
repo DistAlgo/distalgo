@@ -37,11 +37,12 @@ import collections
 import multiprocessing
 import os.path
 
-from . import common, pattern, endpoint
+from . import common, pattern
 from .common import (builtin, internal, name_split_host, name_split_node,
                      ProcessId, get_runtime_option,
                      ObjectDumper, ObjectLoader)
-from .endpoint import ChannelCaps
+from .transport import ChannelCaps, TransportManager, HEADER_SIZE, \
+    TransportException, AuthenticationException
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +110,7 @@ class DistProcess():
         self.__id = procimpl.dapid
         self._log = logging.LoggerAdapter(
             logging.getLogger(self.__class__.__module__)
-            .getChild(self.__class__.__qualname__), {'daPid' : self._id})
+            .getChild(self.__class__.__name__), {'daPid' : self._id})
         self.__newcmd_seqno = procimpl.seqno
         self.__messageq = procimpl.router.get_queue_for_process(self._id)
         self.__forwarder = forwarder
@@ -1089,15 +1090,15 @@ class Router(threading.Thread):
     def __init__(self, transport_manager):
         threading.Thread.__init__(self)
         self.log = logging.getLogger(__name__) \
-                          .getChild(self.__class__.__qualname__)
+                          .getChild(self.__class__.__name__)
         self.daemon = True
         self.running = False
         self.prestart_mesg_sink = []
         self.bootstrap_peer = None
-        self.endpoint = transport_manager
+        self.transport_manager = transport_manager
         self.hostname = get_runtime_option('hostname')
         self.payload_size = get_runtime_option('message_buffer_size') - \
-                            endpoint.HEADER_SIZE
+                            HEADER_SIZE
         self.local_procs = dict()
         self.local = threading.local()
         self.local.buf = None
@@ -1175,7 +1176,7 @@ class Router(threading.Thread):
                             transports=\
                             tuple(port for _ in range(len(nid.transports))))
         self.log.debug("Dummy id: %r", dummyid)
-        for transport in self.endpoint.transports:
+        for transport in self.transport_manager.transports:
             self.log.debug("Attempting bootstrap using %s...", transport)
             try:
                 self._send_remote(src=nid,
@@ -1194,10 +1195,10 @@ class Router(threading.Thread):
                         "Bootstrap attempt to %s:%d with %s timed out. ",
                         hostname, port, transport)
                     self.bootstrap_peer = None
-            except endpoint.AuthenticationException as e:
+            except AuthenticationException as e:
                 # Abort immediately:
                 raise e
-            except (CircularRoutingException, endpoint.TransportException) as e:
+            except (CircularRoutingException, TransportException) as e:
                 self.log.debug("Bootstrap attempt to %s:%d with %s failed "
                                ": %r", hostname, port, transport, e)
         if self.bootstrap_peer is None:
@@ -1295,7 +1296,7 @@ class Router(threading.Thread):
                        mesg, dest, flags)
         if dest.hostname != self.hostname:
             flags |= ChannelCaps.INTERHOST
-        elif dest.transports == self.endpoint.transport_addresses:
+        elif dest.transports == self.transport_manager.transport_addresses:
             # dest is not in our local_procs but has same hostname and transport
             # address, so most likely dest is a process that has already
             # terminated. Do not attempt forwarding or else will cause infinite
@@ -1303,7 +1304,7 @@ class Router(threading.Thread):
             raise CircularRoutingException('destination: {}'.format(dest))
 
         if transport is None:
-            transport = self.endpoint.get_transport(flags)
+            transport = self.transport_manager.get_transport(flags)
         if transport is None:
             raise NoAvailableTransportException()
         if not hasattr(self.local, 'buf') or self.local.buf is None:
@@ -1325,7 +1326,8 @@ class Router(threading.Thread):
         self.log.debug("** Forwarding %r(%d bytes) to %s with flags=%d using %s.",
                        mesg, wrapper.fptr, dest, flags, transport)
         with memoryview(self.local.buf)[0:wrapper.fptr] as chunk:
-            transport.send(chunk, dest, **params)
+            transport.send(chunk, dest.address_for_transport(transport),
+                           **params)
 
     def _dispatch(self, src, dest, payload, params=dict(), flags=0):
         if dest in self.local_procs:
@@ -1379,7 +1381,7 @@ class Router(threading.Thread):
                 return False
 
     def mesgloop(self, until, timeout=None):
-        incomingq = self.endpoint.queue
+        incomingq = self.transport_manager.queue
         if timeout is not None:
             start = time.time()
             timeleft = timeout
@@ -1441,7 +1443,7 @@ class ProcessContainer:
         self._trace_out_fd = None
         if len(process_name) > 0:
             self.name = process_name
-        self.endpoint = transport_manager
+        self.transport_manager = transport_manager
         if _is_spawning_semantics():
             setattr(self, '_spawn_process', self._spawn_process_spawn)
         else:
@@ -1494,8 +1496,8 @@ class ProcessContainer:
 
     def init_router(self):
         if self.router is None:
-            self.endpoint.start()
-            self.router = Router(self.endpoint)
+            self.transport_manager.start()
+            self.router = Router(self.transport_manager)
 
     def start_router(self):
         if not self.router.running:
@@ -1515,7 +1517,7 @@ class ProcessContainer:
         cid = None
         parent_pipe = child_pipe = None
         try:
-            trman = endpoint.TransportManager(cookie=self.endpoint.authkey)
+            trman = TransportManager(cookie=self.transport_manager.authkey)
             trman.initialize()
             cid = ProcessId._create(pcls, trman.transport_addresses, name)
             parent_pipe, child_pipe = multiprocessing.Pipe()
@@ -1554,7 +1556,7 @@ class ProcessContainer:
         p = None
         cid = None
         try:
-            trman = endpoint.TransportManager(cookie=self.endpoint.authkey)
+            trman = TransportManager(cookie=self.transport_manager.authkey)
             trman.initialize()
             cid = ProcessId._create(pcls, trman.transport_addresses, name)
             p = OSProcessContainer(process_class=pcls,
@@ -1586,10 +1588,10 @@ class ProcessContainer:
         cid = None
         try:
             cid = ProcessId._create(pcls,
-                                    self.endpoint.transport_addresses,
+                                    self.transport_manager.transport_addresses,
                                     name)
             p = OSThreadContainer(process_class=pcls,
-                                  transport_manager=self.endpoint,
+                                  transport_manager=self.transport_manager,
                                   process_id=cid,
                                   parent_id=parent,
                                   process_name=name,
@@ -1715,7 +1717,7 @@ class OSProcessContainer(ProcessContainer, multiprocessing.Process):
     def _init_for_spawn(self):
         common._set_node(self._nodeid)
         assert self.pipe is not None
-        self.endpoint.initialize(pipe=self.pipe)
+        self.transport_manager.initialize(pipe=self.pipe)
         del self.pipe
 
 

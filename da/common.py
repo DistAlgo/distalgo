@@ -41,7 +41,7 @@ from functools import wraps
 MAJOR_VERSION = 1
 MINOR_VERSION = 1
 PATCH_VERSION = 0
-PRERELEASE_VERSION = "b9"
+PRERELEASE_VERSION = "b10"
 
 __version__ = "{}.{}.{}{}".format(MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION,
                                    PRERELEASE_VERSION)
@@ -467,6 +467,18 @@ class ProcessId(namedtuple("_ProcessId",
         return idcls(uid=uid, seqno=1, pcls=pcls,
                      name=name, nodename=nodename,
                      hostname=hostname, transports=transports)
+
+    def address_for_transport(self, transport):
+        """Returns the address corresponding to `transport`.
+
+        """
+        if len(self.transports) <= transport.slot_index:
+            return None
+        addr = self.transports[transport.slot_index]
+        if addr is None:
+            return None
+        else:
+            return (self.hostname, addr)
 
     def _filename_form_(self):
         """Constructs a filesystem-friendly representation of this pid.

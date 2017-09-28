@@ -31,7 +31,7 @@ import collections.abc
 import os.path
 
 from sys import stderr
-from . import common, sim, endpoint
+from . import common, sim, transport
 from .common import api
 from .common import deprecated
 from .common import get_runtime_option
@@ -181,7 +181,7 @@ def _bootstrap_node(cls, nodename, trman):
         if is_master:
             try:
                 trman.initialize(hostname=hostname, port=port, strict=True)
-            except endpoint.TransportException as e:
+            except transport.TransportException as e:
                 log.debug("Binding attempt to port %d failed: %r", port, e)
                 trman.close()
     else:
@@ -276,7 +276,7 @@ def entrypoint():
     else:
         cookie = _load_cookie()
     try:
-        trman = endpoint.TransportManager(cookie)
+        trman = transport.TransportManager(cookie)
         if len(nodename) > 0 and not traces:
             router = _bootstrap_node(module.Node_, nodename, trman)
             nid = common.pid_of_node()
@@ -286,7 +286,7 @@ def entrypoint():
                                     transports=trman.transport_addresses,
                                     name=nodename)
             common._set_node(nid)
-    except (endpoint.TransportException, sim.RoutingException) as e:
+    except (transport.TransportException, sim.RoutingException) as e:
         log.error("Transport initialization failed due to: %r", e)
         stderr.write("System failed to start. \n")
         return 5
