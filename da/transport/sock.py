@@ -36,7 +36,7 @@ from ..common import VERSION_BYTES, get_runtime_option
 
 __all__ = [
     "SocketTransport", "UdpTransport", "TcpTransport",
-    "HEADER_SIZE"
+    "HEADER_SIZE", "BYTEORDER"
 ]
 
 logger = logging.getLogger(__name__)
@@ -382,8 +382,10 @@ class TcpTransport(SocketTransport):
         super().start(queue, mesgloop)
         assert self.mesgloop is not None
         self.mesgloop.register(self.conn, self._accept)
-        self.lock = threading.Lock()
-        self.cache = dict()
+        if self.cache is None:
+            self.cache = dict()
+        if self.lock is None:
+            self.lock = threading.Lock()
         self._log.debug("Transport started.")
 
     def close(self):
@@ -394,8 +396,6 @@ class TcpTransport(SocketTransport):
                     conn.close()
                 self.cache.clear()
         super().close()
-        self.cache = None
-        self.lock = None
 
     def _deliver_challenge(self, conn, addr):
         import os
@@ -507,16 +507,18 @@ class TcpTransport(SocketTransport):
             raise e
 
     def _cleanup(self, conn, remote):
+        if conn is None:
+            return
         self._log.debug("Cleanup connection to %s.", remote)
         if self.mesgloop:
             self.mesgloop.deregister(conn)
         if remote in self.cache:
             with self.lock:
-                if self.cache[remote] is conn:
-                    del self.cache[remote]
-                else:
-                    self._log.debug("Possible corrupted cache entry for %s",
-                                    remote)
+                try:
+                    if self.cache.get(remote) is conn:
+                        del self.cache[remote]
+                except AttributeError:
+                    pass
         try:
             conn.close()
         except OSError:
@@ -562,8 +564,7 @@ class TcpTransport(SocketTransport):
         finally:
             if conn is not None:
                 if saved is not conn:
-                    if saved is not None:
-                        self._cleanup(saved, target)
+                    self._cleanup(saved, target)
                     with self.lock:
                         self.cache[target] = conn
                     self.mesgloop.register(
@@ -574,7 +575,10 @@ class TcpTransport(SocketTransport):
             else:
                 if target in self.cache:
                     with self.lock:
-                        del self.cache[target]
+                        try:
+                            del self.cache[target]
+                        except KeyError:
+                            pass
 
     def _send_1(self, data, conn, target=None):
         msglen = sum(len(chunk) for chunk in data)
