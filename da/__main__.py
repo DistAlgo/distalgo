@@ -28,7 +28,7 @@ import argparse
 
 from datetime import datetime
 
-from .api import entrypoint, DEFAULT_MASTER_PORT, dump_trace
+from .api import entrypoint
 from . import common
 
 MINIMUM_PYTHON_VERSION = (3, 5)

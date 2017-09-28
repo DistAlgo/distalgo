@@ -33,9 +33,7 @@ import warnings
 import threading
 
 from datetime import datetime
-from collections import abc
-from collections import deque
-from collections import namedtuple
+from collections import abc, deque, namedtuple, defaultdict
 from inspect import signature
 from inspect import Parameter
 from functools import wraps
@@ -51,7 +49,7 @@ __version__ = "{}.{}.{}{}".format(MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION,
 INCOQ_MODULE_NAME = "incoq.mars.runtime"
 
 # a dict that contains the runtime configuration values:
-GlobalOptions = None
+GlobalOptions = defaultdict((lambda: None))
 # a dict containing configuration overrides set by the `config` API:
 GlobalConfig = dict()
 # Process id of the node process:
@@ -110,30 +108,29 @@ VERSION_BYTES = _version_as_bytes()
 
 def _parse_items(items):
     subs = dict()
-    for item in items:
-        parts = item.split(':')
-        if len(parts) != 2:
-            raise InvalidStateException('unrecognized substitute spec: {}'
-                                        .format(item))
-        subs[parts[0]] = parts[1]
+    if items:
+        for item in items:
+            parts = item.split(':')
+            if len(parts) != 2:
+                raise InvalidStateException('unrecognized substitute spec: {}'
+                                            .format(item))
+            subs[parts[0]] = parts[1]
     return subs
 
-def initialize_runtime_options(options):
+def initialize_runtime_options(options=None):
     """Sets and sanitizes runtime options.
 
     'options' should be a dict-like object containing mappings from options
     names to corresponding values.
 
-    This function has to be called exactly once per node instance.
-
     """
-    global GlobalOptions
-    if GlobalOptions is not None:
-        raise InvalidStateException("DistAlgo is already initialized!")
+    if options:
+        GlobalOptions.update(options)
 
-    GlobalOptions = dict(options)
     # Canonize hostname, essential for properly determining whether a ProcessId
     # is running on the local machine:
+    if GlobalOptions['nodename'] is None:
+        GlobalOptions['nodename'] = ''
     import socket
     if GlobalOptions['hostname'] is None:
         if len(GlobalOptions['nodename']) > 0:
@@ -157,9 +154,12 @@ def initialize_runtime_options(options):
 
     # Convert 'compiler_flags' to a namespace object that can be passed directly
     # to the compiler:
+    if GlobalOptions['compiler_args'] is None:
+        GlobalOptions['compiler_args'] = ""
     from . import compiler
     GlobalOptions['compiler_args'] \
-        = compiler.ui.parse_compiler_args(GlobalOptions['compiler_flags'].split())
+        = compiler.ui.parse_compiler_args(
+            GlobalOptions['compiler_flags'].split())
 
     # Make sure the directory for storing trace files exists:
     if GlobalOptions['record_trace']:
