@@ -3,12 +3,12 @@ class Pong(process):
     def setup(total_pings:int): pass
 
     def run():
-        a = False
-        await(len(listof(p, received(('Ping',), from_=p))) == total_pings)
+        await(total_pings == 0)
 
     def receive(msg=('Ping',), from_=p):
         output("Pinged")
         send(('Pong',), to=p)
+        total_pings -= 1
 
 class Ping(process):
     def setup(p:Pong, nrounds:int): pass
