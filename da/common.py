@@ -33,7 +33,7 @@ import warnings
 import threading
 
 from datetime import datetime
-from collections import abc, deque, namedtuple, defaultdict
+from collections import abc, deque, namedtuple
 from inspect import signature
 from inspect import Parameter
 from functools import wraps
@@ -49,7 +49,7 @@ __version__ = "{}.{}.{}{}".format(MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION,
 INCOQ_MODULE_NAME = "incoq.mars.runtime"
 
 # a dict that contains the runtime configuration values:
-GlobalOptions = defaultdict((lambda: None))
+GlobalOptions = None
 # a dict containing configuration overrides set by the `config` API:
 GlobalConfig = dict()
 # Process id of the node process:
@@ -124,15 +124,18 @@ def initialize_runtime_options(options=None):
     names to corresponding values.
 
     """
+    global GlobalOptions
+    if not GlobalOptions:
+        GlobalOptions = dict()
     if options:
         GlobalOptions.update(options)
 
     # Canonize hostname, essential for properly determining whether a ProcessId
     # is running on the local machine:
-    if GlobalOptions['nodename'] is None:
+    if GlobalOptions.get('nodename') is None:
         GlobalOptions['nodename'] = ''
     import socket
-    if GlobalOptions['hostname'] is None:
+    if GlobalOptions.get('hostname') is None:
         if len(GlobalOptions['nodename']) > 0:
             GlobalOptions['hostname'] = socket.getfqdn()
         else:
@@ -142,27 +145,27 @@ def initialize_runtime_options(options=None):
 
     # Parse '--substitute-classes' and '--substitute-modules':
     GlobalOptions['substitute_classes'] = \
-                            _parse_items(GlobalOptions['substitute_classes'])
+                            _parse_items(GlobalOptions.get('substitute_classes'))
     GlobalOptions['substitute_modules'] = \
-                            _parse_items(GlobalOptions['substitute_modules'])
+                            _parse_items(GlobalOptions.get('substitute_modules'))
 
     # Configure multiprocessing package to use chosen semantics:
     import multiprocessing
-    startmeth = GlobalOptions['start_method']
+    startmeth = GlobalOptions.get('start_method')
     if startmeth != multiprocessing.get_start_method(allow_none=True):
         multiprocessing.set_start_method(startmeth)
 
     # Convert 'compiler_flags' to a namespace object that can be passed directly
     # to the compiler:
-    if GlobalOptions['compiler_args'] is None:
-        GlobalOptions['compiler_args'] = ""
     from . import compiler
     GlobalOptions['compiler_args'] \
         = compiler.ui.parse_compiler_args(
-            GlobalOptions['compiler_flags'].split())
+            GlobalOptions.get('compiler_flags', '').split())
 
     # Make sure the directory for storing trace files exists:
-    if GlobalOptions['record_trace']:
+    if GlobalOptions.get('record_trace'):
+        if 'logdir' not in GlobalOptions:
+            raise ValueError("'record_trace' enabled without setting 'logdir'")
         os.makedirs(GlobalOptions['logdir'], exist_ok=True)
 
 def set_global_config(props):
