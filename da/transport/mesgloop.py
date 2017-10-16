@@ -67,8 +67,15 @@ class SelectorLoop(object):
         """Registers a new connection object.
 
         """
-        self.selector.register(conn, selectors.EVENT_READ, (callback, data))
-        self.notify()
+        try:
+            self.selector.register(conn, selectors.EVENT_READ, (callback, data))
+            self.notify()
+        except ValueError as e:
+            # The conn object was already closed, so call the callback to
+            # trigger any cleanup routines from the caller
+            self._log.debug("Registering invalid connection %s: %r",
+                            conn, e, exc_info=1)
+            callback(conn, data)
 
     def deregister(self, conn):
         try:

@@ -12,7 +12,7 @@ class SelectorLoopTest(unittest.TestCase):
         self.sender, self.recver = socket.socketpair()
         self.loop = SelectorLoop()
 
-    def test_A_size(self):
+    def test_size(self):
         self.assertEqual(len(self.loop), 0)
         self.loop.start()
         self.loop.register(self.recver, (lambda a, b: None))
@@ -24,7 +24,7 @@ class SelectorLoopTest(unittest.TestCase):
         time.sleep(0.01)
         self.assertFalse(self.loop.is_alive())
 
-    def test_B_sendrecv1(self):
+    def test_sendrecv1(self):
         loop = self.loop
         self.assertFalse(loop.is_alive())
         loop.start()
@@ -44,7 +44,7 @@ class SelectorLoopTest(unittest.TestCase):
         loop.deregister(self.recver)
         self.assertFalse(loop.is_alive())
 
-    def test_C_sendrecv2(self):
+    def test_sendrecv2(self):
         loop = self.loop
         sender2, recver2 = socket.socketpair()
         data1, data2 = None, None
@@ -73,7 +73,7 @@ class SelectorLoopTest(unittest.TestCase):
         sender2.close()
         recver2.close()
 
-    def test_D_close_connection(self):
+    def test_recver_close(self):
         loop = self.loop
         data = None
         def callback(conn, _):
@@ -92,9 +92,33 @@ class SelectorLoopTest(unittest.TestCase):
         self.assertRegex(cm.output[0], "socket.error when receiving")
         loop.stop()
 
+    def test_sender_close(self):
+        loop = self.loop
+        loop.start()
+        data = None
+        def callback(conn, _):
+            nonlocal data
+            data = conn.recv(100)
+        loop.register(self.recver, callback)
+        time.sleep(0.01)
+        self.sender.close()
+        time.sleep(0.01)
+        self.assertEqual(data, b'')
+
+    def test_register_closed_connection(self):
+        self.recver.close()
+        cleaned = False
+        def cleanup(k, _):
+            nonlocal cleaned
+            self.assertIs(k, self.recver)
+            cleaned = True
+        self.loop.register(self.recver, cleanup)
+        self.assertEqual(cleaned, True)
+
     def tearDown(self):
         self.sender.close()
         self.recver.close()
+        self.loop.stop()
 
 if __name__ == '__main__':
     unittest.main()
