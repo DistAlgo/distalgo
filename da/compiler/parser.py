@@ -1434,7 +1434,7 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
             if h.name is not None:
                 n = self.current_scope.find_name(h.name)
                 if n is None:
-                    self.current_scope.add_name(h.name)
+                    n = self.current_scope.add_name(h.name)
                 n.add_assignment(s)
             if handler.type is not None:
                 h.type = self.visit(handler.type)
