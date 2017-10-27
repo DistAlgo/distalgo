@@ -10,34 +10,34 @@ from distutils.cmd import Command
 import da
 
 class CompileDACommand(Command):
-  """A custom command to run `dac` on all .da files under da/."""
+    """A custom command to run `dac` on all .da files under da/."""
 
-  description = 'build all DistAlgo modules under da/.'
-  user_options = [
-      # The format is (long option, short option, description).
-      ('compiler-flags', 'F', 'options for the compiler'),
-  ]
+    description = 'build all DistAlgo modules under da/.'
+    user_options = [
+        # The format is (long option, short option, description).
+        ('compiler-flags', 'F', 'options for the compiler'),
+    ]
 
-  def initialize_options(self):
-    """Set default values for options."""
-    # Each user option must be listed here with their default value.
-    self.compiler_flags = []
+    def initialize_options(self):
+        """Set default values for options."""
+        # Each user option must be listed here with their default value.
+        self.compiler_flags = []
 
-  def finalize_options(self):
-    """Post-process options."""
-    pass
+    def finalize_options(self):
+        """Post-process options."""
+        pass
 
-  def run(self):
-    """Run command."""
-    import da.compiler
-    exroot = os.path.join(os.getcwd(), 'da/')
-    for root, dirs, files in os.walk(exroot):
-        for filename in files:
-            if filename.endswith('.da'):
-                target = os.path.join(root, filename)
-                self.announce('Compiling {}...'.format(target),
-                              level=distutils.log.INFO)
-                da.compiler.ui.main(self.compiler_flags + [str(target)])
+    def run(self):
+        """Run command."""
+        from da import compiler
+        exroot = os.path.join(os.getcwd(), 'da/')
+        for root, _, files in os.walk(exroot):
+            for filename in files:
+                if filename.endswith('.da'):
+                    target = os.path.join(root, filename)
+                    self.announce('Compiling {}...'.format(target),
+                                  level=distutils.log.INFO)
+                    compiler.ui.main(self.compiler_flags + [str(target)])
 
 class CompileDocCommand(Command):
     """A custom command to run `pdflatex` on 'doc/language.tex'."""
