@@ -660,7 +660,12 @@ class PythonGenerator(NodeVisitor):
 
     def visit_AggregateExpr(self, node):
         return pyCall(AggregateMap[type(node)],
-                     [self.visit(a) for a in node.args])
+                      [self.visit(a) for a in node.args],
+                      [(key, self.visit(value)) for key, value in node.keywords],
+                      self.visit(node.starargs)
+                      if node.starargs is not None else None,
+                      self.visit(node.kwargs)
+                      if node.kwargs is not None else None)
 
     visit_MaxExpr = visit_AggregateExpr
     visit_MinExpr = visit_AggregateExpr

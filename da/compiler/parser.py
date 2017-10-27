@@ -2003,7 +2003,15 @@ class Parser(NodeVisitor):
                              keywords=None, optional_keywords=None):
             self.debug("Config expression. ", node)
             expr = self.create_expr(dast.ConfigExpr, node)
-        elif self.expr_check(AggregateMap, 1, None, node,
+        elif self.expr_check({KW_AGGREGATE_MIN, KW_AGGREGATE_MAX}, 1, None, node,
+                             keywords={}, optional_keywords={'key', 'default'}):
+            self.debug("Aggregate: " + node.func.id, node)
+            expr = self.create_expr(AggregateMap[node.func.id], node)
+        elif self.expr_check({KW_AGGREGATE_SUM}, 1, None, node,
+                             keywords={}, optional_keywords={'start'}):
+            self.debug("Aggregate: " + node.func.id, node)
+            expr = self.create_expr(AggregateMap[node.func.id], node)
+        elif self.expr_check({KW_AGGREGATE_SIZE}, 1, None, node,
                              keywords={}, optional_keywords={}):
             self.debug("Aggregate: " + node.func.id, node)
             expr = self.create_expr(AggregateMap[node.func.id], node)
