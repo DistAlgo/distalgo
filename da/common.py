@@ -38,7 +38,7 @@ from functools import wraps
 
 MAJOR_VERSION = 1
 MINOR_VERSION = 0
-PATCH_VERSION = 9
+PATCH_VERSION = 10
 PRERELEASE_VERSION = ""
 __version__ = "{}.{}.{}{}".format(MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION,
                                    PRERELEASE_VERSION)
