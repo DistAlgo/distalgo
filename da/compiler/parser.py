@@ -1222,7 +1222,13 @@ class Parser(NodeVisitor):
 
             else:
                 stmtobj = self.create_stmt(dast.SimpleStmt, node)
-                self.current_context = Read(stmtobj)
+                if self.is_in_setup():
+                    # Allow declaring new process-level names if we're in the
+                    # setup() method. This is so that names defined in parent
+                    # process classes can be propagated to the child:
+                    self.current_context = Assignment(stmtobj)
+                else:
+                    self.current_context = Read(stmtobj)
                 stmtobj.expr = self.visit(node.value)
 
         except MalformedStatementError as e:
