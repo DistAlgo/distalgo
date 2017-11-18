@@ -670,7 +670,7 @@ class TcpTransport(SocketTransport):
     def _connect(self, target):
         self._log.debug("Initiating connection to %s.", target)
         conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        conn.settimeout(5)
+        conn.settimeout(None)
         conn.connect(target)
         self._answer_challenge(conn, target)
         self._log.debug("Connection to %s established.", target)
