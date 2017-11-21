@@ -447,8 +447,13 @@ class UdpTransport(SocketTransport):
                         time.sleep(wait)
 
     def _recvmsg_nt(self):
-        chunk, remote = self.conn.recvfrom(self.buffer_size)
-        return chunk, None, 0, remote
+        try:
+            chunk, remote = self.conn.recvfrom(self.buffer_size)
+            return chunk, None, 0, remote
+        except ConnectionResetError:
+            # Work around this most bizarre Windows quirk: it generates a
+            # `ConnectionResetError` on a *UDP* socket for no reason at all!!
+            return b'CRE', None, socket.MSG_ERRQUEUE, None
 
     def _recvmsg_nix(self):
         return self.conn.recvmsg(self.buffer_size)
