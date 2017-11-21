@@ -224,7 +224,9 @@ def check_name(name):
 
 def name_split_host(name):
     """Splits `name` into 'processname', 'hostname', and 'port' components."""
+    import socket
     comps = name.split('@')
+    name = host = port = None
     if len(comps) == 2:
         name, suffix = comps
         suffix = suffix.split(':')
@@ -233,17 +235,18 @@ def name_split_host(name):
         elif len(suffix) == 2:
             host, port = suffix
             try:
-                return (name, host, int(port))
+                port = int(port)
             except ValueError:
                 return (None, None, None)
         elif len(suffix) == 1:
-            return (name, suffix[0], None)
-        else:
-            return (name, None, None)
+            host = suffix[0]
     elif len(comps) == 1:
-        return (comps[0], None, None)
-    else:
-        return (None, None, None)
+        name = comps[0]
+    try:
+        host = socket.gethostbyname(host)
+    except (TypeError, socket.gaierror):
+        pass
+    return (name, host, port)
 
 def name_split_node(name):
     """Splits `name` into 'processname', 'nodename' components."""

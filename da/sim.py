@@ -529,7 +529,7 @@ class DistProcess():
             self._log.error("Malformed name: %s", name)
             return None
         dest = ProcessId.lookup((procname, nodename))
-        if dest is None:
+        if dest is None or dest.hostname != host:
             self._log.info("Waiting to resolve name %r...", name)
             seqno = self._create_cmd_seqno()
             self._register_async_event(Command.ResolveAck, seqno)
