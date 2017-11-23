@@ -286,7 +286,7 @@ class ProcessId(namedtuple("_ProcessId",
         obj = super().__new__(cls, uid, seqno, pcls, name, nodename, hostname,
                               transports)
         if len(name) > 0:
-            fullname = (name, nodename)
+            fullname = (name, nodename, hostname)
             with ProcessId._lock:
                 entry = ProcessId._named.get(fullname, None)
                 callbacks = ProcessId._callbacks.get(fullname, None)
@@ -317,14 +317,15 @@ class ProcessId(namedtuple("_ProcessId",
     @staticmethod
     def lookup_or_register_callback(name, callback):
         with ProcessId._lock:
-            if name not in ProcessId._named:
+            res = ProcessId._named.get(name)
+            if res is None:
                 if name not in ProcessId._callbacks:
                     ProcessId._callbacks[name] = [callback]
                 else:
                     ProcessId._callbacks[name].append(callback)
                 return None
             else:
-                return ProcessId._named[name]
+                return res
 
     @staticmethod
     def all_named_ids():

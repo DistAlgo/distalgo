@@ -524,17 +524,20 @@ class DistProcess():
         if fullname is None:
             self._log.error("Malformed name: %s", name)
             return None
+        if host is None:
+            host = get_runtime_option('hostname')
         procname, nodename = name_split_node(fullname)
         if procname is None:
             self._log.error("Malformed name: %s", name)
             return None
-        dest = ProcessId.lookup((procname, nodename))
-        if dest is None or dest.hostname != host:
+        global_name = (procname, nodename, host)
+        dest = ProcessId.lookup(global_name)
+        if dest is None:
             self._log.info("Waiting to resolve name %r...", name)
             seqno = self._create_cmd_seqno()
             self._register_async_event(Command.ResolveAck, seqno)
             if self._send1(Command.Resolve,
-                           message=((procname, nodename), host, port, seqno),
+                           message=(global_name, port, seqno),
                            to=self.__procimpl._nodeid,
                            flags=ChannelCaps.RELIABLEFIFO):
                 res = self._sync_async_event(Command.ResolveAck, seqno,
@@ -927,21 +930,24 @@ class NodeProcess(DistProcess):
             self._log.debug("Bootstrap success.")
         else:
             self._deregister_async_event(Command.NodeAck, seqno)
-            self._log.error("Bootstrap failed! Unable to join existing network.")
+            self._log.warning(
+                "Bootstrap failed! Unable to connect to existing network.")
 
     @internal
     def _cmd_Resolve(self, src, args):
-        procname, hostname, port, seqno = args
+        procname, port, seqno = args
         pid = ProcessId.lookup_or_register_callback(
             procname, functools.partial(self._resolve_callback,
                                         src=src, seqno=seqno))
         if pid is not None:
             self._send1(Command.ResolveAck, message=(seqno, pid), to=src)
-        elif hostname is not None:
-            if port is None:
-                port = get_runtime_option('default_master_port')
-            self._router.bootstrap_node(hostname, port, timeout=3)
-            self.bootstrap()
+        else:
+            hostname = procname[2]
+            if hostname is not None:
+                if port is None:
+                    port = get_runtime_option('default_master_port')
+                self._router.bootstrap_node(hostname, port, timeout=3)
+                self.bootstrap()
 
     @internal
     def _resolve_callback(self, pid, src, seqno):
