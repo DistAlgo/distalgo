@@ -460,10 +460,10 @@ class UdpTransport(SocketTransport):
 
     if sys.platform == 'win32':
         _recvmsg = _recvmsg_nt
-        socket.MSG_ERRQUEUE = 0
+        socket.MSG_ERRQUEUE = 8192
     elif sys.platform == 'darwin':
         _recvmsg = _recvmsg_nix
-        socket.MSG_ERRQUEUE = 0
+        socket.MSG_ERRQUEUE = 8192
     else:
         _recvmsg = _recvmsg_nix
 
