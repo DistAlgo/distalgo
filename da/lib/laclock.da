@@ -37,12 +37,13 @@ class LamportTimestamp(process):
 
     def send(message, to, channel=None, noclock=False, **rest):
         if noclock:
-            # allows sending messages to processes that does not use a logical
+            # allows sending messages to processes that do not use a logical
             # clock:
             return super().send(message, to, channel, **rest)
         else:
             return super().send((ClockTag, self._logical_clock, message),
-                                to, channel, **rest)
+                                to, channel,
+                                original_message=message, **rest)
 
     def receive(msg=(_ClockTag, rclock, message), from_=src):
         self._logical_clock = max(self._logical_clock, rclock) + 1

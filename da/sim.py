@@ -493,8 +493,12 @@ class DistProcess():
                           to=to,
                           flags=flags,
                           impersonate=impersonate)
+        original_to = rest.get('original_to', None)
+        original_message = rest.get('original_message', None)
         self.__trigger_event(pattern.SentEvent(
-            (self._logical_clock, to, self._id), message))
+            (self._logical_clock,
+             (to if original_to is None else original_to), self._id),
+            (message if original_message is None else original_message)))
         return res
 
     @builtin
