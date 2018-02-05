@@ -203,13 +203,13 @@ class DastUnparser:
             self.write(" ")
             self.dispatch(t.value)
 
-    def _NoopStmt(self, t):
+    def _NoopStmt(self, _):
         self.fill("pass")
 
-    def _BreakStmt(self, t):
+    def _BreakStmt(self, _):
         self.fill("break")
 
-    def _ContinueStmt(self, t):
+    def _ContinueStmt(self, _):
         self.fill("continue")
 
     def _DeleteStmt(self, t):
@@ -310,7 +310,7 @@ class DastUnparser:
             self.write(" from ")
             self.dispatch(t.cause)
 
-    def _PassStmt(self, t):
+    def _PassStmt(self, _):
         self.fill("pass")
 
     def _TryStmt(self, t):
@@ -529,16 +529,16 @@ class DastUnparser:
         else:
             self.write(repr(t.value))
 
-    def _SelfExpr(self, t):
+    def _SelfExpr(self, _):
         self.write("self")
 
-    def _TrueExpr(self, t):
+    def _TrueExpr(self, _):
         self.write("True")
 
-    def _FalseExpr(self, t):
+    def _FalseExpr(self, _):
         self.write("False")
 
-    def _NoneExpr(self, t):
+    def _NoneExpr(self, _):
         self.write("None")
 
     def _NamedVar(self, t):
@@ -757,7 +757,7 @@ class DastUnparser:
         self.dispatch(t.value)
 
     # slice
-    def _EllipsisExpr(self, t):
+    def _EllipsisExpr(self, _):
         self.write("...")
 
     # argument
@@ -808,9 +808,11 @@ class DastUnparser:
         # keyword-only arguments
         if t.kwonlyargs:
             for a, d in zip(t.kwonlyargs, t.kw_defaults):
-                if first:first = False
-                else: self.write(", ")
-                self.dispatch(a),
+                if first:
+                    first = False
+                else:
+                    self.write(", ")
+                self.dispatch(a)
                 if d:
                     self.write("=")
                     self.dispatch(d)
