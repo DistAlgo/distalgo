@@ -271,13 +271,6 @@ class DastUnparser:
         self.write(" to ")
         self.dispatch(t.target)
 
-    def _OutputStmt(self, t):
-        self.fill("output ")
-        interleave(lambda: self.write(', '), self.dispatch, t.message)
-        if t.level:
-            self.write(" at level ")
-            self.dispatch(t.level)
-
     def _ResetStmt(self, t):
         self.fill("reset %s" % t.target)
 
