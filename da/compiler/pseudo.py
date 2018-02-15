@@ -435,11 +435,16 @@ class DastUnparser:
             self.write(EVENT_TYPES[evt.type] + " ")
             self.dispatch(evt)
         if t.labels:
-            self.write("at labels ")
-            self.write(t.labels)
-        if t.notlabels:
-            self.write("but not labels ")
-            self.write(t.notlabels)
+            self.write(" at labels ")
+            interleave(lambda: self.write(", "), self.write, t.labels)
+            if t.notlabels:
+                self.write(" but not labels ")
+                interleave(lambda: self.write(", "), self.write, t.notlabels)
+        else:
+            self.write(" at all labels")
+            if t.notlabels:
+                self.write(" except ")
+                interleave(lambda: self.write(", "), self.write, t.notlabels)
         self.enter()
         self.dispatch(t.body)
         self.leave()
