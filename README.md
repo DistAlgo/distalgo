@@ -374,3 +374,5 @@ The following command installs DistAlgo for the current user:
   built-in functions, run the following command:
   
       python -m da -B
+  
+  For DistAlgo examples, see `<DAROOT>/da/examples`.
