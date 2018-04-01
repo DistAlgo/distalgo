@@ -375,4 +375,4 @@ The following command installs DistAlgo for the current user:
   
       python -m da -B
   
-  For DistAlgo examples, see `<DAROOT>/da/examples`.
+  For DistAlgo examples, see `<DAROOT>/da/examples/`.
