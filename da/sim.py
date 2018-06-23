@@ -173,6 +173,10 @@ class DistProcess():
             self.__do_label = self.__label_all
         else:
             self.__do_label = self.__label_one
+        if self.get_config('unmatched', default='drop').casefold() == 'keep':
+            self._keep_unmatched = True
+        else:
+            self._keep_unmatched = False
         self.__default_flags = self.__get_channel_flags(
             self.get_config("channel", default=[]))
         if self.get_config('clock', default='').casefold() == 'lamport':
@@ -673,6 +677,7 @@ class DistProcess():
 
     def __process_jobqueue(self, label=None):
         """Runs all pending handlers jobs permissible at `label`.
+
         """
         leftovers = []
         handler = args = None
@@ -690,14 +695,19 @@ class DistProcess():
                 (handler._notlabels is None or label not in handler._notlabels)):
                 try:
                     handler(**args)
+                    if self.__do_label is self.__label_one:
+                        break
                 except Exception as e:
                     self._log.error(
                         "%r when calling handler '%s' with '%s': %s",
                         e, handler.__name__, args, e)
             else:
-                self._log.debug("Skipping (%s, %r) due to label constraint.",
-                                handler, args)
-                leftovers.append((handler, args))
+                if self._keep_unmatched:
+                    dbgmsg = "Skipping (%s, %r) due to label constraint."
+                    leftovers.append((handler, args))
+                else:
+                    dbgmsg = "Dropping (%s, %r) due to label constraint."
+                self._log.debug(dbgmsg, handler, args)
         self.__jobq.extend(leftovers)
 
     @internal
