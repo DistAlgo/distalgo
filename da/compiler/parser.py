@@ -651,6 +651,8 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
         labels = set()
         notlabels = set()
         decorators = []
+        is_static = False
+
         for exp in node.decorator_list:
             if isinstance(exp, Call) and isinstance(exp.func, Name) and \
                exp.func.id == KW_DECORATOR_LABEL:
@@ -661,8 +663,10 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
                     else:
                         labels |= l
             else:
+                if isinstance(exp, Name) and exp.id == 'staticmethod':
+                    is_static = True
                 decorators.append(self.visit(exp))
-        return decorators, labels, notlabels
+        return decorators, labels, notlabels, is_static
 
     def parse_label_spec(self, expr):
         negated = False
@@ -852,7 +856,7 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
             n = self.current_scope.add_name(node.name)
             proc = dast.Process(self.current_parent, node, name=node.name)
             n.add_assignment(proc, proc)
-            proc.decorators, _, _ = self.parse_decorators(node)
+            proc.decorators, _, _, _ = self.parse_decorators(node)
             self.push_state(proc)
             self.program.processes.append(proc)
             self.program.body.append(proc)
@@ -887,7 +891,7 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
                 self.current_block.append(clsobj)
                 n = self.current_scope.add_name(node.name)
                 n.add_assignment(clsobj, clsobj)
-            clsobj.decorators, _, _ = self.parse_decorators(node)
+            clsobj.decorators, _, _, _ = self.parse_decorators(node)
             self.push_state(clsobj)
             clsobj.bases = self.parse_bases(node, clsobj)
             self.current_block = clsobj.body
@@ -914,14 +918,25 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
             s = self.create_stmt(dast.Function, node,
                                  params={"name" : node.name})
             n.add_assignment(s, s)
+            # Ignore the label decorators:
+            s.decorators, _, _, is_static = self.parse_decorators(node)
             s.process = self.current_process
             if isinstance(s.parent, dast.Process):
                 if s.name == KW_PROCESS_ENTRY_POINT:
+                    if is_static:
+                        self.error("process entry point can not be static.",
+                                   node)
                     self.current_process.entry_point = s
-                elif s.name == "setup":
+                elif s.name == KW_SETUP:
+                    if is_static:
+                        self.error("%s method can not be static." % KW_SETUP,
+                                   node)
                     self.current_process.setup = s
                 else:
-                    self.current_process.methods.append(s)
+                    if is_static:
+                        self.current_process.staticmethods.append(s)
+                    else:
+                        self.current_process.methods.append(s)
             elif (isinstance(s.parent, dast.Program) and
                   s.name == KW_ENTRY_POINT):
                 # Create the node process:
@@ -933,8 +948,6 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
                 # If we don't pop the entry_point from the module body then it
                 # ends up getting printed twice:
                 self.current_block.pop()
-            # Ignore the label decorators:
-            s.decorators, _, _ = self.parse_decorators(node)
             self.current_block = s.body
             if not self.is_in_setup():
                 self.signature(node.args)
@@ -951,7 +964,7 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
             h = dast.EventHandler(self.current_parent, node)
             # Parse decorators before adding h to node_stack, since decorators
             # should belong to the outer scope:
-            h.decorators, h.labels, h.notlabels = self.parse_decorators(node)
+            h.decorators, h.labels, h.notlabels, _ = self.parse_decorators(node)
             self.push_state(h)
             events, labels, notlabels = self.parse_event_handler(node)
             events = self.current_process.add_events(events)
