@@ -943,75 +943,6 @@ class ModuleIntrument(object):
         delattr(self._control, attr)
         delattr(self._subject, attr)
 
-class frozendict(dict):
-    """Hashable immutable dict implementation
-
-    Copied from http://code.activestate.com/recipes/414283/
-
-    """
-    def _blocked_attribute(obj):
-        raise AttributeError("A frozendict cannot be modified.")
-    _blocked_attribute = property(_blocked_attribute)
-
-    __delitem__ = __setitem__ = clear = _blocked_attribute
-    pop = popitem = setdefault = update = _blocked_attribute
-
-    def __new__(cls, *args, **kws):
-        new = dict.__new__(cls)
-        dict.__init__(new, *args, **kws)
-        return new
-
-    def __init__(self, *args, **kws):
-        pass
-
-    def __hash__(self):
-        try:
-            return self._cached_hash
-        except AttributeError:
-            h = self._cached_hash = hash(tuple(sorted(self.items())))
-            return h
-
-    def __repr__(self):
-        return "frozendict(%s)" % dict.__repr__(self)
-
-BuiltinImmutables = [int, float, complex, tuple, str, bytes, frozenset]
-
-def freeze(obj):
-    """Return a hashable version of `obj`.
-
-    Contents of `obj` may be copied if necessary.
-
-    """
-    if any(isinstance(obj, itype) for itype in BuiltinImmutables):
-        return obj
-
-    if IncOQBaseType is not None:
-        if isinstance(obj, IncOQBaseType):
-            return copy.deepcopy(obj)
-
-    if isinstance(obj, abc.MutableSequence):
-        if isinstance(obj, abc.ByteString):
-            # bytearray -> bytes
-            return bytes(obj)
-        else:
-            # list -> tuple
-            return tuple(freeze(elem) for elem in obj)
-    elif isinstance(obj, abc.MutableSet):
-        # set -> frozenset
-        return frozenset(freeze(elem) for elem in obj)
-    elif isinstance(obj, abc.MutableMapping):
-        # dict -> frozendict
-        return frozendict((freeze(k), freeze(v)) for k, v in obj.items())
-    elif isinstance(obj, abc.Sequence):
-        #NOTE: This part is fragile. For immutable sequence objects, we still
-        # have to recursively freeze its elements, which means we have to create
-        # a new instance of the same type. Here we just assume the class
-        # `__init__` method takes a 'iterable' as argument. Otherwise,
-        # everything falls apart.
-        return type(obj)(freeze(e) for e in obj)
-    else:
-        # everything else just assume hashable & immutable, hahaha:
-        return obj
 
 def _install():
     """Hooks into `multiprocessing.spawn` so that GlobalOptions is propagated to
@@ -1067,6 +998,4 @@ if __name__ == "__main__":
     def testdepre():
         print("deprecated function")
 
-    t = ('a', 1)
-    print("Freeze " + str(t) + "->" + str(freeze(t)))
     testdepre()

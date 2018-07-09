@@ -1,4 +1,4 @@
-from .common import freeze
+from .freeze import deepfreeze
 
 class PatternElement:
     """Tree structure representing a message pattern.
@@ -154,7 +154,7 @@ class Event:
         """Generates a tuple representation for this event."""
         return (type(self),
                 (self.timestamp, self.destination, self.source),
-                freeze(self.message))
+                deepfreeze(self.message))
 
     def __str__(self):
         buf = ["<", type(self).__name__,
@@ -167,6 +167,7 @@ class Event:
 
     def __repr__(self):
         return str(self)
+
 
 class ReceivedEvent(Event): pass
 class SentEvent(Event): pass
