@@ -184,7 +184,7 @@ def _sanitize_filename(dfile, no_symlink=True):
     os.makedirs(dirname, exist_ok=True)
     return dfile
 
-def dafile_to_pseudofile(filename, outname=None):
+def dafile_to_pseudofile(filename, outname=None, args=None):
     """Compiles a DistAlgo source file to Python file.
 
     'filename' is the input DistAlgo source file. Optional parameter 'outname'
@@ -205,7 +205,7 @@ def dafile_to_pseudofile(filename, outname=None):
     if outname is None:
         outname = purename + ".dap"
     outname = _sanitize_filename(outname)
-    daast = daast_from_file(filename)
+    daast = daast_from_file(filename, args)
     if daast:
         with open(outname, "w") as outfd:
             DastUnparser(daast, outfd)
@@ -452,7 +452,7 @@ def main(argv=None):
             stderr.write("Invalid debugging level %s.\n" % str(args.debug))
 
     if args.genpsd:
-        res = dafile_to_pseudofile(args.infile, args.psdfile)
+        res = dafile_to_pseudofile(args.infile, args.psdfile, args)
     elif args.geninc:
         res = dafile_to_incfiles(args)
     elif args.write_bytecode:

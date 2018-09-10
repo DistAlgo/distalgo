@@ -163,7 +163,7 @@ def extract_label(node):
     else:
         return None
 
-def daast_from_file(filename, args=None):
+def daast_from_file(filename, args):
     """Generates DistAlgo AST from source file.
 
     'filename' is the filename of source file. Optional argument 'args' is a
