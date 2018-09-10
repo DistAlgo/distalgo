@@ -80,6 +80,8 @@ def dafile_to_pyast(filename, args=None):
     Returns the generated Python AST.
 
     """
+    if args is None:
+        args = parse_compiler_args([])
     daast = daast_from_file(filename, args)
     if daast is not None:
         pyast = PythonGenerator(filename, args).visit(daast)
@@ -91,7 +93,7 @@ def dafile_to_pyast(filename, args=None):
             isinstance(pyast[0], ast.Module)
         pyast = pyast[0]
         ast.fix_missing_locations(pyast)
-        if args and args.dump_ast:
+        if args and hasattr(args, 'dump_ast') and args.dump_ast:
             print(ast.dump(pyast, include_attributes=True), file=stderr)
         return pyast
     else:
