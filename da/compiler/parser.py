@@ -300,7 +300,7 @@ class PatternParser(NodeVisitor):
     """Parses a pattern.
     """
 
-    def __init__(self, parser, literal=False):
+    def __init__(self, parser, literal=False, local_only=False):
         self._parser = parser
         self.namescope = parser.current_scope
         self.parent_node = parser.current_parent
@@ -310,6 +310,7 @@ class PatternParser(NodeVisitor):
         self.use_top_semantic = parser.get_option('use_top_semantic',
                                                   default=False)
         self.literal = literal
+        self.local_only = local_only
 
     def visit(self, node):
         if isinstance(node, Name):
@@ -400,7 +401,7 @@ class PatternParser(NodeVisitor):
                 n.add_read(pat)
             else:
                 self._parser.debug("[PatternParser] free name " + name, node)
-                n = self.namescope.find_name(name)
+                n = self.namescope.find_name(name, local=self.local_only)
                 if n is None:
                     # New name:
                     n = self.namescope.add_name(name)
@@ -685,9 +686,9 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
                               .format(e.reason), e.node if e.node else b)
         return bases
 
-    def parse_pattern_expr(self, node, literal=False):
+    def parse_pattern_expr(self, node, literal=False, local_only=False):
         expr = self.create_expr(dast.PatternExpr, node)
-        pp = PatternParser(self, literal)
+        pp = PatternParser(self, literal, local_only)
         pattern = pp.visit(node)
         if pattern is None:
             self.error("invalid pattern", node)
@@ -775,7 +776,7 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
                 else:
                     labels |= ls
                 continue
-            pat = self.parse_pattern_expr(patexpr)
+            pat = self.parse_pattern_expr(patexpr, local_only=True)
             if key.arg == KW_MSG_PATTERN:
                 events.append(dast.Event(self.current_process, ast=node,
                                          event_type=eventtype, pattern=pat))
