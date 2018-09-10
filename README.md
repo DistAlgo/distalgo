@@ -63,6 +63,15 @@
    To upgrade an existing DistAlgo installation to a newer version:
    
      pip install --upgrade [--user] pyDistAlgo
+     
+### Installing pre-release versions using `pip`
+
+   By default, `pip` only installs "stable" versions from the PyPI
+   repository. If you would like to install or upgrade to the latest
+   version, pass the `--pre` flag to `pip install`:
+   
+     pip install --pre pyDistAlgo
+     pip install --upgrade --pre pyDistAlgo
 
 ## Option 2: Using `setup.py`
 
