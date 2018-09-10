@@ -15,7 +15,5 @@ for name in common.api_registry.keys():
     globals()[name] = common.api_registry[name]
     __all__.append(name)
 
-# Inject the DistAlgo module loader:
-importer._install()
 # Hook into multiprocessing.spawn:
 common._install()
