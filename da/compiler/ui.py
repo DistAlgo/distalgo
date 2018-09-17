@@ -209,7 +209,7 @@ def dafile_to_pseudofile(filename, outname=None, args=None):
     outname = _sanitize_filename(outname)
     daast = daast_from_file(filename, args)
     if daast:
-        with open(outname, "w") as outfd:
+        with open(outname, "w", encoding='utf-8') as outfd:
             DastUnparser(daast, outfd)
             stderr.write("Written pseudo code file %s.\n"% outname)
 
@@ -240,7 +240,7 @@ def dafile_to_pyfile(filename, outname=None, args=None):
     outname = _sanitize_filename(outname)
     pyast = dafile_to_pyast(filename, args)
     if pyast is not None:
-        with open(outname, "w") as outfd:
+        with open(outname, "w", encoding='utf-8') as outfd:
             global OutputSize
             OutputSize += to_file(pyast, outfd)
             stderr.write("Written compiled file %s.\n"% outname)
@@ -318,10 +318,10 @@ def dafile_to_incfiles(args):
     if daast is not None:
         global OutputSize
         inc, ast = gen_inc_module(daast, args, filename=incname)
-        with open(outname, "w") as outfd:
+        with open(outname, "w", encoding='utf-8') as outfd:
             OutputSize += to_file(ast, outfd)
             stderr.write("Written compiled file %s.\n"% outname)
-        with open(incname, "w") as outfd:
+        with open(incname, "w", encoding='utf-8') as outfd:
             OutputSize += to_file(inc, outfd)
             stderr.write("Written interface file %s.\n" % incname)
         return 0
