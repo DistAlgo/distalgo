@@ -413,6 +413,7 @@ class TcpTransport(SocketTransport):
     def _verify_challenge(self, conn, auxdata):
         """Verify a remote peer has the proper key and version."""
         addr = auxdata.peername
+        # FIXME: is it possible we may not get the whole message in one go?
         message = conn.recv(TCP_RECV_BUFFER_SIZE)
         self.mesgloop.deregister(conn)
         port_bytes = message[:ADDRESS_SIZE]
@@ -446,6 +447,7 @@ class TcpTransport(SocketTransport):
                                (self._receive_1, auxdata))
 
     def _answer_challenge(self, conn, addr):
+        # FIXME: same here...
         message = conn.recv(TCP_RECV_BUFFER_SIZE)
         self._log.debug("=========answering %r", message)
         if self.authkey is not None:
@@ -471,7 +473,8 @@ class TcpTransport(SocketTransport):
                                                format(addr))
             else:
                 self._send_challenge_reply(VER_CHALLENGE, conn, addr)
-        response = conn.recv(TCP_RECV_BUFFER_SIZE)
+        # FIXME: ...and here
+        response = conn.recv(len(WELCOME))
         if len(response) == 0:
             # Remote side dropped the connection, either because they
             # terminated, or we already have a connection
