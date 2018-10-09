@@ -163,7 +163,7 @@ def extract_label(node):
     else:
         return None
 
-def daast_from_file(filename, args):
+def daast_from_file(filename, args=None):
     """Generates DistAlgo AST from source file.
 
     'filename' is the filename of source file. Optional argument 'args' is a
@@ -193,7 +193,23 @@ def daast_from_str(src, filename='<str>', args=None):
 
     """
     try:
-        dt = Parser(filename, args)
+        options = Namespace()
+        options.benchmark=False
+        options.debug=None
+        options.dump_ast=False
+        options.geninc=False
+        options.genpsd=False
+        options.incfile=None,
+        options.infile=filename
+        options.interactive=False
+        options.module_name='__main__'
+        options.optimize=-1
+        options.outfile=None
+        options.psdfile=None
+        options.write_bytecode=False
+
+        # dt = Parser(filename, args)
+        dt = Parser(filename, options)
         rawast = parse(src, filename)
         dt.visit(rawast)
         sys.stderr.write("%s compiled with %d errors and %d warnings.\n" %
