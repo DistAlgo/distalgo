@@ -254,7 +254,10 @@ def libmain():
     if isinstance(args, int):
         return args
     else:
-        common.global_init(args.__dict__)
+        try:
+            common.global_init(args.__dict__)
+        except common.ConfigurationError as e:
+            die(repr(e))
         return entrypoint()
 
 def die(mesg = None):
