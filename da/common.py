@@ -148,8 +148,12 @@ def _set_hostname():
         if GlobalOptions.get('hostname') is None:
             msg = (f'This system is configured to use "{hostname}" as its fully '
                    'qualified domain name, but it is not resolvable. Please '
-                   'specify a hostname or an IP address via the "--hostname" '
-                   'command line argument.')
+                   'specify a hostname or an IP address via the "--hostname"'
+                   '(or equivalently "-H") command line argument. If you only '
+                   'intend to connect to other DistAlgo nodes running on '
+                   'this system, you can use "-H localhost". Otherwise, '
+                   'you must specify a hostname or an IP address that is '
+                   'reachable from remote hosts.')
         else:
             msg = f'"{hostname}" is not a resolvable hostname.'
         raise ConfigurationError(msg) from e
