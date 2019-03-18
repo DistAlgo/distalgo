@@ -74,7 +74,13 @@ class Command(enum.Enum):
     Message    = 20
     RPC        = 30
     RPCReply   = 31
+    # Crash      = 32
+    # Recover    = 33
+    # CrashAck   = 34
+    # RecoverAck = 35
     Sentinel   = 40
+    
+
 
 _config_object = dict()
 
@@ -129,6 +135,8 @@ class DistProcess():
 
         self._state = common.Namespace()
         self._events = []
+
+        self.__crashing = False
 
     def setup(self, **rest):
         """Initialization routine for the DistAlgo process.
@@ -185,7 +193,8 @@ class DistProcess():
             self._logical_clock = None
 
     AckCommands = [Command.NewAck, Command.EndAck, Command.StartAck,
-                   Command.SetupAck, Command.ResolveAck, Command.RPCReply]
+                   Command.SetupAck, Command.ResolveAck, Command.RPCReply]#,
+                   # Command.CrashAck, Command.RecoverAck]
     @internal
     def _init_dispatch_table(self):
         self.__command_dispatch_table = [None] * Command.Sentinel.value
@@ -448,7 +457,7 @@ class DistProcess():
 
     @builtin
     def work(self):
-        """Waste some random amount of time.
+        """Waste   random amount of time.
 
         This suspends execution of the process for a period of 0-2 seconds.
 
@@ -520,6 +529,104 @@ class DistProcess():
         """
         self._register_async_event(Command.EndAck, seqno=0)
         self._sync_async_event(Command.EndAck, seqno=0, srcs=self._id)
+
+    # another option: crash and recover both by messages.
+    # @builtin
+    # def fakeCrash(self, duration):
+
+    #     """Block current process for timeout time
+
+    #     simulation crashing and bring back
+    #     if timeout == 0: crash completely and never bring back
+
+    #     """
+    #     if timeout > 0:
+    #         # print()
+    #         # print()
+    #         # for i in self.__messageq._q:
+    #         #     print (i)
+    #         tmpMessage = copy.deepcopy(self.__messageq._q)
+    #         # print('========= before crash =========',self._id,tmpMessage)
+    #         time.sleep(duration)
+    #         # print()
+    #         # print('========= after crash =========',self._id,tmpMessage,self.__messageq._q)
+    #         self.__messageq._q = copy.deepcopy(tmpMessage)
+    #         # print(self._id,self.__messageq._q)
+
+    #         # for i in self.__messageq._q:
+    #         #     print (i)
+    #     else:
+    #         hanged()
+
+
+
+    @builtin
+    def crash(self, procs):
+        self._send1(Command.Message, '__crash__', procs, flags=ChannelCaps.RELIABLEFIFO)
+
+
+    @builtin
+    def recover(self, procs):
+        self._send1(Command.Message, '__recover__', procs, flags=ChannelCaps.RELIABLEFIFO)
+
+
+    # @internal
+    # def _crash(self, procs):
+    #     print('========= _crash ===========')
+    #     res = True
+    #     seqno = self._create_cmd_seqno()
+        
+    #     self._register_async_event(msgtype=Command.CrashAck, seqno=seqno)
+    #     if self._send1(msgtype=Command.Crash, message=seqno, to=procs,
+    #                    flags=ChannelCaps.RELIABLEFIFO):
+    #         self._sync_async_event(msgtype=Command.CrashAck,
+    #                                 seqno=seqno,
+    #                                 srcs=procs)
+    #     else:
+    #         res = False
+    #         self._deregister_async_event(msgtype=Command.CrashAck,
+    #                                       seqno=seqno)
+    #     return res
+
+
+
+    # @internal
+    # def _recover(self, procs):
+    #     print('========= _recover ===========')
+    #     res = True
+    #     seqno = self._create_cmd_seqno()
+        
+    #     self._register_async_event(msgtype=Command.RecoverAck, seqno=seqno)
+    #     if self._send1(msgtype=Command.Recover, message=seqno, to=procs,
+    #                    flags=ChannelCaps.RELIABLEFIFO):
+    #         self._sync_async_event(msgtype=Command.RecoverAck,
+    #                                 seqno=seqno,
+    #                                 srcs=procs)
+    #     else:
+    #         res = False
+    #         self._deregister_async_event(msgtype=Command.RecoverAck,
+    #                                       seqno=seqno)
+    #     return res
+
+    # @internal
+    # def _cmd_Crash(self, src, seqno):
+    #     print('========= _cmd_Crash ===========')
+    #     self.__crashing = True
+    #     self._send1(msgtype=Command.CrashAck,
+    #             message=(seqno, None),
+    #             to=src,
+    #             flags=ChannelCaps.RELIABLEFIFO)
+    #     self._wait_for(lambda: not self.__running)
+
+    # @internal
+    # def _cmd_Recover(self, src, seqno):
+    #     print('========= _cmd_Recover ===========')
+    #     self.__crashing = False
+    #     self._send1(msgtype=Command.RecoverAck,
+    #         message=(seqno, None),
+    #         to=src,
+    #         flags=ChannelCaps.RELIABLEFIFO)
+
 
     @builtin
     def resolve(self, name):
@@ -792,6 +899,18 @@ class DistProcess():
 
         try:
             message = self.__messageq.pop(block, timeout)
+            # print(message[1])
+            if message[1][1] == '__crash__':    # should move all these things to a self defined message handler
+                self.__crashing = True
+                self.output('crashed')
+                return True
+            if message[1][1] == '__recover__':
+                self.__crashing = False
+                self.output('recovered')
+                return True
+            if self.__crashing:
+                return True
+                
         except common.QueueEmpty:
             message = None
         except Exception as e:
