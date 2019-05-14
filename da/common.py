@@ -81,7 +81,11 @@ class InvalidStateException(RuntimeError): pass
 
 class ConfigurationError(RuntimeError): pass
 
-
+def write_file(filename, string):
+    file = open(filename,'w')
+    file.write(string)
+    file.close()
+    
 def get_runtime_option(key, default=None):
     """Returns the configured value of runtime option 'key', or 'default' if 'key'
     is not configured.
