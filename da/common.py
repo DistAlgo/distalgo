@@ -82,6 +82,7 @@ class InvalidStateException(RuntimeError): pass
 class ConfigurationError(RuntimeError): pass
 
 def write_file(filename, string):
+    # print('>>>>>>>>>>>>>>>>>>>>>>>>>> write_file',filename,os.getcwd())
     file = open(filename,'w')
     file.write(string)
     file.close()

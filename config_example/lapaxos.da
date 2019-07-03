@@ -1,9 +1,13 @@
 import sys
-from random import randint
-TIMEOUT = 1
+import controller
+from random import randint, random
 
-class Proposer(process):
+
+TIMEOUT = 5
+
+class Proposer(process, controller.Controllee):
     def setup(acceptors:set):
+        super().setup()
         self.n = None              # proposal number
         self.majority = acceptors  # majority of acceptors; all in other papers
 
@@ -25,14 +29,21 @@ class Proposer(process):
 
     def run():
         while not received(('done',)):
+            if random() > 0.8:
+                backup()
+                # backup(self)
+                # backup(name = 'wakakakakakakaka')
+                # backup(self,name='yohohohoho')
             to_consent()
         output('terminating')
+        send(('terminated', ), to=nodeof(self))
 
     def anyof(s):
         return next(iter(s)) if s else None
 
-class Acceptor(process):
-    def setup(learners:set): pass
+class Acceptor(process, controller.Controllee):
+    def setup(learners:set):
+        super().setup()
 
     def receive(msg= ('prepare', n), from_= p):
         if each(sent(('respond', n2, _)), has= n > n2):
@@ -47,13 +58,15 @@ class Acceptor(process):
     def run():
         await(received(('done',)))
         output('terminating')
+        send(('terminated', ), to=nodeof(self))
 
     def anyof(s):
         """return any element of set s if s is not empty or 'None' otherwise"""
         return next(iter(s)) if s else None
 
-class Learner(process):
-    def setup(acceptors:set): pass
+class Learner(process, controller.Controllee):
+    def setup(acceptors:set):
+        super().setup()
 
     def learn():
         if await(some(received(('accepted', n, v)),
@@ -69,6 +82,7 @@ class Learner(process):
         output('terminating')
         send(('learned', ), to=nodeof(self))
 
+
 def main():
     nacceptors = int(sys.argv[1]) if len(sys.argv) > 1 else 3
     nproposers = int(sys.argv[2]) if len(sys.argv) > 2 else 5
@@ -78,14 +92,19 @@ def main():
     proposers = new(Proposer, (acceptors,), num= nproposers)
     learners = new(Learner, (acceptors,), num= nlearners)
     for p in acceptors: setup(p, (learners,))
-    start(acceptors | proposers | learners)
+
+    ctl = new(controller.Controller, (acceptors | proposers | learners,), num= 1)
+
+    start(ctl | acceptors | proposers | learners)
 
     await(each(l in learners, has=received(('learned',), from_=l)))
     output('done')
     send(('done',), to= (acceptors|proposers))
+    await(each(l in (acceptors|proposers), has=received(('terminated',), from_=l)))
+    end(ctl)
 
 # This is an executable specification of the algorithm described in
-# Lamport, L. (2001).  Paxos Made Simple.  ACM SIGACT News 
+# Lamport, L. (2001).  Paxos Made controllerple.  ACM SIGACT News 
 # (Distributed Computing Column), 32(4):51-58, December.
 
 # This code includes setup and termination for running repeated rounds until

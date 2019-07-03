@@ -90,7 +90,8 @@ class DASourceFileLoader(machinery.SourceFileLoader):
 
         """
         from .. import compiler
-
+        # print('source_to_code:importerimporterimporterimporterimporterimporterimporterimporterimporterimporterimporterimporterimporterimporterimporter')
+        # compiler.dafile_to_pyfile(path)
         codeobj = _call_with_frames_removed(compiler.dastr_to_pycode,
                             data, path, _optimize=_optimize,
                             args=common.get_runtime_option(
@@ -175,6 +176,7 @@ class DASourceFileLoader(machinery.SourceFileLoader):
                                                      source_path=source_path)
         if source_bytes is None:
             source_bytes = self.get_data(source_path)
+
         code_object = self.source_to_code(source_bytes, source_path)
         _verbose_message('code object from {}', source_path)
         if (not sys.dont_write_bytecode and bytecode_path is not None and

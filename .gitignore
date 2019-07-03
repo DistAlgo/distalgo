@@ -14,3 +14,4 @@ doc/*.aux
 doc/*.pdf
 MANIFEST
 .dir-locals.el
+config_example/backup

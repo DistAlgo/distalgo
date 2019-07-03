@@ -1,0 +1,40 @@
+# this code copies everything in main function in vrpaxos.da
+# and added the statement of super().crash(p) and super().recover(p)
+
+import sys
+import controller
+
+from lapaxos import Proposer, Acceptor, Learner
+
+
+class Test(process):
+    def setup():
+        super().setup()
+
+    def run():
+        nacceptors = int(sys.argv[1]) if len(sys.argv) > 1 else 3
+        nproposers = int(sys.argv[2]) if len(sys.argv) > 2 else 5
+        nlearners = int(sys.argv[3]) if len(sys.argv) > 3 else 3
+
+        acceptors = new(Acceptor, num= nacceptors)
+        proposers = new(Proposer, (acceptors,), num= nproposers)
+        learners = new(Learner, (acceptors,), num= nlearners)
+        for p in acceptors: setup(p, (learners,))
+
+        ctl = new(controller.Controller, (acceptors | proposers | learners,), num= 1)
+
+        start(ctl | acceptors | proposers | learners)
+
+        await(each(l in learners, has=received(('learned',), from_=l)))
+        output('done')
+        send(('done',), to= (acceptors|proposers))
+        await(each(l in (acceptors|proposers), has=received(('terminated',), from_=l)))
+        end(ctl)
+
+
+def main():
+    config(enable_backup=True)
+    config(enable_crash=True)
+    config(channel=lossy,lose_rate=0.3)
+    tester = new(Test, (), num= 1)
+    start(tester)

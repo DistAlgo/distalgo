@@ -25,8 +25,11 @@
 import sys
 from ast import *
 from itertools import chain
-from . import dast, symtab
+from . import dast, symtab, ruleast
 from .utils import printd, printw, printe
+from ..common import write_file
+
+from pprint import pprint
 
 OperatorMap = {
     dast.AddOp      : Add,
@@ -70,9 +73,21 @@ AggregateMap = {
 }
 
 CONFIG_OBJECT_NAME = "_config_object"
+RULES_OBJECT_NAME = "_rules_object"
 STATE_ATTR_NAME = "_state"
 ENTRYPOINT_NAME = "run"
 CATCHALL_PARAM_NAME = "rest_%d"
+
+UniqueUpperCasePrefix = 'V'
+UniqueLowerCasePrefix = 'p'
+
+# FIXME: is there a better way than hardcoding these?
+KnownUpdateMethods = {
+    "add", "append", "extend", "update",
+    "insert", "reverse", "sort",
+    "delete", "remove", "pop", "clear", "discard"
+}
+
 
 ########## Convenience methods for creating AST nodes: ##########
 
@@ -354,6 +369,8 @@ class PythonGenerator(NodeVisitor):
         self.current_context = Load
 
         self.current_node = None
+        self.current_triggered_rules = set()
+        self.current_setup = False
 
     def get_option(self, option, default=None):
         if hasattr(self.cmdline_args, option):
@@ -375,6 +392,51 @@ class PythonGenerator(NodeVisitor):
         self.postambles = list()
         self.pattern_generator = None
 
+
+    def compile_rules(self, node):
+        """
+        called on a Rules node, write the rules in a file
+        """
+        # for now assume there is only one set of rules in each class,
+        # and use the class name as file name;
+        # later add the name of the Rules node within the class.
+        # so rule files can be written at compile time.
+        # filename = get_classname(node.decls)  # need to connect with da
+        # print('=========== compile_rules ============')
+        xsb_rules = ':- auto_table.\n'
+        xsb_rules += self.to_xsb(node) 
+        # print(xsb_rules)
+        write_file(node.decls+'.rules', xsb_rules)
+
+
+
+    def to_xsb(self, node):
+        """
+        called on a Rules node, write rules into XSB rules
+        """
+        if isinstance(node, ruleast.Rules):
+            return '\n'.join(self.to_xsb(rule) for rule in node.rules)
+        if isinstance(node, ruleast.Rule):
+            if node.conds == None: return self.to_xsb(node.concl) + '.'
+            return self.to_xsb(node.concl) + ' :- ' + \
+                ','.join(self.to_xsb(assrtn) for assrtn in node.conds) + '.'
+        if isinstance(node, ruleast.Assertion):
+            return self.to_xsb(node.pred) + '(' + \
+                ','.join(self.to_xsb(arg) for arg in node.args) + ')'
+        if isinstance(node, ruleast.LogicVar):
+            if node.name == '_':
+                return node.name
+            elif not isinstance(node.name,str) or node.name.startswith("'"):
+                # print(node.name)
+                return str(node.name)
+            else:
+                return UniqueUpperCasePrefix + node.name
+            
+        if isinstance(node, ruleast.Constant):
+            return UniqueLowerCasePrefix + node.name
+
+
+
     def visit(self, node):
         """Generic visit method.
 
@@ -388,6 +450,11 @@ class PythonGenerator(NodeVisitor):
 
         assert isinstance(node, dast.DistNode)
         self.current_node = node
+
+        if isinstance(node, ruleast.Rules):
+            self.compile_rules(node)
+            return
+
         if hasattr(node, "ast_override"):
             res = node.ast_override
         else:
@@ -396,10 +463,12 @@ class PythonGenerator(NodeVisitor):
         if isinstance(node, dast.Statement):
             assert isinstance(res, list)
             # This is a statement block, propagate line number info:
-            copy_location(res[0], node)
-            propagate_attributes(node, res[0])
+            if len(res) > 0:
+                copy_location(res[0], node)
+                propagate_attributes(node, res[0])
             return res
         else:
+            # if not isinstance(node, ruleast.InferStmt):
             assert isinstance(res, AST)
             # This is an expression, pass on pre and post bodies:
             copy_location(res, node)
@@ -449,6 +518,62 @@ class PythonGenerator(NodeVisitor):
         body.extend(self.postambles)
         return [Module(body)]
 
+
+
+    def _generate_rules(self,node):
+
+        a = pyAssign(  [pyAttr("self",RULES_OBJECT_NAME, Store())], 
+                        Dict([Str(key) for key, _ in node.RuleConfig.items()],
+                             [Dict( [Str('LhsVars'),Str('RhsVars'),Str('Unbounded')],
+                                    [Set([pyTuple([Str(v.name), Num(val['LhsAry'][v])]) for v in val['LhsVars']]),
+                                     Set([Str(v.name) for v in val['RhsVars']]),
+                                     Set([Str(v) for v in val['Unbounded']])])
+                              for _, val in node.RuleConfig.items()]))
+        fire_rules = []
+        for key, val in node.RuleConfig.items():
+            if len(val['Unbounded']) == 0 and len(val['LhsVars']) > 0:
+                fire_rules.append(key)
+
+        inferStmt = self._generate_infer(node, fire_rules)
+        return [a]+inferStmt
+        
+
+    def _generate_infer(self, node, fire_rules):
+
+        callInfer = []
+        parent_process = node
+        while not isinstance(parent_process, dast.Process):
+            if not hasattr(parent_process, 'process'):
+                parent_process = parent_process.parent
+            else:
+                parent_process = parent_process.process
+
+        ruleConfig = parent_process.RuleConfig
+
+        if len(fire_rules) > 0:
+
+            for r in fire_rules:
+                query = ruleConfig[r]['LhsVars']
+                lhs = []
+                qArg = []
+                for q in query:
+                    lhs.append(pyAttr(pyAttr("self", STATE_ATTR_NAME),q.name,Store()))
+                    arity = ruleConfig[r]['LhsAry'][q]
+                    qstr = q.name+'('
+                    for i in range(arity-1):
+                        qstr += '_,'
+                    if arity > 0:
+                        qstr += '_'
+                    qstr += ')'
+                    qArg.append(Str(qstr))
+
+                inferStmt = pyAssign(lhs,pyCall(pyAttr("self", 'infer'), args=[], keywords=[('rule',Str(r)),('queries',pyList(qArg))]))
+                copy_location(inferStmt, node)
+                callInfer.append(inferStmt)
+
+        return callInfer
+
+
     def generate_config(self, node):
         return Assign([pyName(CONFIG_OBJECT_NAME, Store())],
                       Dict([Str(key) for key, _ in node.configurations],
@@ -494,6 +619,7 @@ class PythonGenerator(NodeVisitor):
                           args=[pyList([self.generate_event_def(evt)
                                         for evt in node.events])]))
         ])
+        
         return pyFunctionDef(name="__init__",
                              args=(["self"] + PROC_INITARGS),
                              kwarg='props',
@@ -533,6 +659,7 @@ class PythonGenerator(NodeVisitor):
         cd = ClassDef()
         cd.name = node.name
         cd.bases = [self.visit(e) for e in node.bases]
+
         if node is node.immediate_container_of_type(dast.Program).nodecls:
             cd.bases.append(pyAttr("da", "NodeProcess"))
         else:
@@ -549,14 +676,30 @@ class PythonGenerator(NodeVisitor):
         cd.body = [self.generate_init(node)]
         if node.configurations:
             cd.body.append(self.generate_config(node))
+        
+        if hasattr(node,'rules'):
+            for r in node.rules:
+                self.compile_rules(r)
         if node.setup is not None:
             cd.body.extend(self.visit(node.setup))
+        elif len(node.RuleConfig) > 0:
+            fd = self._create_setup(node)
+            cd.body.append(fd)
+
+        self.current_setup = True
         if node.entry_point is not None:
             cd.body.extend(self._entry_point(node.entry_point))
+
         cd.decorator_list = [self.visit(d) for d in node.decorators]
         cd.body.extend(self.body(node.staticmethods))
         cd.body.extend(self.body(node.methods))
+
+        if len(node.RuleConfig) > 0:
+            cd.body.extend(self._generate_override_functions(node))
+
+
         cd.body.extend(self.generate_handlers(node))
+        self.current_setup = False
         return [cd]
 
     def _entry_point(self, node):
@@ -564,6 +707,68 @@ class PythonGenerator(NodeVisitor):
         stmts[0].name = ENTRYPOINT_NAME
         stmts[0].args.args = [arg("self", None)]
         return stmts
+
+
+# a.add() a
+
+
+    def _create_setup(self,node):
+        parent = node
+        while not parent.setup:
+            for i in parent.parent.processes:
+                if i.name == parent.bases[0].subexprs[0].name:
+                    parent = i
+                    break
+        fd = FunctionDef()
+        fd.name = 'setup'
+        fd.args = self.visit(parent.args)
+        fd.body = []
+        superargs = [pyName(argname.arg) for argname in fd.args.args]
+        setupExp = pyExpr(pyCall(pyAttr(pyCall('super'),"setup"),args=superargs))
+        ruleStmt = self._generate_rules(node)
+        fd.body += [setupExp]+ruleStmt
+        fd.decorator_list = []
+        fd.returns = None
+        fd.args.args.insert(0, arg("self", None))
+        return fd
+
+    def _generate_override_functions(self,node):
+        addFunctions = dict()
+        for rule in node.RuleConfig:
+            if len(node.RuleConfig[rule]['Unbounded']) == 0 and len(node.RuleConfig[rule]['LhsVars']) > 0:
+                for rhs in node.RuleConfig[rule]['RhsVars']:
+                    for ctx, stmt in rhs._indexes:
+                        if ctx == dast.AssignmentCtx or ctx == dast.UpdateCtx:
+                            for s in stmt:
+                                if s:
+                                    parent = s.parent
+                                    while not isinstance(parent,dast.Function):
+                                        parent = parent.parent
+
+                                    localMethod = set(m.name for m in node.methods)
+                                    if parent.name != 'setup' and not parent.name in localMethod and not parent.name in addFunctions:
+                                        addFunctions[parent.name] = dict()
+                                        addFunctions[parent.name]['origFunc'] = parent._ast
+                                        addFunctions[parent.name]['args'] = self.visit(parent.args)
+                                        addFunctions[parent.name]['rules'] = set()
+                                        addFunctions[parent.name]['rules'].add(rule)
+        # pprint(node)
+        # pprint(addFunctions)
+        funcs = []
+        for func, info in addFunctions.items():
+            fd = FunctionDef()
+            fd.name = func
+            fd.args = info['args']
+            fd.body = []
+            funcargs = [pyName(argname.arg) for argname in fd.args.args]
+            fd.body.append(pyExpr(pyCall(pyAttr(pyCall('super'),fd.name),args=funcargs)))
+            fd.body.extend(self._generate_infer(node, info['rules']))
+            fd.decorator_list = []
+            fd.returns = info['origFunc'].returns
+            fd.args.args.insert(0, arg("self", None))
+            funcs.append(fd)
+
+        return funcs
 
     def _generate_setup(self, node, fd):
         fd.args = self.visit(node.parent.args)
@@ -587,12 +792,20 @@ class PythonGenerator(NodeVisitor):
         fd.name = node.name
         fd.args = self.visit(node.args)
         fd.body = []
+        ruleStmt = []
         if isinstance(node.parent, dast.Process):
             if node.name == "setup":
                 self._generate_setup(node, fd)
+
+                if len(node.parent.RuleConfig) > 0:
+                    ruleStmt = self._generate_rules(node.parent)
+
             if node not in node.parent.staticmethods:
                 fd.args.args.insert(0, arg("self", None))
+
         fd.body = self.body(node.body, fd.body)
+        # pprint(fd.body)
+        fd.body += ruleStmt
         fd.decorator_list = [self.visit(d) for d in node.decorators]
         fd.returns = None
         return [fd]
@@ -767,6 +980,7 @@ class PythonGenerator(NodeVisitor):
                 target = self.pattern_generator.visit(node.pattern)
                 self.pattern_generator.current_context = ctx
             result = pycomprehension(target, domain, target.conditions)
+
         return propagate_fields(result)
 
     def visit_QuantifiedExpr(self, node):
@@ -1015,6 +1229,12 @@ class PythonGenerator(NodeVisitor):
         return Lambda(args, self.visit(node.body))
 
     def visit_NamedVar(self, node):
+        if self.current_context in {Store, Del}:
+            if len(node.triggerInfer) > 0:
+                self.current_triggered_rules |= node.triggerInfer
+        else:
+            self.current_triggered_rules = set()
+        
         if isinstance(node.scope, dast.Process):
             if node.name in node.scope.methodnames:
                 return pyAttr("self", node.name,
@@ -1043,17 +1263,33 @@ class PythonGenerator(NodeVisitor):
             # anything:
             return []
         self.current_context = Store
+        
         targets = [self.visit(tgt) for tgt in node.targets]
+        # triggered_variables = self.triggered_variables
+        fire_rules = self.current_triggered_rules
+        
         self.current_context = Load
         val = self.visit(node.value)
-        return [pyAssign(targets, val)]
+        assignStmt = pyAssign(targets, val)
+
+        if self.current_setup:
+            callInfer = self._generate_infer(node,fire_rules)
+        else:
+            callInfer = []
+
+        return [assignStmt]+callInfer
 
     def visit_OpAssignmentStmt(self, node):
         self.current_context = Store
         target = self.visit(node.target)
+        fire_rules = self.current_triggered_rules
         self.current_context = Load
         val = self.visit(node.value)
-        return [pyAugAssign(target, OperatorMap[node.operator], val)]
+        if self.current_setup:
+            callInfer = self._generate_infer(node,fire_rules)
+        else:
+            callInfer = []
+        return [pyAugAssign(target, OperatorMap[node.operator], val)] + callInfer
 
     def visit_IfStmt(self, node):
         test = self.visit(node.condition)
@@ -1226,7 +1462,14 @@ class PythonGenerator(NodeVisitor):
     def visit_DeleteStmt(self, node):
         self.current_context = Del
         targets = [self.visit(tgt) for tgt in node.targets]
+        fire_rules = self.current_triggered_rules
         self.current_context = Load
+
+        if self.current_setup:
+            callInfer = self._generate_infer(node,fire_rules)
+        else:
+            callInfer = []
+
         return [propagate_fields(Delete(targets))]
 
     def visit_YieldStmt(self, node):
@@ -1264,7 +1507,22 @@ class PythonGenerator(NodeVisitor):
 
     def visit_SimpleStmt(self, node):
         value = self.visit(node.expr)
-        return [pyExpr(value)]
+        inferStmt = []
+        if isinstance(value, Call) and isinstance(value.func, Attribute) and isinstance(value.func.value, Attribute):
+            changed = value.func.value.attr
+            parent = node.parent
+            while not isinstance(parent, dast.Process):
+                parent = parent.parent
+            
+            if len(parent.RuleConfig) > 0:
+                fire_rules = set()
+                for r in parent.RuleConfig:
+                    rhs = set(v.name for v in parent.RuleConfig[r]['RhsVars'])
+                    if changed in rhs:
+                        fire_rules.add(r)
+                        # break
+                inferStmt = self._generate_infer(parent,fire_rules)
+        return [pyExpr(value)]+inferStmt
 
     def visit_BreakStmt(self, node):
         return [Break()]
@@ -1390,6 +1648,11 @@ class PatternComprehensionGenerator(PythonGenerator):
         self.current_context = ctx
         return target
 
+    #### todo add extra condition to condition_list to fix number of components error
+    #### length of pattern and length of elements
+    #### when recursive visiting
+    #### remember the freevar seen.
+    ####    first time seen a variable: free, see it later: bound
     def visit_TuplePattern(self, node):
         condition_list = []
         targets = []

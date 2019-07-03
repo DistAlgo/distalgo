@@ -1,5 +1,5 @@
 import sys
-config(channel= 'fifo', clock= 'Lamport')
+config(channel= 'lossy', clock= 'Lamport')
 
 class P(process):
     def setup(s:set, nrequests:int): pass  # s is set of all other processes

@@ -1,0 +1,77 @@
+# a sample program of controller that control how your program crashing
+
+from random import random, choice, sample, gauss
+
+
+class Controllee(process):
+    def setup(): pass
+
+    def run(): pass
+
+    def send(message, to, channel=None, **rest):
+        """ delay message transmission
+            so that crashing can take effect before the program is finished...
+        """
+        if await(False):
+            pass
+        elif timeout(random()*5):
+            super().send(message, to, channel, **rest)
+            # output('sent ', msg)
+
+
+
+class Controller(process):
+    def setup(procs:set):
+        self.nump = len(procs)
+        self.sigma = nump/3
+        self.crashed = set()
+
+    def random_crash():
+        """ randomly choose some processes to put to crash
+            calls crash(procs) to put procs to crash
+        """
+        backup()
+        k = int(gauss(0, sigma))
+        if k < 0:
+            k = -k
+        if k > nump:
+            k = nump
+        if k > 0:
+            self.crashed = set(sample(procs,k))
+            # output('put',k,'processes to crash:',crashed)
+            for c in self.crashed:
+                if random() > 0.8:
+                    backup(c, name='fromController')
+                else:
+                    backup()
+            crash(crashed)
+
+
+    def random_recover():
+        """ recover crashed processes in random order
+            calls recover(procs) to recover procs
+        """
+        while len(crashed) > 0:
+            if await(False):
+                pass
+            elif timeout(random()*2):
+                r = choice(list(crashed))
+                crashed.remove(r)
+                restore(r)
+                recover(r)
+
+    def run():
+        """ put some processes to crash and then recover by a random interval
+        """
+        if await(False):
+            pass
+        elif timeout(random()):
+            random_crash()
+
+        while(True):
+            random_recover()
+
+            if await(False):
+                pass
+            elif timeout(random()*5):
+                random_crash()

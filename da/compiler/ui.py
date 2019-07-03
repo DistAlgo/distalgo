@@ -115,6 +115,7 @@ def dafile_to_pycode(filename, args=None, _optimize=-1, dfile=None):
     Returns the compiled Python code object, or None in case of errors.
 
     """
+    # dafile_to_pyfile(filename, args)
     pyast = dafile_to_pyast(filename, args)
     if pyast is not None:
         return _pyast_to_pycode(pyast,
@@ -132,6 +133,7 @@ def dastr_to_pycode(src, filename='<string>', args=None, _optimize=-1):
     Returns the compiled Python code object, or None in case of errors.
 
     """
+    # print('dastr_to_pycode: uiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiuiui')
     pyast = dastr_to_pyast(src, filename, args)
     if pyast is not None:
         return _pyast_to_pycode(pyast, filename, _optimize)

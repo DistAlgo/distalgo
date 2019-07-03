@@ -1,7 +1,9 @@
 import sys
 
 class P(process):
-    def setup(s:set, nrequests:int): pass  # s is set of all other processes
+    def setup(s:set, nrequests:int): 
+        # pass  # s is set of all other processes
+        config(channel= Fifo)
 
     def mutex(task):
         -- request
@@ -30,7 +32,7 @@ def main():
     nprocs = int(sys.argv[1]) if len(sys.argv) > 1 else 10
     nrequests = int(sys.argv[2]) if len(sys.argv) > 2 else 1
 
-    config(channel= Fifo, clock= Lamport)
+    config(channel= Lossy, clock= Lamport)
 
     ps = new(P, num= nprocs)
     for p in ps: setup(p, (ps-{p}, nrequests))

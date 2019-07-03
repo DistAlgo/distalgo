@@ -200,10 +200,28 @@ class DistProcess():
             self._keep_unmatched = False
         self.__default_flags = self.__get_channel_flags(
             self.get_config("channel", default=[]))
+        # print(self.__default_flags)
+        # self.output('sim._init_config._config_object: ',self._config_object)
         if self.get_config('clock', default='').casefold() == 'lamport':
             self._logical_clock = 0
         else:
             self._logical_clock = None
+
+        # self.output('get_config: enable_crash', self.get_config('enable_crash', default=False))
+        # self.output('get_config: enable_backup', self.get_config('enable_backup', default=False))
+
+
+
+        if self.get_config('enable_crash', default=False) == True:
+            self._enable_crash = True
+        else:
+            self._enable_crash = False
+
+        if self.get_config('enable_backup', default=False) == True:
+            self._enable_backup = True
+        else:
+            self._enable_backup = False
+
 
     AckCommands = [Command.NewAck, Command.EndAck, Command.StartAck,
                    Command.SetupAck, Command.ResolveAck, Command.RPCReply]#,
@@ -230,7 +248,11 @@ class DistProcess():
     def __get_channel_flags(self, props):
         flags = 0
         if isinstance(props, str):
-            props = [props]
+            if props == 'lossy':
+                props = []
+                self._loss_rate = float(self.get_config('loss_rate', default='0.1'))
+            else:
+                props = [props]
         for prop in props:
             pflag = getattr(ChannelCaps, prop.upper(), None)
             if pflag is not None:
@@ -245,6 +267,7 @@ class DistProcess():
         """Returns the configuration value for specified 'key'.
 
         """
+        # print('get_config',key)
         cfgobj = get_runtime_option('config')
         if key in cfgobj:
             return cfgobj[key]
@@ -523,11 +546,16 @@ class DistProcess():
         if channel is not None:
             flags = self.__get_channel_flags(channel)
         impersonate = rest.get('impersonate', None)
-        res = self._send1(msgtype=Command.Message,
-                          message=(self._logical_clock, message),
-                          to=to,
-                          flags=flags,
-                          impersonate=impersonate)
+        l = getattr(self,'_loss_rate',0)
+        if random.random() > l:
+            res = self._send1(msgtype=Command.Message,
+                              message=(self._logical_clock, message),
+                              to=to,
+                              flags=flags,
+                              impersonate=impersonate)
+        else:
+            res = False
+            self._log.warning('message not delivered')
         self.__trigger_event(pattern.SentEvent(
             (self._logical_clock, to, self._id), message))
         return res
@@ -545,6 +573,120 @@ class DistProcess():
 
 
     @builtin
+    def infer(self, bindings=[], queries=[], rule=None):
+        # set_value = False
+        # self._log.info('infer called')
+        if not rule:
+            rule = self.__class__.__name__
+
+        pprint('=================================== infer ===================================')
+        # pprint(self._rules_object)
+        allBindings = set(b for b,_ in bindings)
+        # allLhs = set(self._rules_object[rule]['LhsVars'].keys())
+        # allqueries
+        if not rule in self._rules_object:
+            raise ValueError("infer: can't find rule: " + rule)
+
+        remove = set()
+        for u in self._rules_object[rule]['Unbounded']:
+            if u not in allBindings:
+                if hasattr(self._state,u):
+                    remove.add(u)
+                    self._rules_object[rule]['RhsVars'].add(u)
+                else:
+                    print("Unexpected error:", sys.exc_info()[0])
+                    raise ValueError("infer: not all predicates bond: " + u)
+
+        self._rules_object[rule]['Unbounded'] -= remove
+
+        for r in self._rules_object[rule]['RhsVars']:
+            if r not in allBindings:
+                bindings.append((r, getattr(getattr(self,'_state'), r)))
+
+        # if len(bindings) == 0:
+        #     for v in _rules_object['RhsVars']:
+        #         bindings.append((v, getattr(self, v)))
+
+        if len(queries) == 0:
+            # qArg = []
+            for v in self._rules_object[rule]['LhsVars']:
+                arity = v[1]
+                qstr = v[0]+'('
+                for i in range(arity-1):
+                    qstr += '_,'
+                if arity > 0:
+                    qstr += '_'
+                qstr += ')'
+                queries.append(qstr)
+
+        
+        xsb_facts = ""
+        for b in bindings:
+            if not isinstance(b[1], list) and not isinstance(b[1], set):
+                if isinstance(b[1], tuple):
+                    xsb_facts += UniqueLowerCasePrefix+b[0]+str(b[1])+'.\n'
+                else:
+                    xsb_facts += UniqueLowerCasePrefix+b[0]+'('+str(b[1])+').\n'
+            else:
+                for v in b[1]:
+                    if isinstance(v, tuple):
+                        xsb_facts += UniqueLowerCasePrefix+b[0]+str(v)+'.\n'
+                    else:
+                        xsb_facts += UniqueLowerCasePrefix+b[0]+'('+str(v)+').\n'
+
+        # print(xsb_facts)
+        write_file(rule+'.facts', xsb_facts)
+
+        results = []
+        for q in queries:
+            xsb_query = "extfilequery_nb:external_file_query('{}',{}).".format(rule,UniqueLowerCasePrefix+q)
+            # print(xsb_query)
+            subprocess.run(["xsb", '-e', "add_lib_dir(a('../xsb')).", "-e", xsb_query])
+            answers = open("{}.answers".format(rule),"r").read()
+            tuples = set(tuple(eval(v) for v in a.split(',')) if len(a.split(',')) > 1 else int(a) for a in answers.split("\n")[:-1])
+            results.append(tuples)
+        #         queries.append((v+))
+
+        # for v in 
+        # print('resultsresultsresultsresultsresultsresultsresultsresultsresultsresultsresultsresultsresultsresultsresultsresults')
+        # pprint(results)
+        if len(results) == 0:
+            return results
+        if len(results) == 1:
+            return results[0]
+        return tuple(results)
+
+
+    # another option: crash and recover both by messages.
+    # @builtin
+    # def fakeCrash(self, duration):
+
+    #     """Block current process for timeout time
+
+    #     simulation crashing and bring back
+    #     if timeout == 0: crash completely and never bring back
+
+    #     """
+    #     if timeout > 0:
+    #         # print()
+    #         # print()
+    #         # for i in self.__messageq._q:
+    #         #     print (i)
+    #         tmpMessage = copy.deepcopy(self.__messageq._q)
+    #         # print('========= before crash =========',self._id,tmpMessage)
+    #         time.sleep(duration)
+    #         # print()
+    #         # print('========= after crash =========',self._id,tmpMessage,self.__messageq._q)
+    #         self.__messageq._q = copy.deepcopy(tmpMessage)
+    #         # print(self._id,self.__messageq._q)
+
+    #         # for i in self.__messageq._q:
+    #         #     print (i)
+    #     else:
+    #         hanged()
+
+
+    @builtin
     def crash(self, procs):
         seqno = self._create_cmd_seqno()
         self._send1(Command.Crash, seqno, procs, flags=ChannelCaps.RELIABLEFIFO)
@@ -556,9 +698,10 @@ class DistProcess():
         self._send1(Command.Recover, seqno, procs, flags=ChannelCaps.RELIABLEFIFO)
 
 
+
     @builtin
     def getEvent(self):
-        # print('========== getEvent ============')
+        print('========== getEvent ============')
         for attr in dir(self):
             if attr.find("SentEvent_") != -1 or attr.find("ReceivedEvent_") != -1:
                 print(attr, getattr(self,attr))
@@ -566,7 +709,9 @@ class DistProcess():
                 
     @builtin
     def backup(self, *procs, name=None):
+        
         # print('========== backupcalled ============', procs, name)
+
         seqno = self._create_cmd_seqno()
 
         if not procs:
@@ -581,10 +726,11 @@ class DistProcess():
                        message=(seqno, name),
                        to=procs,
                        flags=ChannelCaps.RELIABLEFIFO)
+        
 
 
     @builtin
-    def restore(self, *procs, name=None):
+    def restore(self, *procs, name=None, full=False):
         # print('---------- restorecalled ------------', procs, name)
         if not procs:
             procs = (self._id,)
@@ -592,12 +738,16 @@ class DistProcess():
         #     self._log.error('More arguments than expected in restore, expecting 2, providing '+str(len(procs)+1))
         seqno = self._create_cmd_seqno()
         self._send1(msgtype=Command.Restore,
-                       message=(seqno, name),
+                       message=(seqno, name, full),
                        to=procs,
                        flags=ChannelCaps.RELIABLEFIFO)
 
     @internal
     def _cmd_Backup(self, src, args):
+        if not self._enable_backup:
+            self._log.error('Backup not enabled')
+            return
+
         self._log.info('>>>>>>>>>>> backing up >>>>>>>>>>>')
         seqno, name = args
 
@@ -636,28 +786,40 @@ class DistProcess():
 
     @internal
     def _cmd_Restore(self, src, args):
+        if not self._enable_backup:
+            self._log.error('Restore not enabled')
+            return
+
         self._log.info('<<<<<<<<< restoring <<<<<<<<<')
-        seqno, name = args
+        seqno, name, full = args
         # print('<<<<<<<<< restoring <<<<<<<<< seqno, name = args',seqno,name)
         procID = re.sub(r"[^0-9a-zA-Z_]",'_',str(self._id))
         # pprint(dir(self))
-        if name is None:
-            dirs = [d for d in os.listdir('.') if os.path.isdir(d) and d.startswith('backup_'+procID+'_')]
+
+        if full:
+            if os.path.isdir(name):
+                bak = name
+            else:
+                self._log.warning('warning: no backup found!')
+                return
         else:
-            dirs = [d for d in os.listdir('.') if os.path.isdir(d) and d.startswith('backup_'+procID+'_'+name+'_')]
-        # print('checkpoint -1')
-        
-        if len(dirs) == 0:
-            self._log.warning('warning: no backup found!')
-            return
+            if name is None:
+                dirs = [d for d in os.listdir('.') if os.path.isdir(d) and d.startswith('backup_'+procID+'_')]
+            else:
+                dirs = [d for d in os.listdir('.') if os.path.isdir(d) and d.startswith('backup_'+procID+'_'+name+'_')]
+            # print('checkpoint -1')
+            
+            if len(dirs) == 0:
+                self._log.warning('warning: no backup found!')
+                return
 
-        # print('dirs', dirs)
+            # print('dirs', dirs)
 
-        entries = [(path[-19:], path) for path in dirs]
-        entries = sorted(entries, reverse = True)
+            entries = [(path[-19:], path) for path in dirs]
+            entries = sorted(entries, reverse = True)
 
-        print(entries)
-        bak = entries[0][1]
+            # print(entries)
+            bak = entries[0][1]
 
         # print('checkpoint 0')
         
@@ -675,18 +837,22 @@ class DistProcess():
         # print('checkpoint 1')
 
         for x in os.listdir(bak):
+            if x.startswith('.'):
+                continue
             # print(x)
-            if x == '_state':
-                for y in os.listdir(bak+'/_state'):
+            if x == '_state' and os.path.isdir(os.path.join(bak,x)):
+                for y in os.listdir(os.path.join(bak,x)):
+                    if y.startswith('.'):
+                        continue
                     # print('\t'+y)
-                    file = open(bak+'/_state/'+y,'rb')
+                    file = open(os.path.join(bak,x,y),'rb')
                     try:
                         setattr(self._state,y,pickle.load(file))
                     except (EOFError, pickle.UnpicklingError) as e:
                         self._log.error(e,':',y)
                     file.close()
-            else:
-                file = open(bak+'/'+x,'rb')
+            elif os.path.isfile(os.path.join(bak,x)):
+                file = open(os.path.join(bak,x),'rb')
                 try:
                     setattr(self,x,pickle.load(file))
                 except (EOFError, pickle.UnpicklingError) as e:
@@ -701,8 +867,12 @@ class DistProcess():
 
     @internal
     def _cmd_Crash(self, src, seqno):
-        self._log.info('xxxxxxxx CRASHED xxxxxxxx')
-        self.__crashed = True
+        if not self._enable_crash:
+            self._log.error('Crash not enabled')
+            return
+
+            self._log.info('xxxxxxxx CRASHED xxxxxxxx')
+            self.__crashed = True
         # for attr in dir(self):
         #     if attr.find("SentEvent_") != -1 or attr.find("ReceivedEvent_") != -1:
         #         # print(attr,type(attr))
@@ -714,6 +884,10 @@ class DistProcess():
 
     @internal
     def _cmd_Recover(self, src, seqno):
+        if not self._enable_crash:
+            self._log.error('Recover not enabled')
+            return
+
         self._log.info('oooooooo RECOVERED oooooooo')
         self.__crashed = False
 
