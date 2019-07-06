@@ -2,20 +2,19 @@
 
 ## 1. Crash and recover
 * Call `config(enable_crash=True)` to enable processses to crash and recover.
-* Call `crash(procs)` to crash processes `procs`, and
+* Call `crash(procs)` to crash processes `procs`.
 * Call `recover(procs)` to recover `procs` to the state before `crash`.
 
 ## 2. Backup and restore
 * Call `config(enable_backup=True)` to enable backup and restore of the process state.
-* Call `backup(procs,name)` to backup processes `procs` identified by `name`;
+* Call `backup(procs,name)` to backup processes `procs` identified by `name`;  
   for each process in `procs`, create a folder `backup_<process_id>_<name>_<timestamp>`.  
   The default for `procs` is `self`.  The default for `name` is "".
-* call `restore(procs,name)` to restore `procs` from the latest backup identified by `name`. 
-  The default for `procs` is `self`.  
-  The default for `name` is the name of latest backup.
+* Call `restore(procs,name)` to restore `procs` from the latest backup identified by `name`.  
+  The default for `procs` is `self`.  The default for `name` is the name of latest backup.
 
 ## 3. Lossy channel
-* Call `config(channel=lossy,loss_rate)` to allow channels to lose messages at the rate `loss_rate`.
+* Call `config(channel=lossy,loss_rate)` to allow channels to lose messages at the rate `loss_rate`.  
   The default for `loss_rate` is 0.1.
 
 
