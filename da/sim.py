@@ -523,15 +523,10 @@ class DistProcess():
 
 
     @internal
-    def _delay_send(self, msgtype, message, to, flags=None, impersonate=None,
-               **params):
+    def _delay_send(self,**params):
         self._log.info('delay sending for %r seconds', self._delay,)
         time.sleep(self._delay)
-        self._send1(msgtype=Command.Message,
-                    message=(self._logical_clock, message),
-                    to=to,
-                    flags=flags,
-                    impersonate=impersonate)
+        self._send1(**params)
         self._log.info('delayed message sent')
 
 
