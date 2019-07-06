@@ -5,7 +5,7 @@ from random import randint, random
 
 TIMEOUT = 5
 
-class Proposer(process, controller.Controllee):
+class Proposer(process):
     def setup(acceptors:set):
         super().setup()
         self.n = None              # proposal number
@@ -41,7 +41,7 @@ class Proposer(process, controller.Controllee):
     def anyof(s):
         return next(iter(s)) if s else None
 
-class Acceptor(process, controller.Controllee):
+class Acceptor(process):
     def setup(learners:set):
         super().setup()
 
@@ -64,7 +64,7 @@ class Acceptor(process, controller.Controllee):
         """return any element of set s if s is not empty or 'None' otherwise"""
         return next(iter(s)) if s else None
 
-class Learner(process, controller.Controllee):
+class Learner(process):
     def setup(acceptors:set):
         super().setup()
 

@@ -983,6 +983,7 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
         else:
             if lhs:
                  self.current_process.currentRule['Unboundedleft'].add(node.func.id)
+                 self.current_process.currentRule['UnboundedleftAry'][node.func.id] = len(node.args)
             else:
                  self.current_process.currentRule['Unboundedright'].add(node.func.id)
 
@@ -998,10 +999,10 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
             elif isinstance(a, Name):
                 args.append(ruleast.LogicVar(a.id))
             elif isinstance(a, Num):
-                pprint(vars(a))
+                # pprint(vars(a))
                 args.append(ruleast.LogicVar(a.n))
             elif isinstance(a, Str):
-                pprint(vars(a))
+                # pprint(vars(a))
                 args.append(ruleast.LogicVar("'"+a.s+"'"))
             elif isinstance(a, UnaryOp):
                 if isinstance(a.op, USub):
@@ -1058,6 +1059,7 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
             self.current_process.currentRule['LhsAry'] = dict()
             self.current_process.currentRule['RhsVars'] = set()
             self.current_process.currentRule['Unboundedleft'] = set()
+            self.current_process.currentRule['UnboundedleftAry'] = dict()
             self.current_process.currentRule['Unboundedright'] = set()
             self.current_process.currentRule['Unbounded'] = set()
             rules = []
@@ -1425,18 +1427,12 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
             elif type(e) is Yield:
                 stmtobj = self.create_stmt(dast.YieldStmt, node)
                 self.current_context = Read(stmtobj)
-                if e.value is not None:
-                    stmtobj.value = self.visit(e.value)
-                else:
-                    stmtobj.value = None
+                stmtobj.value = None if e.value is None else self.visit(e.value)
             elif type(e) is YieldFrom:
                 # 'yield' should be a statement, handle it here:
                 stmtobj = self.create_stmt(dast.YieldFromStmt, node)
                 self.current_context = Read(stmtobj)
-                if e.value is not None:
-                    stmtobj.value = self.visit(e.value)
-                else:
-                    stmtobj.value = None
+                stmtobj.value = None if e.value is None else self.visit(e.value)
             else:
                 stmtobj = self.create_stmt(dast.SimpleStmt, node)
                 self.current_context = Read(stmtobj)

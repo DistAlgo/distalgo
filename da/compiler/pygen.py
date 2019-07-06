@@ -524,10 +524,12 @@ class PythonGenerator(NodeVisitor):
 
         a = pyAssign(  [pyAttr("self",RULES_OBJECT_NAME, Store())], 
                         Dict([Str(key) for key, _ in node.RuleConfig.items()],
-                             [Dict( [Str('LhsVars'),Str('RhsVars'),Str('Unbounded')],
+                             [Dict( [Str('LhsVars'),Str('RhsVars'),Str('Unbounded'),Str('UnboundedLeft')],
                                     [Set([pyTuple([Str(v.name), Num(val['LhsAry'][v])]) for v in val['LhsVars']]),
                                      Set([Str(v.name) for v in val['RhsVars']]),
-                                     Set([Str(v) for v in val['Unbounded']])])
+                                     Set([Str(v) for v in val['Unbounded']]),
+                                     Set([pyTuple([Str(v), Num(val['UnboundedleftAry'][v])]) for v in val['Unboundedleft']])
+                                     ])
                               for _, val in node.RuleConfig.items()]))
         fire_rules = []
         for key, val in node.RuleConfig.items():
@@ -559,12 +561,7 @@ class PythonGenerator(NodeVisitor):
                 for q in query:
                     lhs.append(pyAttr(pyAttr("self", STATE_ATTR_NAME),q.name,Store()))
                     arity = ruleConfig[r]['LhsAry'][q]
-                    qstr = q.name+'('
-                    for i in range(arity-1):
-                        qstr += '_,'
-                    if arity > 0:
-                        qstr += '_'
-                    qstr += ')'
+                    qstr = q.name+'(' + ','.join('_'*arity) + ')'
                     qArg.append(Str(qstr))
 
                 inferStmt = pyAssign(lhs,pyCall(pyAttr("self", 'infer'), args=[], keywords=[('rule',Str(r)),('queries',pyList(qArg))]))

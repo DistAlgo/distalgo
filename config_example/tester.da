@@ -8,8 +8,8 @@ from lapaxos import Proposer, Acceptor, Learner
 
 
 class Test(process):
-    def setup():
-        super().setup()
+    # def setup():
+    #     pass
 
     def run():
         nacceptors = int(sys.argv[1]) if len(sys.argv) > 1 else 3
@@ -35,6 +35,8 @@ class Test(process):
 def main():
     config(enable_backup=True)
     config(enable_crash=True)
-    config(channel=lossy,lose_rate=0.3)
+    config(channel=lossy,lose_rate=0.3,delay=5)
     tester = new(Test, (), num= 1)
     start(tester)
+
+    # elif timeout()

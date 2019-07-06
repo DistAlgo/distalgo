@@ -14,8 +14,8 @@
   The default for `procs` is `self`.  The default for `name` is the name of latest backup.
 
 ## 3. Lossy channel
-* Call `config(channel=lossy,loss_rate)` to allow channels to lose messages at the rate `loss_rate`.  
-  The default for `loss_rate` is 0.1.
+* Call `config(channel=lossy,loss_rate,delay)` to allow channels to lose messages at the rate `loss_rate` and delay sending of messages with `delay` seconds.  
+  The default for `loss_rate` is 0.1. The default for `delay` is 0.
 
 
 

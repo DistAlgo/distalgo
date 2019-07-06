@@ -3,23 +3,6 @@
 from random import random, choice, sample, gauss
 
 
-class Controllee(process):
-    def setup(): pass
-
-    def run(): pass
-
-    def send(message, to, channel=None, **rest):
-        """ delay message transmission
-            so that crashing can take effect before the program is finished...
-        """
-        if await(False):
-            pass
-        elif timeout(random()*5):
-            super().send(message, to, channel, **rest)
-            # output('sent ', msg)
-
-
-
 class Controller(process):
     def setup(procs:set):
         self.nump = len(procs)

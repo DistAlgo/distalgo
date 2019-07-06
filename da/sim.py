@@ -190,6 +190,7 @@ class DistProcess():
 
     @internal
     def _init_config(self):
+        self.output('_init_config',self.__class__)
         if self.get_config('handling', default='one').casefold() == 'all':
             self.__do_label = self.__label_all
         else:
@@ -206,21 +207,11 @@ class DistProcess():
             self._logical_clock = 0
         else:
             self._logical_clock = None
+        
+        self._enable_crash = self.get_config('enable_crash', default=False)
+        self._enable_backup = self.get_config('enable_backup', default=False)
 
-        # self.output('get_config: enable_crash', self.get_config('enable_crash', default=False))
-        # self.output('get_config: enable_backup', self.get_config('enable_backup', default=False))
 
-
-
-        if self.get_config('enable_crash', default=False) == True:
-            self._enable_crash = True
-        else:
-            self._enable_crash = False
-
-        if self.get_config('enable_backup', default=False) == True:
-            self._enable_backup = True
-        else:
-            self._enable_backup = False
 
 
     AckCommands = [Command.NewAck, Command.EndAck, Command.StartAck,
@@ -251,6 +242,7 @@ class DistProcess():
             if props == 'lossy':
                 props = []
                 self._loss_rate = float(self.get_config('loss_rate', default='0.1'))
+                self._delay = self.get_config('delay', default=0)
             else:
                 props = [props]
         for prop in props:
@@ -267,7 +259,7 @@ class DistProcess():
         """Returns the configuration value for specified 'key'.
 
         """
-        # print('get_config',key)
+        # print('get_config',key,cls)
         cfgobj = get_runtime_option('config')
         if key in cfgobj:
             return cfgobj[key]
@@ -529,6 +521,20 @@ class DistProcess():
         if isinstance(self._logical_clock, int):
             self._logical_clock += 1
 
+
+    @internal
+    def _delay_send(self, msgtype, message, to, flags=None, impersonate=None,
+               **params):
+        self._log.info('delay sending for %r seconds', self._delay,)
+        time.sleep(self._delay)
+        self._send1(msgtype=Command.Message,
+                    message=(self._logical_clock, message),
+                    to=to,
+                    flags=flags,
+                    impersonate=impersonate)
+        self._log.info('delayed message sent')
+
+
     @builtin
     def send(self, message, to, channel=None, **rest):
         """Send a DistAlgo message.
@@ -547,12 +553,17 @@ class DistProcess():
             flags = self.__get_channel_flags(channel)
         impersonate = rest.get('impersonate', None)
         l = getattr(self,'_loss_rate',0)
-        if random.random() > l:
-            res = self._send1(msgtype=Command.Message,
-                              message=(self._logical_clock, message),
-                              to=to,
-                              flags=flags,
-                              impersonate=impersonate)
+        if l == 0 or random.random() > l:
+            keyargs = {'msgtype': Command.Message,
+                        'message': (self._logical_clock, message),
+                        'to':to, 'flags':flags, 'impersonate':impersonate}
+            delay = getattr(self,'_delay',0)
+            if delay > 0:
+                x = threading.Thread(target=self._delay_send, kwargs=keyargs)
+                x.start()
+                res = True
+            else:
+                res = self._send1(**keyargs)
         else:
             res = False
             self._log.warning('message not delivered')
@@ -609,15 +620,19 @@ class DistProcess():
 
         if len(queries) == 0:
             # qArg = []
-            for v in self._rules_object[rule]['LhsVars']:
-                arity = v[1]
-                qstr = v[0]+'('
-                for i in range(arity-1):
-                    qstr += '_,'
-                if arity > 0:
-                    qstr += '_'
-                qstr += ')'
+            for v in self._rules_object[rule]['UnboundedLeft']:
+                qstr = v[0]+'(' + ','.join('_'*v[1]) + ')'
                 queries.append(qstr)
+        else:
+            for (i, item) in enumerate(queries):
+                if item.find('(') < 0:
+                    for v,a in self._rules_object[rule]['UnboundedLeft']:
+                        if v == item:
+                            qstr = v+'(' + ','.join('_'*a) + ')'
+                            queries[i] = qstr
+
+            # queries = [q+'('+','.join('_'*a)+')' if some((q,a) in self._rules_object[rule]['LhsVars']) else q for q in queries]
+
 
         
         xsb_facts = ""
@@ -963,6 +978,7 @@ class DistProcess():
             # 'to' must be an iterable of `ProcessId`s:
             target = to
         for dest in target:
+            self.output('sending to', dest)
             if isinstance(dest, str):
                 # This is a process name, try to resolve to an id
                 dest = self.resolve(dest)
