@@ -1374,9 +1374,9 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
                 # pprint(vars(e.value))
                 stmtobj = self.create_stmt(dast.AwaitStmt, node)
                 self.current_context = Read(stmtobj)
-                if expr_check(KW_AWAIT_TIMEOUT, 1 ,1, e.value):
+                # if await condition e.value is call to timeout with 1 argument
+                if expr_check(KW_AWAIT_TIMEOUT, 1, 1, e.value):
                     stmtobj.timeout = self.visit(e.value.args[0])
-                    branch = dast.Branch(stmtobj, node, condition=self.create_expr(dast.FalseExpr, node, nopush=True))
                 else:
                     branch = dast.Branch(stmtobj, node,
                                          condition=self.visit(e.value))
