@@ -1369,11 +1369,18 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
 
             # Post-3.7 style await:
             elif isinstance(e, Await):
+                # print('visit_Expr')
+                # pprint(vars(e))
+                # pprint(vars(e.value))
                 stmtobj = self.create_stmt(dast.AwaitStmt, node)
                 self.current_context = Read(stmtobj)
-                branch = dast.Branch(stmtobj, node,
-                                     condition=self.visit(e.value))
-                stmtobj.branches.append(branch)
+                if expr_check(KW_AWAIT_TIMEOUT, 1 ,1, e.value):
+                    stmtobj.timeout = self.visit(e.value.args[0])
+                    branch = dast.Branch(stmtobj, node, condition=self.create_expr(dast.FalseExpr, node, nopush=True))
+                else:
+                    branch = dast.Branch(stmtobj, node,
+                                         condition=self.visit(e.value))
+                    stmtobj.branches.append(branch)
 
             elif expr_check(KW_SEND, 1, 1, e, keywords={KW_SEND_TO},
                             optional_keywords=None):
