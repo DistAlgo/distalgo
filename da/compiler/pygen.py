@@ -754,7 +754,7 @@ class PythonGenerator(NodeVisitor):
         if len(nameset) > 0:
             # Back patch nonlocal statement
             if not isinstance(node.scope, dast.ComprehensionExpr):
-                if not isinstance(node.statement.parent, dast.Program):
+                if not isinstance(node.statement.parent.scope, dast.Program):
                     decl = Nonlocal([nv.name for nv in nameset])
                 else:
                     decl = Global([nv.name for nv in nameset])
