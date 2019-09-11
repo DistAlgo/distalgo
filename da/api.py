@@ -29,15 +29,17 @@ import stat
 import logging
 import collections.abc
 import os.path
+import urllib
+import webbrowser
 
 from sys import stderr
 from . import common, sim, transport
 from .common import api
 from .common import deprecated
-from .common import get_runtime_option
+from .common import set_runtime_option, get_runtime_option
 from .common import ProcessId
 from .common import ObjectLoader
-
+from .viz import trace_to_clocks_and_state
 PYTHON_SUFFIX = ".py"
 NODECLS = "Node_"
 BASE_MODULE_NAME = 'da.lib.base'
@@ -257,6 +259,12 @@ def entrypoint():
               issubclass(module.Node_, sim.DistProcess)):
         die("Main process is not a DistProcess: {}".format(module.Node_))
 
+    trace_and_visualize = module.Node_._config_object['visualize']
+    if trace_and_visualize:
+        set_runtime_option('record_trace', True)
+        os.makedirs(get_runtime_option('logdir'), exist_ok=True)
+    # enable trace option if not enabled, use a temp path
+
     # Start main program
     nodename = _check_nodename()
     niters = get_runtime_option('iterations')
@@ -388,6 +396,19 @@ def entrypoint():
         except Exception as e:
             log.error("Caught unexpected global exception: %r", e, exc_info=1)
             return 4
+
+    if trace_and_visualize:
+        vizdata = strip_suffix(get_runtime_option('file')) + '.js'
+
+        ui_url = "file://{}/ui/index.html?data=file://{}/{}".format(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            os.getcwd(), vizdata)
+
+        print('Visualization: {}\nTraces: {} \n'.format(ui_url, get_runtime_option('logdir')))
+
+        # Problem: Chrome doesn't open local url's with hashes
+        # webbrowser.open(ui_url,new=2)
+        trace_to_clocks_and_state(get_runtime_option('logdir') + '/', vizdata)
 
     return 0
 
