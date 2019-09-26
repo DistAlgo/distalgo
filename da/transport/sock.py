@@ -471,7 +471,7 @@ class TcpTransport(SocketTransport):
                                                format(addr))
             else:
                 self._send_challenge_reply(VER_CHALLENGE, conn, addr)
-        response = conn.recv(TCP_RECV_BUFFER_SIZE)
+        response = conn.recv(len(WELCOME))
         if len(response) == 0:
             # Remote side dropped the connection, either because they
             # terminated, or we already have a connection
