@@ -413,7 +413,6 @@ def entrypoint():
         replacements = {
                 # css files
                 'bootstrap_css': open("{}/css/bootstrap.min.css".format(ui_root), 'r').read(),
-                'fontawesome_css': open("{}/css/font-awesome.min.css".format(ui_root), 'r').read(),
                 'style_css': open("{}/css/style.css".format(ui_root), 'r').read(),
 
                 # js files
