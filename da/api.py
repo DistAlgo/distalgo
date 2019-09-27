@@ -33,6 +33,7 @@ import urllib
 import webbrowser
 import json
 
+from string import Template
 from sys import stderr
 from . import common, sim, transport
 from .common import api
@@ -400,18 +401,37 @@ def entrypoint():
             return 4
 
     if trace_and_visualize:
-        filename = strip_suffix(get_runtime_option('file')) + '.html'
-        viz_uri = "file://{}/{}".format(os.getcwd(), filename)
-        viz_file_path = "{}/ui/index.html".format(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        trace_dir = get_runtime_option('logdir') + '/'
-        text_to_replace = "<!-- Replace VizData here -->"
+        specname = strip_suffix(get_runtime_option('file'))
+        filename = specname + '.html'
 
-        with open(viz_file_path, 'r') as fin, open(filename, 'w+') as fout:
+        ui_root = viz_file_path = "{}/ui".format(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        viz_uri = "file://{}/{}".format(os.getcwd(), filename)
+        viz_tmpl_path = "{}/index.tmpl.html".format(ui_root)
+        trace_dir = get_runtime_option('logdir') + '/'
+
+        replacements = {
+                # css files
+                'bootstrap_css': open("{}/css/bootstrap.min.css".format(ui_root), 'r').read(),
+                'fontawesome_css': open("{}/css/font-awesome.min.css".format(ui_root), 'r').read(),
+                'style_css': open("{}/css/style.css".format(ui_root), 'r').read(),
+
+                # js files
+                'd3_js': open("{}/js/d3.min.js".format(ui_root), 'r').read(),
+                'jquery_js': open("{}/js/jquery-3.3.1.min.js".format(ui_root), 'r').read(),
+                'app_js': open("{}/js/app.js".format(ui_root), 'r').read(),
+
+                # spec name
+                'specname': specname,
+
+                # trace data
+                'tracedata' : trace_to_clocks_and_state(trace_dir),
+            }
+
+        with open(viz_tmpl_path, 'r') as fin, open(filename, 'w+') as fout:
             vizdata = fin.read()
             # replace placeholder with trace data
-            js = "<script>" + trace_to_clocks_and_state(trace_dir) + "</script>"
-            vizdata = vizdata.replace(text_to_replace, js)
+            vizdata = Template(vizdata).substitute(replacements)
             fout.write(vizdata)
 
         print('Visualization: {}\nTraces: {} \n'.format(
