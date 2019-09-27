@@ -31,6 +31,7 @@ import collections.abc
 import os.path
 import urllib
 import webbrowser
+import json
 
 from sys import stderr
 from . import common, sim, transport
@@ -259,8 +260,9 @@ def entrypoint():
               issubclass(module.Node_, sim.DistProcess)):
         die("Main process is not a DistProcess: {}".format(module.Node_))
 
-    trace_and_visualize = module.Node_._config_object['visualize']
-    if trace_and_visualize:
+    trace_and_visualize = False
+    if 'visualize' in module.Node_._config_object and module.Node_._config_object['visualize']:
+        trace_and_visualize = True
         set_runtime_option('record_trace', True)
         os.makedirs(get_runtime_option('logdir'), exist_ok=True)
     # enable trace option if not enabled, use a temp path
@@ -398,17 +400,25 @@ def entrypoint():
             return 4
 
     if trace_and_visualize:
-        vizdata = strip_suffix(get_runtime_option('file')) + '.js'
+        filename = strip_suffix(get_runtime_option('file')) + '.html'
+        viz_uri = "file://{}/{}".format(os.getcwd(), filename)
+        viz_file_path = "{}/ui/index.html".format(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        trace_dir = get_runtime_option('logdir') + '/'
+        text_to_replace = "<!-- Replace VizData here -->"
 
-        ui_url = "file://{}/ui/index.html?data=file://{}/{}".format(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            os.getcwd(), vizdata)
+        with open(viz_file_path, 'r') as fin, open(filename, 'w+') as fout:
+            vizdata = fin.read()
+            # replace placeholder with trace data
+            js = "<script>" + trace_to_clocks_and_state(trace_dir) + "</script>"
+            vizdata = vizdata.replace(text_to_replace, js)
+            fout.write(vizdata)
 
-        print('Visualization: {}\nTraces: {} \n'.format(ui_url, get_runtime_option('logdir')))
+        print('Visualization: {}\nTraces: {} \n'.format(
+            viz_uri,
+            trace_dir))
 
-        # Problem: Chrome doesn't open local url's with hashes
-        # webbrowser.open(ui_url,new=2)
-        trace_to_clocks_and_state(get_runtime_option('logdir') + '/', vizdata)
+        webbrowser.open(viz_uri)
 
     return 0
 

@@ -159,12 +159,12 @@ def build_clocks(trace_dir):
     return results
 
 
-def trace_to_clocks_and_state(trace_dir, out_file):
+def trace_to_clocks_and_state(trace_dir):
     data = build_clocks(trace_dir)
 
-    with open(out_file, 'w+') as stream:
-        js = "GetVizData(" + json.dumps(data,indent=2) + ");"
-        stream.write(js)
+    js = "GetVizData(" + json.dumps(data,indent=2) + ");"
+
+    return js
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
