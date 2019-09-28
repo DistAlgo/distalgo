@@ -159,27 +159,17 @@ def build_clocks(trace_dir):
     return results
 
 
-def trace_to_clocks_and_state(trace_dir):
+def trace_to_clocks_and_state(trace_dir, state=True):
     data = build_clocks(trace_dir)
+    data['states'] = []
+
+    if state:
+        state_files = glob(trace_dir + '[!Node_]*.state')
+        for f in state_files:
+            print(f)
+            with open(f, 'r') as stream:
+                data['states'] = data['states'] + json.load(stream)
 
     js = "GetVizData(" + json.dumps(data,indent=2) + ");"
 
     return js
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--spec", help="Path to spec")
-    parser.add_argument("--trace", help="Path to traces directory")
-    parser.add_argument("--output", help="output file")
-    parser.add_argument("--no-state", dest='state', action='store_false')
-    parser.set_defaults(state=True)
-    args = parser.parse_args()
-
-    # todo - check spec_path is a file
-    # todo - check traces_path is a directory
-
-    spec_dir = os.path.dirname(os.path.abspath(args.spec))
-    trace_dir = args.trace
-
-    sys.path.append(spec_dir)
-    result = trace_to_clocks_and_state(trace_dir, args.state, args.output)

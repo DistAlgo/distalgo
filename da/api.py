@@ -401,6 +401,7 @@ def entrypoint():
             return 4
 
     if trace_and_visualize:
+        time.sleep(5)
         specname = strip_suffix(get_runtime_option('file'))
         filename = specname + '.html'
 

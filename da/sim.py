@@ -34,9 +34,10 @@ import itertools
 import functools
 import threading
 import collections
+import json
 import multiprocessing
 import os.path
-
+import da
 from . import common, pattern
 from .common import (builtin, internal, name_split_host, name_split_node,
                      ProcessId, get_runtime_option,
@@ -113,6 +114,7 @@ class DistProcess():
             .getChild(self.__class__.__name__), {'daPid' : self._id})
         self.__newcmd_seqno = procimpl.seqno
         self.__messageq = procimpl.router.get_queue_for_process(self._id)
+        self.__stateq = procimpl.router.get_state_queue_for_process(self._id)
         self.__forwarder = forwarder
         self.__properties = props
         self.__jobq = collections.deque()
@@ -129,6 +131,26 @@ class DistProcess():
 
         self._state = common.Namespace()
         self._events = []
+        self._clock = 0
+
+    @property
+    def _logical_clock(self):
+        return self._clock
+
+    @_logical_clock.setter
+    def _logical_clock(self, newclk):
+        self._clock = newclk
+
+        # ignore Node or root process
+        try:
+            if hasattr(self, '_state'):
+                self.__stateq.append({
+                    'id': self._id,
+                    'clk': newclk,
+                    'state': copy.deepcopy(self._state.__dict__)
+                })
+        except:
+            pass
 
     def setup(self, **rest):
         """Initialization routine for the DistAlgo process.
@@ -1110,6 +1132,7 @@ class Router(threading.Thread):
         self.payload_size = get_runtime_option('message_buffer_size') - \
                             HEADER_SIZE
         self.local_procs = dict()
+        self.state_procs = dict()
         self.local = threading.local()
         self.local.buf = None
         self.lock = threading.Lock()
@@ -1124,6 +1147,7 @@ class Router(threading.Thread):
             if pid in self.local_procs:
                 self.log.warning("Registering duplicate process: %s.", pid)
             self.local_procs[pid] = common.WaitableQueue()
+            self.state_procs[pid] = common.StateQueue()
         self.log.debug("Process %s registered.", pid)
 
     def replay_local_process(self, pid, in_stream, out_stream):
@@ -1141,6 +1165,8 @@ class Router(threading.Thread):
                                  pid._filename_form_() + ".trace"), "wb")
         outfd = open(os.path.join(basedir,
                                   pid._filename_form_() + ".snd"), "wb")
+        statefd = open(os.path.join(basedir,
+                                  pid._filename_form_() + ".state"), "w")
         write_trace_header(pid, parent, TRACE_TYPE_RECV, infd)
         write_trace_header(pid, parent, TRACE_TYPE_SEND, outfd)
         with self.lock:
@@ -1148,6 +1174,8 @@ class Router(threading.Thread):
                 self.log.warning("Registering duplicate process: %s.", pid)
             self.local_procs[pid] \
                 = common.WaitableQueue(trace_files=(infd, outfd))
+            self.state_procs[pid] \
+                = common.StateQueue(statefd)
         self.log.debug("Process %s registered.", pid)
 
     def deregister_local_process(self, pid):
@@ -1155,10 +1183,14 @@ class Router(threading.Thread):
             with self.lock:
                 if pid in self.local_procs:
                     self.local_procs[pid].close()
+                    self.state_procs[pid].close()
                     del self.local_procs[pid]
+                    del self.state_procs[pid]
         else:
             if pid in self.local_procs:
                 self.local_procs[pid].close()
+            if pid in self.state_procs:
+                self.state_procs[pid].close()
 
     def terminate_local_processes(self):
         with self.lock:
@@ -1167,6 +1199,9 @@ class Router(threading.Thread):
 
     def get_queue_for_process(self, pid):
         return self.local_procs.get(pid, None)
+
+    def get_state_queue_for_process(self, pid):
+        return self.state_procs.get(pid, None)
 
     def bootstrap_node(self, hostname, port, timeout=None):
         """Bootstrap the node.
@@ -1428,7 +1463,7 @@ def _is_spawning_semantics():
 class ProcessContainer:
     """An abstract base class for process containers.
 
-    One ProcessContainer instance runs one DistAlgo process instance. 
+    One ProcessContainer instance runs one DistAlgo process instance.
 
     """
     def __init__(self, process_class, transport_manager,
@@ -1499,6 +1534,10 @@ class ProcessContainer:
         self._dacls = self.dapid.pcls
 
     def cleanup(self):
+        # maybe just write directly to file, instead of maintaining list
+        # json.dump({'d': _state_history}, _state_fd, default=custom_json_handler,indent=2)
+        # _state_fd.close()
+        # print("finish")
         if self._trace_in_fd:
             self._trace_in_fd.close()
         if self._trace_out_fd:
@@ -1671,6 +1710,7 @@ class ProcessContainer:
             self.name = str(self.pid)
 
         try:
+
             for hook in self.before_run_hooks:
                 hook()
 

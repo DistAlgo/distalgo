@@ -26,11 +26,13 @@ import os
 import sys
 import copy
 import time
+import json
 import pickle
 import os.path
 import logging
 import warnings
 import threading
+import copy
 
 from datetime import datetime
 from collections import abc, deque, namedtuple
@@ -754,6 +756,64 @@ class WaitableQueue:
 
     def __len__(self):
         return self._q.__len__()
+
+class StateQueue:
+    """A queue that stores the state in order.
+
+    """
+
+    def __init__(self, in_stream):
+        self._in_file = in_stream
+        self._states = []
+
+    #
+    # Custom serialization for objects inheriting from builtin types
+    # https://stackoverflow.com/a/17798594/1173425
+    #
+    def custom_json_handler(self,obj):
+        if not hasattr(obj, 'originalObject'):
+            return None
+        obj = obj.originalObject
+        if not obj:
+            return "null"
+        if isinstance(obj, ProcessId):
+            return str(obj)
+        elif isinstance(obj, set):
+            return list(obj)
+
+        return obj
+
+
+    def debug(self,obj):
+        class Debug:
+            def __init__(self,obj):
+                self.originalObject = obj
+
+        if obj.__class__ == list or obj.__class__ == set:
+            return [self.debug(item) for item in obj]
+        elif obj.__class__ == tuple:
+            return [self.debug(item) for item in obj]
+        elif obj.__class__ == dict:
+            return dict((key,self.debug(obj[key])) for key in obj)
+        elif hasattr(obj, '__dict__'):
+            return dict((key,self.debug(obj.__dict__[key])) for key in obj.__dict__)
+        else:
+            return Debug(obj)
+
+    def to_json(self, obj):
+        return json.dumps(self.debug(obj), default=self.custom_json_handler)
+
+    def append(self, item):
+        self._states.append(item)
+
+    def close(self):
+        try:
+            self._in_file.write(self.to_json(self._states))
+        except:
+            pass
+        if self._in_file is not None:
+            self._in_file.close()
+            self._in_file = None
 
 class ReplayQueue:
     """A queue that simply replays recorded messages in order.
