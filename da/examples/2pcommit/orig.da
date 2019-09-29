@@ -54,7 +54,7 @@ class Cohort(process):
 def main():
     ncohorts = int(sys.argv[1]) if len(sys.argv) > 1 else 10
     fail_rate = int(sys.argv[2]) if len(sys.argv) > 2 else 10
-
+    config(visualize is True)
     cohorts = new(Cohort, (fail_rate,), num= ncohorts)
     coordinators = new(Coordinator, (cohorts,), num= 1)
     start(cohorts | coordinators)

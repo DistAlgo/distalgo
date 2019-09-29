@@ -57,7 +57,7 @@ class Cohort(process, controller.Controllee):
 def main():
     ncohorts = int(sys.argv[1]) if len(sys.argv) > 1 else 10
     fail_rate = int(sys.argv[2]) if len(sys.argv) > 2 else 10
-
+    config(visualize is True)
     ctl = new(controller.Controller, num= 1)
     setup(ctl, (ncohorts + 1,))
     start(ctl)

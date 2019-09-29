@@ -762,7 +762,7 @@ class StateQueue:
 
     """
 
-    def __init__(self, in_stream):
+    def __init__(self, in_stream=None):
         self._in_file = in_stream
         self._states = []
 

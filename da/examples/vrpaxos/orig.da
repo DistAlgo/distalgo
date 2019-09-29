@@ -193,7 +193,7 @@ def main():
     start(acceptors)
     start(replicas | leaders)
     start(clients)
-
+    config(visualize is True)
     await(each(c in clients, has=received(('done',), from_=c)))
     output('All clients done.')
     send(('done',), to= (acceptors|replicas|leaders))
