@@ -437,7 +437,7 @@ def entrypoint():
             viz_uri,
             trace_dir))
 
-        webbrowser.open(viz_uri)
+        webbrowser.get().open(viz_uri)
 
     return 0
 
