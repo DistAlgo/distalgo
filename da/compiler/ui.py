@@ -265,7 +265,12 @@ def dafile_to_pycfile(filename, outname=None, optimize=-1, args=None,
     code = dafile_to_pycode(filename, args, _optimize=optimize, dfile=dfile)
     if code is not None:
         source_stats = os.stat(filename)
-        bytecode = importlib._bootstrap_external._code_to_bytecode(
+        PythonVersion = sys.version_info
+        if PythonVersion < (3, 7):
+            bytecode = importlib._bootstrap_external._code_to_bytecode(
+                code, source_stats.st_mtime, source_stats.st_size)
+        else:
+             bytecode = importlib._bootstrap_external._code_to_timestamp_pyc(
                 code, source_stats.st_mtime, source_stats.st_size)
         mode = importlib._bootstrap_external._calc_mode(filename)
         importlib._bootstrap_external._write_atomic(outname, bytecode, mode)
