@@ -93,7 +93,11 @@ def dump_trace(p):
 
 def dump_spec(trace_dir):
     # exclude
-    trace_files = glob(trace_dir + '[!Node_]*.trace')
+    def not_in_pattern(x):
+        return (not x.startswith('Node_'))
+
+    trace_files = [x for x in glob(trace_dir + '*.trace') if not_in_pattern(x)]
+
     dump = []
     for f in trace_files:
         dump.append(dump_trace(f))

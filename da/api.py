@@ -406,7 +406,7 @@ def entrypoint():
 
         ui_root = viz_file_path = "{}/ui".format(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        viz_uri = "file://{}/{}".format(os.getcwd(), filename)
+        viz_uri = os.path.realpath(filename)
         viz_tmpl_path = "{}/index.tmpl.html".format(ui_root)
         trace_dir = get_runtime_option('logdir') + '/'
 
@@ -437,7 +437,7 @@ def entrypoint():
             viz_uri,
             trace_dir))
 
-        webbrowser.get().open(viz_uri)
+        webbrowser.open(viz_uri)
 
     return 0
 
