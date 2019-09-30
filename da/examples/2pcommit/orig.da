@@ -52,6 +52,7 @@ class Cohort(process):
         await(terminate)
 
 def main():
+    config(clock is lamport, visualize is True)
     ncohorts = int(sys.argv[1]) if len(sys.argv) > 1 else 10
     fail_rate = int(sys.argv[2]) if len(sys.argv) > 2 else 10
     config(visualize is True)
