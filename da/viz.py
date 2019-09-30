@@ -94,7 +94,7 @@ def dump_trace(p):
 def dump_spec(trace_dir):
     # exclude
     def not_in_pattern(x):
-        return (not x.startswith(trace_dir + 'Node_'))
+        return (not os.path.basename(x).startswith('Node_'))
 
     trace_files = [x for x in glob(trace_dir + '*.trace') if not_in_pattern(x)]
 
