@@ -406,7 +406,7 @@ def entrypoint():
         specname = Path(get_runtime_option('file')).stem
         filename = specname + '.html'
 
-        da_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        da_root = os.path.dirname(os.path.abspath(__file__))
         ui_root = Path(da_root) / "ui"
         viz_path = Path(os.getcwd()) / filename
 
