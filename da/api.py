@@ -33,6 +33,7 @@ import urllib
 import webbrowser
 import json
 
+from pathlib import Path
 from string import Template
 from sys import stderr
 from . import common, sim, transport
@@ -402,24 +403,24 @@ def entrypoint():
 
     if trace_and_visualize:
         time.sleep(3)
-        specname = strip_suffix(get_runtime_option('file'))
+        specname = Path(get_runtime_option('file')).stem
         filename = specname + '.html'
 
-        ui_root = viz_file_path = "{}/ui".format(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        viz_uri = "file://{}/{}".format(os.getcwd(), filename)
-        viz_tmpl_path = "{}/index.tmpl.html".format(ui_root)
+        da_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        ui_root = Path(da_root) / "ui"
+        viz_path = Path(os.getcwd()) / filename
+
         trace_dir = get_runtime_option('logdir') + '/'
 
         replacements = {
                 # css files
-                'bootstrap_css': open("{}/css/bootstrap.min.css".format(ui_root), 'r').read(),
-                'style_css': open("{}/css/style.css".format(ui_root), 'r').read(),
+                'bootstrap_css': open(ui_root / "css"/ "bootstrap.min.css", 'r').read(),
+                'style_css': open(ui_root / "css" / "style.css", 'r').read(),
 
                 # js files
-                'd3_js': open("{}/js/d3.min.js".format(ui_root), 'r').read(),
-                'jquery_js': open("{}/js/jquery-3.3.1.min.js".format(ui_root), 'r').read(),
-                'app_js': open("{}/js/app.js".format(ui_root), 'r').read(),
+                'd3_js': open(ui_root / "js" / "d3.min.js", 'r').read(),
+                'jquery_js': open(ui_root / "js"/ "jquery-3.3.1.min.js", 'r').read(),
+                'app_js': open(ui_root / "js" / "app.js", 'r').read(),
 
                 # spec name
                 'specname': specname,
@@ -428,17 +429,17 @@ def entrypoint():
                 'tracedata' : trace_to_clocks_and_state(trace_dir),
             }
 
-        with open(viz_tmpl_path, 'r') as fin, open(filename, 'w+') as fout:
+        with open(ui_root / "index.tmpl.html", 'r') as fin, open(filename, 'w+') as fout:
             vizdata = fin.read()
             # replace placeholder with trace data
             vizdata = Template(vizdata).substitute(replacements)
             fout.write(vizdata)
 
         print('Visualization: {}\nTraces: {} \n'.format(
-            viz_uri,
+            viz_path.as_uri(),
             trace_dir))
 
-        webbrowser.open(viz_uri)
+        webbrowser.open(viz_path.as_uri())
 
     return 0
 
