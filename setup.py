@@ -143,7 +143,7 @@ setup(name = "pyDistAlgo",
       include_package_data = True,
       package_data = {
         'da.examples' : ['**/*.da'],
-        'da' : ['ui/*', 'ui/**']
+        'da' : ['ui/css/*', 'ui/js/*', 'ui/*']
       },
 
       cmdclass = {
