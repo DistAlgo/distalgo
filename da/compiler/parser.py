@@ -1940,7 +1940,7 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
         if isinstance(vnode, Num) or isinstance(vnode, Str) or \
            isinstance(vnode, Bytes) or isinstance(vnode, NameConstant) or \
            isinstance(vnode, Set) or isinstance(vnode, List) or \
-           isinstance(vnode, Tuple):
+           isinstance(vnode, Tuple) or isinstance(vnode, Dict):
             value = self.visit(vnode)
         else:
             self.error("Invalid configuration value.", vnode)

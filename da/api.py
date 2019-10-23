@@ -263,10 +263,13 @@ def entrypoint():
         die("Main process is not a DistProcess: {}".format(module.Node_))
 
     trace_and_visualize = False
+    visualize_config = {}
     if 'visualize' in module.Node_._config_object and module.Node_._config_object['visualize']:
         trace_and_visualize = True
         set_runtime_option('record_trace', True)
         os.makedirs(get_runtime_option('logdir'), exist_ok=True)
+        if isinstance(module.Node_._config_object['visualize'], dict):
+            visualize_config = module.Node_._config_object['visualize']
     # enable trace option if not enabled, use a temp path
 
     # Start main program
@@ -427,6 +430,9 @@ def entrypoint():
 
                 # trace data
                 'tracedata' : trace_to_clocks_and_state(trace_dir),
+
+                # visualization config
+                'visualize_config': json.dumps(visualize_config)
             }
 
         with open(ui_root / "index.tmpl.html", 'r') as fin, open(filename, 'w+') as fout:

@@ -24,6 +24,9 @@ function escapeHTML(s)
 
 function strToColor(str)
 {
+    if (visualize_config && visualize_config.colors && visualize_config['colors'][str]) {
+        return visualize_config['colors'][str];
+    }
     str += "s"
     var hash = 0;
   for (var i = 0; i < str.length; i++) {
