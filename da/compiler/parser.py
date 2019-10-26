@@ -1195,8 +1195,11 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
             elif isinstance(e, Await):
                 stmtobj = self.create_stmt(dast.AwaitStmt, node)
                 self.current_context = Read(stmtobj)
-                branch = dast.Branch(stmtobj, node,
-                                     condition=self.visit(e.value))
+                if expr_check(KW_AWAIT_TIMEOUT, 1, 1, e.value):
+                    stmtobj.timeout = self.visit(e.value.args[0])
+                else:
+                    branch = dast.Branch(stmtobj, node,
+                                         condition=self.visit(e.value))
                 stmtobj.branches.append(branch)
 
             elif expr_check(KW_SEND, 1, 1, e, keywords={KW_SEND_TO},
