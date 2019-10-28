@@ -1200,7 +1200,7 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
                 else:
                     branch = dast.Branch(stmtobj, node,
                                          condition=self.visit(e.value))
-                stmtobj.branches.append(branch)
+                    stmtobj.branches.append(branch)
 
             elif expr_check(KW_SEND, 1, 1, e, keywords={KW_SEND_TO},
                             optional_keywords=None):
