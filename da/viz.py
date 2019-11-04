@@ -142,16 +142,10 @@ def build_clocks(trace_dir):
             while rcv_clk in process_map[p['process']]:
                 rcv_clk += 1
 
-            dtuple = (msg['sender'], msg['clock'])
-
-            clk = {}
-            clk[msg['sender']] = msg['clock']
-            rcv_candidate = max(rcv_clk, msg['clock'] + 1)
+            rcv_candidate = max(rcv_clk, msg['clock']) + 1
 
             while rcv_candidate in process_map[p['process']]:
                 rcv_candidate += 1
-
-            clk[p['process']] = rcv_candidate
 
             results['messages'].append({
                 'msg': msg['payload'],
@@ -159,7 +153,10 @@ def build_clocks(trace_dir):
                 'receiver': [pid_map[p['process']], rcv_candidate]
             })
 
-            results['maxClock'] = max(results['maxClock'], rcv_candidate, )
+            results['maxClock'] = max(results['maxClock'], rcv_candidate)
+
+            rcv_clk = rcv_candidate
+
     return results
 
 
