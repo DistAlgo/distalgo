@@ -116,7 +116,7 @@ def build_clocks(trace_dir):
     process_info_map = {}
     results = {}
     for obj in data:
-        process_map[obj['process']] = []
+        process_map[obj['process']] = set()
         pid_map[obj['process']] = process_idx
         m = re.match(r'<([^\:]+)\:([^\>]+)\>', obj['process'], re.M | re.I)
         process_info_map[process_idx] = [m.group(1), m.group(2), obj['process']]
@@ -131,19 +131,18 @@ def build_clocks(trace_dir):
     for obj in data:
         for msg in obj['messages']:
             if not msg['sender'].startswith('<Node_'):
-                process_map[msg['sender']].append(msg['clock'])
+                process_map[msg['sender']].add(msg['clock'])
 
     for p in data:
-        rcv_clk = 0
+        rcv_candidate = 0
         for msg in p['messages']:
+            # ignore messages from controller
             if msg['sender'].startswith('<Node_'):
                 continue
 
-            while rcv_clk in process_map[p['process']]:
-                rcv_clk += 1
+            rcv_candidate = max(rcv_candidate, msg['clock']) + 1
 
-            rcv_candidate = max(rcv_clk, msg['clock']) + 1
-
+            # skip clocks for which we know the process sent a message
             while rcv_candidate in process_map[p['process']]:
                 rcv_candidate += 1
 
@@ -154,8 +153,6 @@ def build_clocks(trace_dir):
             })
 
             results['maxClock'] = max(results['maxClock'], rcv_candidate)
-
-            rcv_clk = rcv_candidate
 
     return results
 
