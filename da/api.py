@@ -266,6 +266,12 @@ def entrypoint():
     visualize_config = {}
     if 'visualize' in module.Node_._config_object and module.Node_._config_object['visualize']:
         trace_and_visualize = True
+
+        # visualize only works w/ lamport clocks for now
+        configobj = get_runtime_option('config')
+        configobj['clock'] = 'lamport'
+        set_runtime_option('config', configobj)
+
         set_runtime_option('record_trace', True)
         os.makedirs(get_runtime_option('logdir'), exist_ok=True)
         if isinstance(module.Node_._config_object['visualize'], dict):

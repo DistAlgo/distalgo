@@ -49,7 +49,7 @@ class P(process):
 def main():
     nprocs = int(sys.argv[1]) if len(sys.argv) > 1 else 10
     nrequests = int(sys.argv[2]) if len(sys.argv) > 2 else 1
-    config(channel is fifo, clock is lamport, visualize is {
+    config(visualize is {
         # colors: override message and process colors, defaults to random
         #         supports any valid CSS color value
         # https://developer.mozilla.org/en-US/docs/Web/CSS/color_value
