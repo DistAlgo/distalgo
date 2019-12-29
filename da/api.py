@@ -33,6 +33,7 @@ import urllib
 import webbrowser
 import json
 
+from datetime import datetime
 from pathlib import Path
 from string import Template
 from sys import stderr
@@ -272,11 +273,11 @@ def entrypoint():
         configobj['clock'] = 'lamport'
         set_runtime_option('config', configobj)
 
+        # enable trace option if not enabled, use a temp path
         set_runtime_option('record_trace', True)
         os.makedirs(get_runtime_option('logdir'), exist_ok=True)
         if isinstance(module.Node_._config_object['visualize'], dict):
             visualize_config = module.Node_._config_object['visualize']
-    # enable trace option if not enabled, use a temp path
 
     # Start main program
     nodename = _check_nodename()
@@ -413,7 +414,7 @@ def entrypoint():
     if trace_and_visualize:
         time.sleep(3)
         specname = Path(get_runtime_option('file')).stem
-        filename = specname + '.html'
+        filename = '{}-{}.html'.format(specname, datetime.now().strftime('%Y-%m-%d_%H%M%S'))
 
         da_root = os.path.dirname(os.path.abspath(__file__))
         ui_root = Path(da_root) / "ui"
