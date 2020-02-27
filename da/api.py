@@ -22,6 +22,8 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+from pprint import pprint
+
 import os
 import sys
 import time
@@ -221,13 +223,15 @@ def _load_main_module():
             die("Can not access source file %s" % target)
         # XXX: this differs from normal Python script-loading semantics:
         sys.path.insert(0, source_dir)
-        module = importlib.import_module(basename)
         sys.argv = [target] + get_runtime_option('args')
+        module = importlib.import_module(basename)
+        # sys.argv = [target] + get_runtime_option('args')
     elif get_runtime_option('module') is not None:
         module_args = get_runtime_option('module')
         module_name = module_args[0]
-        module = importlib.import_module(module_name)
         sys.argv = ['__main__'] + module_args[1:]
+        module = importlib.import_module(module_name)
+        # sys.argv = ['__main__'] + module_args[1:]
     else:
         module = importlib.import_module(BASE_MODULE_NAME)
     return module
@@ -252,7 +256,7 @@ def entrypoint():
             # Just use the generic node:
             module.Node_ = sim.NodeProcess
         else:
-            die("Warning: Main process not defined")
+            die("Main process not defined!")
     elif not (type(module.Node_) is type and
               issubclass(module.Node_, sim.DistProcess)):
         die("Main process is not a DistProcess: {}".format(module.Node_))

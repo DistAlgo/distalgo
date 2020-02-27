@@ -34,6 +34,9 @@ from .utils import Namespace
 from .utils import CompilerMessagePrinter
 from .utils import MalformedStatementError
 from .utils import ResolverException
+from .utils import printe
+
+from pprint import pprint
 
 # DistAlgo keywords
 KW_ENTRY_POINT = "main"
@@ -58,10 +61,17 @@ KW_AGGREGATE_SIZE = "len"
 KW_AGGREGATE_MIN = "min"
 KW_AGGREGATE_MAX = "max"
 KW_AGGREGATE_SUM = "sum"
+KW_AGGREGATE_PROD = "prod"
 KW_COMP_SET = "setof"
 KW_COMP_TUPLE = "tupleof"
 KW_COMP_LIST = "listof"
 KW_COMP_DICT = "dictof"
+KW_COMP_MIN = "minof"
+KW_COMP_MAX = "maxof"
+KW_COMP_SUM = "sumof"
+KW_COMP_LEN = "lenof"
+KW_COMP_COUNT = "countof"
+KW_COMP_PROD = "prodof"
 KW_AWAIT = "await"
 KW_AWAIT_TIMEOUT = "timeout"
 KW_SEND = "send"
@@ -76,6 +86,19 @@ KW_NULL = "None"
 KW_SUCH_THAT = "has"
 KW_RESET = "reset"
 KW_INC_VERB = "_INC_"
+
+exprDict = {
+    KW_COMP_SET: dast.SetCompExpr,
+    KW_COMP_LIST: dast.ListCompExpr,
+    KW_COMP_DICT: dast.DictCompExpr,
+    KW_COMP_TUPLE: dast.TupleCompExpr,
+    KW_COMP_MIN: dast.MinCompExpr,
+    KW_COMP_MAX: dast.MaxCompExpr,
+    KW_COMP_SUM: dast.SumCompExpr,
+    KW_COMP_PROD: dast.PrdCompExpr,
+    KW_COMP_LEN: dast.LenCompExpr,
+    KW_COMP_COUNT: dast.LenCompExpr
+}
 
 ##########################
 # Helper functions:
@@ -268,9 +291,11 @@ AggregateMap = {
     KW_AGGREGATE_MAX  : dast.MaxExpr,
     KW_AGGREGATE_MIN  : dast.MinExpr,
     KW_AGGREGATE_SIZE : dast.SizeExpr,
-    KW_AGGREGATE_SUM  : dast.SumExpr
+    KW_AGGREGATE_SUM  : dast.SumExpr,
+    KW_AGGREGATE_PROD  : dast.ProdExpr,
 }
-ComprehensionTypes = {KW_COMP_SET, KW_COMP_TUPLE, KW_COMP_DICT, KW_COMP_LIST}
+ComprehensionTypes = {KW_COMP_SET, KW_COMP_TUPLE, KW_COMP_DICT, KW_COMP_LIST, 
+                      KW_COMP_MAX, KW_COMP_MIN, KW_COMP_SUM, KW_COMP_LEN, KW_COMP_COUNT, KW_COMP_PROD}
 EventKeywords = {KW_EVENT_DESTINATION, KW_EVENT_SOURCE, KW_EVENT_LABEL,
                  KW_EVENT_TIMESTAMP}
 Quantifiers = {KW_UNIVERSAL_QUANT, KW_EXISTENTIAL_QUANT}
@@ -1195,6 +1220,7 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
             elif isinstance(e, Await):
                 stmtobj = self.create_stmt(dast.AwaitStmt, node)
                 self.current_context = Read(stmtobj)
+                # if await condition e.value is call to timeout with 1 argument
                 if expr_check(KW_AWAIT_TIMEOUT, 1, 1, e.value):
                     stmtobj.timeout = self.visit(e.value.args[0])
                 else:
@@ -1254,13 +1280,12 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
             elif type(e) is Yield:
                 stmtobj = self.create_stmt(dast.YieldStmt, node)
                 self.current_context = Read(stmtobj)
-                stmtobj.value = self.visit(e.value)
+                stmtobj.value = None if e.value is None else self.visit(e.value)
             elif type(e) is YieldFrom:
                 # 'yield' should be a statement, handle it here:
                 stmtobj = self.create_stmt(dast.YieldFromStmt, node)
                 self.current_context = Read(stmtobj)
-                stmtobj.value = self.visit(e.value)
-
+                stmtobj.value = None if e.value is None else self.visit(e.value)
             else:
                 stmtobj = self.create_stmt(dast.SimpleStmt, node)
                 self.current_context = Read(stmtobj)
@@ -1822,14 +1847,7 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
         return expr
 
     def parse_comprehension(self, node):
-        if node.func.id == KW_COMP_SET:
-            expr_type = dast.SetCompExpr
-        elif node.func.id == KW_COMP_LIST:
-            expr_type = dast.ListCompExpr
-        elif node.func.id == KW_COMP_DICT:
-            expr_type = dast.DictCompExpr
-        elif node.func.id == KW_COMP_TUPLE:
-            expr_type = dast.TupleCompExpr
+        expr_type = exprDict[node.func.id]
 
         expr = self.create_expr(expr_type, node)
         self.enter_query()
@@ -1892,14 +1910,7 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
             self.error(msg, expr)
 
     def parse_aggregates(self, node):
-        if node.func.id == KW_AGGREGATE_SUM:
-            expr_type = dast.SumExpr
-        elif node.func.id == KW_AGGREGATE_SIZE:
-            expr_type = dast.SizeExpr
-        elif node.func.id == KW_AGGREGATE_MIN:
-            expr_type = dast.MinExpr
-        elif node.func.id == KW_AGGREGATE_MAX:
-            expr_type = dast.MaxExpr
+        expr_type = AggregateMap[node.func.id]
 
         expr = self.create_expr(expr_type, node)
         self.current_context = Read(expr)
@@ -2233,6 +2244,7 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
         return e
 
     def visit_Compare(self, node):
+        # pprint(vars(node))
         if len(node.ops) > 1:
             self.error("Explicit parenthesis required in comparison expression",
                        node)
@@ -2314,8 +2326,8 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
         return expr
 
     def visit_ExtSlice(self, node):
-        self.warn("ExtSlice in subscript not supported.", node)
-        return self.context_expr(dast.PythonExpr, node, nopush=True)
+        # self.warn("ExtSlice in subscript not supported.", node)
+        return self.create_expr(dast.PythonExpr, node, nopush=True)
 
     def visit_Yield(self, node):
         # Should not get here: 'yield' statements should have been handles by
