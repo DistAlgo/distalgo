@@ -256,7 +256,7 @@ def entrypoint():
             # Just use the generic node:
             module.Node_ = sim.NodeProcess
         else:
-            die("Main process not defined!")
+            die("Warning: Main process not defined")
     elif not (type(module.Node_) is type and
               issubclass(module.Node_, sim.DistProcess)):
         die("Main process is not a DistProcess: {}".format(module.Node_))
