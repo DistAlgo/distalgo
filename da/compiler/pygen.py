@@ -77,7 +77,6 @@ GenCompMap = {
     dast.MinCompExpr: "min",
     dast.MaxCompExpr: "max",
     dast.SumCompExpr: "sum",
-    dast.LenCompExpr: "len"
 }
 
 CONFIG_OBJECT_NAME = "_config_object"
@@ -935,6 +934,8 @@ class PythonGenerator(NodeVisitor):
                         ast = SetComp(elem, generators)
                     elif isinstance(node, dast.ListCompExpr):
                         ast = ListComp(elem, generators)
+                    elif isinstance(node, dast.LenCompExpr):
+                        ast = pyCall("len", args=[ListComp(elem, generators)])
                     elif type(node) in GenCompMap:
                         ast = pyCall(GenCompMap[type(node)], args=[GeneratorExp(elem, generators)])
                     elif isinstance(node, dast.PrdCompExpr):
