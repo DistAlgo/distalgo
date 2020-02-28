@@ -216,15 +216,15 @@ def _load_main_module():
         if not os.access(target, os.R_OK):
             die("Can not access source file %s" % target)
         sys.path.insert(0, source_dir)
+        sys.argv = [target] + get_runtime_option('args')
         module = import_da(basename,
                            from_dir=source_dir,
                            compiler_args=compiler_args)
-        sys.argv = [target] + get_runtime_option('args')
     elif get_runtime_option('module') is not None:
         module_args = get_runtime_option('module')
         module_name = module_args[0]
-        module = import_da(module_name, compiler_args=compiler_args)
         sys.argv = ['__main__'] + module_args[1:]
+        module = import_da(module_name, compiler_args=compiler_args)
     else:
         module = import_da(BASE_MODULE_NAME)
     return module
