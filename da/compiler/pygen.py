@@ -76,7 +76,7 @@ GenCompMap = {
     dast.TupleCompExpr: "tuple",
     dast.MinCompExpr: "min",
     dast.MaxCompExpr: "max",
-    dast.SumCompExpr: "sum",
+    dast.SumCompExpr: "sum"
 }
 
 CONFIG_OBJECT_NAME = "_config_object"
@@ -651,13 +651,16 @@ class PythonGenerator(NodeVisitor):
         ctx = self.current_context
         self.current_context = Load
         val = self.visit(node.value)
-        if isinstance(node.index, dast.SliceExpr):
+        if isinstance(node.index, dast.SliceExpr) or isinstance(node.index, dast.PythonExpr):
             idx = self.visit(node.index)
         else:
             idx = Index(self.visit(node.index))
             propagate_attributes([idx.value], idx)
         self.current_context = ctx
         return pySubscr(val, idx, ctx())
+
+    def visit_PythonExpr(self, node):
+        return node._ast
 
     def visit_SliceExpr(self, node):
         l = self.visit(node.lower) if node.lower is not None else None
