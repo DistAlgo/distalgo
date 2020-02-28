@@ -651,13 +651,18 @@ class PythonGenerator(NodeVisitor):
         ctx = self.current_context
         self.current_context = Load
         val = self.visit(node.value)
-        if isinstance(node.index, dast.SliceExpr) or isinstance(node.index, dast.PythonExpr):
+        if isinstance(node.index, dast.SliceExpr) or isinstance(node.index, dast.ExtSliceExpr):
             idx = self.visit(node.index)
         else:
             idx = Index(self.visit(node.index))
             propagate_attributes([idx.value], idx)
         self.current_context = ctx
         return pySubscr(val, idx, ctx())
+
+    def visit_ExtSliceExpr(self,node):
+        dims = [self.visit(d) for d in node.dims]
+        ast = ExtSlice(dims)
+        return propagate_attributes(dims, ast)
 
     def visit_PythonExpr(self, node):
         return node._ast

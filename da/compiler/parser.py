@@ -2244,7 +2244,6 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
         return e
 
     def visit_Compare(self, node):
-        # pprint(vars(node))
         if len(node.ops) > 1:
             self.error("Explicit parenthesis required in comparison expression",
                        node)
@@ -2327,7 +2326,11 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
 
     def visit_ExtSlice(self, node):
         # self.warn("ExtSlice in subscript not supported.", node)
-        return self.create_expr(dast.PythonExpr, node, nopush=True)
+        expr = self.create_expr(dast.ExtSliceExpr, node)
+        dims = [self.visit(d) for d in node.dims]
+        expr.dims = dims
+        self.pop_state()
+        return expr
 
     def visit_Yield(self, node):
         # Should not get here: 'yield' statements should have been handles by

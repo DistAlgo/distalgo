@@ -975,6 +975,15 @@ class SliceExpr(Expression):
     def step(self, idx):
         self.subexprs[2] = idx
 
+class ExtSliceExpr(Expression):
+    @property
+    def dims(self):
+        return self.subexprs
+
+    @dims.setter
+    def dims(self, idx):
+        self.subexprs = idx
+
 
 class StarredExpr(SimpleExpr): pass
 class EllipsisExpr(SimpleExpr): pass
