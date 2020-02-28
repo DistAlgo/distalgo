@@ -81,7 +81,7 @@ class TransportManager:
         for cls in TransportTypes:
             try:
                 if pipe is not None:
-                    assert pipe.recv() is trsp.__class__
+                    assert pipe.recv() is cls
                 trsp = cls(self.authkey)
                 trsp.initialize(pipe=pipe, **params)
                 cnt += 1
@@ -124,7 +124,7 @@ class TransportManager:
         if started != total:
             self.log.warning(
                 "Start failed for {}/{} transports.".format(
-                    (total - cnt), total))
+                    (total - started), total))
         self.started = True
         self.transports = tuple(res)
 
