@@ -41,7 +41,7 @@ from functools import wraps
 MAJOR_VERSION = 1
 MINOR_VERSION = 1
 PATCH_VERSION = 0
-PRERELEASE_VERSION = "b13"
+PRERELEASE_VERSION = "b14"
 
 __version__ = "{}.{}.{}{}".format(MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION,
                                    PRERELEASE_VERSION)

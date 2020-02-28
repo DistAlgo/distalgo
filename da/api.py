@@ -225,13 +225,11 @@ def _load_main_module():
         sys.path.insert(0, source_dir)
         sys.argv = [target] + get_runtime_option('args')
         module = importlib.import_module(basename)
-        # sys.argv = [target] + get_runtime_option('args')
     elif get_runtime_option('module') is not None:
         module_args = get_runtime_option('module')
         module_name = module_args[0]
         sys.argv = ['__main__'] + module_args[1:]
         module = importlib.import_module(module_name)
-        # sys.argv = ['__main__'] + module_args[1:]
     else:
         module = importlib.import_module(BASE_MODULE_NAME)
     return module
