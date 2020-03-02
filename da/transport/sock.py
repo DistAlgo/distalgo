@@ -34,6 +34,8 @@ from .manager import transport
 from .mesgloop import SelectorLoop
 from ..common import VERSION_BYTES, get_runtime_option
 
+from itertools import chain
+
 __all__ = [
     "SocketTransport", "UdpTransport", "TcpTransport",
     "HEADER_SIZE", "BYTEORDER"
@@ -556,11 +558,12 @@ class TcpTransport(SocketTransport):
                     if conn is not None:
                         conn.close()
                         conn = None
-                except ConnectionClosedException:
-                    pass
+                except:
+                    self._log.debug("Sending to %s failed on %dth try: %r",
+                                    target, retry, sys.exc_info()[0])
 
                 if retry > retries:
-                    raise TransportException('max retries reached.') from e
+                    raise TransportException('max retries reached.')# from e
                 if retry > 1:
                     time.sleep(wait)
                 retry += 1
@@ -584,22 +587,11 @@ class TcpTransport(SocketTransport):
                             pass
 
     def _send_1(self, data, conn, target=None):
-        msglen = sum(len(chunk) for chunk in data)
-        sent = conn.sendmsg(data)
-        if sent != msglen:
-            self._log.debug("_send_1: only sent %d/%d bytes. ", sent, msglen)
-            raise socket.error("Unable to send full chunk.")
-        else:
-            self._log.debug("Sent %d bytes to %s.", msglen, target)
-
-    def _send_1_nt(self, data, conn, target=None):
-        from itertools import chain
         buf = bytes(chain(*data))
-        conn.sendall(buf)
+        failed = conn.sendall(buf)
+        if failed:
+            raise socket.error("Unable to send full chunk.")
         self._log.debug("Sent %d bytes to %s.", len(buf), target)
-
-    if sys.platform == 'win32':
-        _send_1 = _send_1_nt
 
     def _recvmesg_wrapper(self, conn, job):
         callback, aux = job
