@@ -10,7 +10,7 @@
 
 ## Python
 
-   DistAlgo requires Python version 3.5 or higher, which can be obtained
+   DistAlgo requires Python version 3.5, 3.6, or 3.7, which can be obtained
    from http://www.python.org. This document assumes that your installation
    uses the default name `python` for the Python executable.
 
