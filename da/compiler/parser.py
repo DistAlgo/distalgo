@@ -2244,47 +2244,61 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
         return e
 
     def visit_Compare(self, node):
-        if len(node.ops) > 1:
-            self.error("Explicit parenthesis required in comparison expression",
-                       node)
-            return None
-        outer = None
-        # We make all negation explicit:
-        if type(node.ops[0]) in NegatedOperators:
-            outer = self.create_expr(dast.LogicalExpr, node)
-            outer.operator = dast.NotOp
+        result = []
 
-        expr = self.create_expr(dast.ComparisonExpr, node)
+        for i in range(len(node.ops)):
+            if i == 0:
+                left = node.left
+            else:
+                left = right
+            op = node.ops[i]
+            right = node.comparators[i]
 
-        if self.get_option('enable_membertest_pattern', default=False):
-            # DistAlgo: overload "in" to allow pattern matching
-            if isinstance(node.ops[0], In) or \
-                   isinstance(node.ops[0], NotIn):
-                # Backward compatibility: only assume pattern if containing free
-                # var
-                pf = PatternFinder()
-                pf.visit(node.left)
-                if pf.found:
-                    expr.left = self.parse_pattern_expr(node.left)
-        if expr.left is None:
-            expr.left = self.visit(node.left)
-        self.current_context = Read(expr.left)
-        expr.right = self.visit(node.comparators[0])
-        if (isinstance(expr.right, dast.HistoryExpr) and
-                expr.right.event is not None):
-            # Must replace short pattern format with full pattern here:
-            expr.left = self.pattern_from_event(expr.right.event)
+            outer = None
+            # We make all negation explicit:
+            if type(op) in NegatedOperators:
+                outer = self.create_expr(dast.LogicalExpr, node)
+                outer.operator = dast.NotOp
 
-        if outer is not None:
-            expr.comparator = NegatedOperators[type(node.ops[0])]
-            outer.subexprs.append(expr)
-            self.pop_state()
-            self.pop_state()
-            return outer
+            expr = self.create_expr(dast.ComparisonExpr, node)
+
+            if self.get_option('enable_membertest_pattern', default=False):
+                # DistAlgo: overload "in" to allow pattern matching
+                if isinstance(op, In) or \
+                       isinstance(op, NotIn):
+                    # Backward compatibility: only assume pattern if containing free
+                    # var
+                    pf = PatternFinder()
+                    pf.visit(left)
+                    if pf.found:
+                        expr.left = self.parse_pattern_expr(left)
+            if expr.left is None:
+                expr.left = self.visit(left)
+            self.current_context = Read(expr.left)
+            expr.right = self.visit(right)
+            if (isinstance(expr.right, dast.HistoryExpr) and
+                    expr.right.event is not None):
+                # Must replace short pattern format with full pattern here:
+                expr.left = self.pattern_from_event(expr.right.event)
+
+            if outer is not None:
+                expr.comparator = NegatedOperators[type(op)]
+                outer.subexprs.append(expr)
+                self.pop_state()
+                self.pop_state()
+                result.append(outer)
+            else:
+                expr.comparator = OperatorMap[type(op)]
+                self.pop_state()
+                result.append(expr)
+
+        if len(result) == 1:
+            return result[0]
         else:
-            expr.comparator = OperatorMap[type(node.ops[0])]
+            e = self.create_expr(dast.LogicalExpr, node, {"op": dast.AndOp})
+            e.subexprs = result
             self.pop_state()
-            return expr
+            return e
 
     def visit_UnaryOp(self, node):
         if type(node.op) is Not:
