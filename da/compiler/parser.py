@@ -292,7 +292,7 @@ AggregateMap = {
     KW_AGGREGATE_MIN  : dast.MinExpr,
     KW_AGGREGATE_SIZE : dast.SizeExpr,
     KW_AGGREGATE_SUM  : dast.SumExpr,
-    KW_AGGREGATE_PROD  : dast.ProdExpr,
+    # KW_AGGREGATE_PROD  : dast.ProdExpr,
 }
 ComprehensionTypes = {KW_COMP_SET, KW_COMP_TUPLE, KW_COMP_DICT, KW_COMP_LIST, 
                       KW_COMP_MAX, KW_COMP_MIN, KW_COMP_SUM, KW_COMP_LEN, KW_COMP_COUNT, KW_COMP_PROD}
