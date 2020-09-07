@@ -1887,8 +1887,9 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
                            first_arg)
             else:
                 kv = dast.KeyValue(expr)
-                kv.key = self.visit(node.key)
-                kv.value = self.visit(node.value)
+                key,val = first_arg.elts
+                kv.key = self.visit(key)
+                kv.value = self.visit(val)
                 expr.elem = kv
         else:
             expr.elem = self.visit(first_arg)
