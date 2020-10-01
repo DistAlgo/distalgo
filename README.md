@@ -68,7 +68,7 @@
 
    By default, `pip` only installs "stable" versions from the PyPI
    repository. If you would like to install or upgrade to the latest
-   version, pass the `--pre` flag to `pip install`:
+   version, pass the `--pre` flag to `pip install` (this is needed now if you use Python 3.7):
    
      pip install --pre pyDistAlgo
      pip install --upgrade --pre pyDistAlgo
