@@ -16,6 +16,9 @@ var c_row_separation = 100 + c_radius
 var c_col_separation = 150 + c_radius
 var listenersAdded = false;   //Indicates whether or not we have already added a set of listeners to the DOM body.
 
+// Config Vars
+var colorTypes = {"request": "#000000", "ack": "#000000", "release": "#000000", "process": "#C71585"};
+
 
 function escapeHTML(s)
 {
@@ -24,11 +27,12 @@ function escapeHTML(s)
 
 function strToColor(str)
 {
-    if (visualize_config && visualize_config.colors && visualize_config['colors'][str]) {
-        return visualize_config['colors'][str];
-    }
-    str += "s"
-    var hash = 0;
+  if (visualize_config && visualize_config.colors && visualize_config['colors'][str]) {
+      return visualize_config['colors'][str];
+  }
+  str += "s"
+  var hash = 0;
+
   for (var i = 0; i < str.length; i++) {
     hash = str.charCodeAt(i) + ((hash << 5) - hash);
   }
@@ -37,6 +41,7 @@ function strToColor(str)
     var value = (hash >> (i * 8)) & 0xFF;
     colour += ('00' + value.toString(16)).substr(-2);
   }
+  console.log(colour);
   return colour;
 }
 
@@ -93,7 +98,6 @@ function drawMessage(senderProcess, senderClock, receiverProcess, receiverClock)
 {
   var mtype = window.data["messages"][messageNumber]['msg'].split(',')[0];
   mtype = mtype.substr(2, mtype.length-3)
-  // console.log((mtype));
   var startOffset = 20;
   if (mode == 1) {
     var line = svgContainer.append("line")
@@ -101,12 +105,13 @@ function drawMessage(senderProcess, senderClock, receiverProcess, receiverClock)
                           .attr("x2", columnWidth * receiverProcess)
                           .attr("y1", startOffset + rowHeight * senderClock)
                           .attr("y2", startOffset + rowHeight * receiverClock)
-                          .attr("stroke", strToColor(mtype))
+                          .attr("stroke", colorTypes[window.data["messages"][messageNumber]['msg'].split("'")[1]])
                           .attr("stroke-width", 2)
                           .attr("marker-end","url(#arrow)")
                           .attr("id", "line" + messageNumber)
                           .attr("class", "Message-Line")
                           .attr('data-payload', window.data["messages"][messageNumber]['msg'])
+                          .attr('message-type', "request")
                           .on("mouseover", function(d ,i) {
                                 div.transition()
                                     .duration(200)
@@ -369,6 +374,11 @@ if (listenersAdded == false) {    //Enforces that this logic is called only once
     $('#Next').on('click', next);
     $('#Pause').on('click', pause);
     $('#Reset').on('click', reset);
+    $('#ReqMsgColor').on('input', function(){colorChange(".Message-Line", "stroke", "request");});    
+    $('#AckMsgColor').on('input', function(){colorChange(".Message-Line", "stroke", "ack");});    
+    $('#RelMsgColor').on('input', function(){colorChange(".Message-Line", "stroke", "release");});    
+    $('#PrcColor').on('input', function(){colorChange(".Process-Text", "fill", "process");
+                                          colorChange(".Process-Line", "stroke", "process");});
 
     $("body").on('keydown', function(e) {
       if(e.keyCode == 37) { // left
@@ -463,6 +473,7 @@ function drawGrid()
 
       // vertical lines
       svgContainer.append("line")
+        .attr("class", "Process-Line")
         .attr("x1", i*columnWidth)
         .attr("x2", i*columnWidth)
         .attr("y1", startOffset + rowHeight)
@@ -471,6 +482,7 @@ function drawGrid()
         .attr("stroke-width", 5);
 
       svgContainer.append("text")
+        .attr("class", "Process-Text")
         .attr("x", columnWidth*i)
         .attr("y", rowHeight-20)
         .attr("fill", strToColor(window.data["process_map"][i][0]))
@@ -601,7 +613,84 @@ function GetVizData(data)
 
 }
 
+
+
+function rgbToHex(color_string, format)
+{
+    // console.log(color_string);
+    var colors = ((color_string.split('('))[1].split(')'))[0].split(", "); 
+    var hex = [[0, 0], [0, 0], [0, 0]];
+    var hex_string = "#";
+    for (var i = 0; i < 3; ++i){
+        hex[i][0] = Math.floor(colors[i] / 16);
+        hex[i][1] = colors[i] - 16 * hex[i][0];
+        for (var j = 0; j < hex[i].length; ++j){
+            if (hex[i][j] > 9) {
+                hex[i][j] = String.fromCharCode(65 + (5 - (15-hex[i][j])));
+            }
+            hex_string += hex[i][j];
+        }
+    }
+    return hex_string; 
+}
+
+function initializeConfig(){
+    // convert CSS color code to #rrggbb
+    // get an HTML element
+    var text = $("#req-msg-color-picker")[0];
+    
+    // for each graphic element with color
+    for (var key in colorTypes){
+        var color = colorTypes[key];
+
+        // use config file first
+        if (visualize_config && visualize_config.colors && visualize_config['colors'][key]) {
+            color = visualize_config['colors'][key];
+        }
+
+        // check what format the color is
+        if (color.indexOf('rgb') == -1){ // not in RGB format
+            text.style.color = color;
+            color = window.getComputedStyle(text).color;
+        }
+
+        // change to hex
+        color = rgbToHex(color);
+
+        // store color in hex format
+        colorTypes[key] = color;
+
+        // set color of input element
+        var input_search_string = "[name=" + key + "]";
+        $(input_search_string)[0].value = colorTypes[key];
+        // console.log(window.data["process_map"][1]);
+
+        // console.log($(input_search_string)[0].value);
+    }
+
+    // reset the color type of the text
+    // console.log($("#req-msg-color-picker")[0]);
+    $("#req-msg-color-picker")[0].style.color ="#000000";
+}
+
+function colorChange(id_class_type, graphic_type, da_type)
+{
+    // change preset for new color and update existing color
+    colorTypes[da_type] = event.target.value;
+    console.log(colorTypes[da_type]);
+    if (da_type == "process"){
+        svgContainer.selectAll(id_class_type).attr(graphic_type, colorTypes[da_type]);
+    } else {
+        svgContainer.selectAll(id_class_type)
+        .filter(function() {return d3.select(this).attr("data-payload").indexOf(da_type) !== -1;})
+        .attr(graphic_type, colorTypes[da_type]);
+    }
+}
+    
+
 $(function(){
+
+    initializeConfig();
 
     // get the data path
     var urlParams = new URLSearchParams(window.location.search);
