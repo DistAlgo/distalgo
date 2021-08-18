@@ -16,6 +16,11 @@ body {
     overflow:scroll;
 }
 
+#color-pickers {
+  display: flex;
+  flex-direction: row;
+}
+
 div.tooltip {
     position: absolute;
     line-height: 1.2em;

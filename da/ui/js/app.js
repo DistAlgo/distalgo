@@ -17,8 +17,8 @@ var c_col_separation = 150 + c_radius
 var listenersAdded = false;   //Indicates whether or not we have already added a set of listeners to the DOM body.
 
 // Config Vars
-var colorTypes = {"request": "#000000", "ack": "#000000", "release": "#000000", "process": "#C71585"};
-
+var colorTypes = {"process": "#C71585"}; // C71585
+var messageTypes = [];
 
 function escapeHTML(s)
 {
@@ -105,7 +105,7 @@ function drawMessage(senderProcess, senderClock, receiverProcess, receiverClock)
                           .attr("x2", columnWidth * receiverProcess)
                           .attr("y1", startOffset + rowHeight * senderClock)
                           .attr("y2", startOffset + rowHeight * receiverClock)
-                          .attr("stroke", colorTypes[window.data["messages"][messageNumber]['msg'].split("'")[1]])
+                          .attr("stroke", colorTypes[inputSanitization(window.data["messages"][messageNumber]['msg'])])//.split(",")[0]])
                           .attr("stroke-width", 2)
                           .attr("marker-end","url(#arrow)")
                           .attr("id", "line" + messageNumber)
@@ -184,7 +184,7 @@ function drawMessage(senderProcess, senderClock, receiverProcess, receiverClock)
                                 .duration(500)
                                 .style("opacity", 0);
                         });
-          } else {
+  } else {
             var senderID = data["messages"][messageNumber]["sender"][0];
             var receiverID = data["messages"][messageNumber]["receiver"][0];
             var senderCenter = proc_centers[senderID];
@@ -373,10 +373,7 @@ if (listenersAdded == false) {    //Enforces that this logic is called only once
     $('#Prev').on('click', prev);
     $('#Next').on('click', next);
     $('#Pause').on('click', pause);
-    $('#Reset').on('click', reset);
-    $('#ReqMsgColor').on('input', function(){colorChange(".Message-Line", "stroke", "request");});    
-    $('#AckMsgColor').on('input', function(){colorChange(".Message-Line", "stroke", "ack");});    
-    $('#RelMsgColor').on('input', function(){colorChange(".Message-Line", "stroke", "release");});    
+    $('#Reset').on('click', reset);  
     $('#PrcColor').on('input', function(){colorChange(".Process-Text", "fill", "process");
                                           colorChange(".Process-Line", "stroke", "process");});
 
@@ -613,11 +610,53 @@ function GetVizData(data)
 
 }
 
+// Examples of message name types
+// ('request', 0, <P:4b806>)
+// ('vote', 'ready')
+// abort
+function inputSanitization(string){
+  // strip quotations marks and parentheses
+  var str = string.replace(/[()]/g, "");
 
+  // 'request', 0, <P:4b806>
+  // 'vote', 'ready'
+  // abort
+
+  // split on comma
+  str = (str.split(",")); 
+  // ['request', 0, <P:4b806>]
+  // ['vote', 'ready']
+  // [abort]
+
+  // one element - definitely the message name
+  // [abort]
+  if (str.length == 1){
+    return str[0];
+  } else { // else, we need to see if it's in quotation marks
+    // ['request', 0, <P:4b806>]
+    // ['vote', 'ready']
+    // for each part
+    var return_string = "";
+    var return_string_count = 0;
+    for (var i = 0; i < str.length; ++i){
+      str[i] = str[i].replace(/[ ]/i, ""); // erase initial spaces
+      if (str[i].split("'").length > 1) { // if it's in quotation marks
+        if (return_string_count == 0){ // if it's the first part of the name
+          return_string += str[0].split("'")[1];
+          return_string_count += 1;
+        }
+        else { // append comma as well
+          return_string += ", " + str[i].split("'")[1];
+        }
+      }
+    }
+    console.log(return_string);
+    return return_string;
+  }
+}
 
 function rgbToHex(color_string, format)
 {
-    // console.log(color_string);
     var colors = ((color_string.split('('))[1].split(')'))[0].split(", "); 
     var hex = [[0, 0], [0, 0], [0, 0]];
     var hex_string = "#";
@@ -634,55 +673,87 @@ function rgbToHex(color_string, format)
     return hex_string; 
 }
 
+function createInputDiv(message_type){
+  var div = $("<div>", {id:message_type + "-msg-color-picker", "class": "color-picker"});
+  var input = $("<input>", {"type":"color", "id":message_type + "MsgColor", "name":message_type, "value":"#000000"});
+  div.append(message_type);
+  div.append(input);
+  $("#color-pickers").append(div);
+  return input[0];
+}
+
 function initializeConfig(){
-    // convert CSS color code to #rrggbb
-    // get an HTML element
-    var text = $("#req-msg-color-picker")[0];
-    
-    // for each graphic element with color
-    for (var key in colorTypes){
-        var color = colorTypes[key];
+    // for each message
+    for (var i = 0; i < window.data["messages"].length; ++i){
+      // if it's a new message type
+      if (messageTypes.includes(inputSanitization(window.data["messages"][i]['msg'])) == false) {//.split(",")[0]) == false){
+        // store it
+        var message_type = inputSanitization(window.data["messages"][i]['msg']);//.split(",")[0];
+        messageTypes.push(message_type);
 
-        // use config file first
-        if (visualize_config && visualize_config.colors && visualize_config['colors'][key]) {
-            color = visualize_config['colors'][key];
+        // add it to a dictionary, along with a color
+        // if there is a pre-existing config color, use that
+        if (visualize_config && visualize_config.colors && visualize_config['colors'][message_type]) {
+          colorTypes[message_type] = visualize_config['colors'][message_type];
+        } else{
+          colorTypes[message_type] = "#000000";
         }
 
-        // check what format the color is
+        // insert a color picker div element into the UI
+        var input = createInputDiv(message_type);
+
+        // colors currently supported are CSS Names ("PapayaWhip"), RGBA, and RGB.
+        // to set the color of the color picker, we need to convert to hex
+        var color = colorTypes[message_type];
+
+        // if the color is CSS Naming style
         if (color.indexOf('rgb') == -1){ // not in RGB format
-            text.style.color = color;
-            color = window.getComputedStyle(text).color;
+            input.style.color = color;
+            color = window.getComputedStyle(input).color;
+            input.style.color = "black";
         }
 
-        // change to hex
+        // otherwise, it's RGB/RGBA
+        // change to hex, store, and set input element
         color = rgbToHex(color);
-
-        // store color in hex format
-        colorTypes[key] = color;
-
-        // set color of input element
-        var input_search_string = "[name=" + key + "]";
-        $(input_search_string)[0].value = colorTypes[key];
-        // console.log(window.data["process_map"][1]);
-
-        // console.log($(input_search_string)[0].value);
+        colorTypes[message_type] = color;
+        input.value = color;
+        let msg_type = message_type;
+        input.addEventListener("input", function(){colorChange(".Message-Line", "stroke", msg_type);}, false);
+      }
     }
-
-    // reset the color type of the text
-    // console.log($("#req-msg-color-picker")[0]);
-    $("#req-msg-color-picker")[0].style.color ="#000000";
 }
 
 function colorChange(id_class_type, graphic_type, da_type)
-{
-    // change preset for new color and update existing color
+{ 
+    // change preset for new color 
     colorTypes[da_type] = event.target.value;
-    console.log(colorTypes[da_type]);
+
+    // update existing color
     if (da_type == "process"){
         svgContainer.selectAll(id_class_type).attr(graphic_type, colorTypes[da_type]);
     } else {
+        // get all SVG message lines drawn
         svgContainer.selectAll(id_class_type)
-        .filter(function() {return d3.select(this).attr("data-payload").indexOf(da_type) !== -1;})
+        // filter by whether data payload attribute contains the message name
+        .filter(function() { 
+          // need to check for comma types - e.g. vote, ready
+          var da_type_split = da_type.split(",");
+
+          // if there is a comma - check for presence of each word individually
+          if (da_type_split.length > 1){
+            for (var i = 0; i < da_type_split.length; ++i){
+              da_type_split[i] = da_type_split[i].replace(/[ ]/i, ""); // replace space trailing commas attached to later elements
+              if (d3.select(this).attr("data-payload").indexOf(da_type_split[i]) == -1){
+                return false;
+              } 
+            }
+            return true;
+          }
+          else { // no comma, single element
+            return d3.select(this).attr("data-payload").indexOf(da_type) !== -1;  
+          }
+        })
         .attr(graphic_type, colorTypes[da_type]);
     }
 }
