@@ -278,6 +278,8 @@ def entrypoint():
         os.makedirs(get_runtime_option('logdir'), exist_ok=True)
         if isinstance(module.Node_._config_object['visualize'], dict):
             visualize_config = module.Node_._config_object['visualize']
+        else:
+            visualize_config = {"colors":{}}
 
     # Start main program
     nodename = _check_nodename()

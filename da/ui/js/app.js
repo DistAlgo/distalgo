@@ -103,13 +103,13 @@ function drawMessage(senderProcess, senderClock, receiverProcess, receiverClock)
                           .attr("x2", columnWidth * receiverProcess)
                           .attr("y1", startOffset + rowHeight * senderClock)
                           .attr("y2", startOffset + rowHeight * receiverClock)
-                          .attr("stroke", visualize_config["colors"][window.data["messages"][messageNumber]['name']])
+                          .attr("stroke", visualize_config["colors"][window.data["messages"][messageNumber]['type']])
                           .attr("stroke-width", 2)
                           .attr("marker-end","url(#arrow)")
                           .attr("id", "line" + messageNumber)
                           .attr("class", "Message-Line")
                           .attr('data-payload', window.data["messages"][messageNumber]['msg'])
-                          .attr('name', window.data["messages"][messageNumber]['name'])
+                          .attr('type', window.data["messages"][messageNumber]['type'])
                           .on("mouseover", function(d ,i) {
                                 div.transition()
                                     .duration(200)
@@ -372,8 +372,6 @@ if (listenersAdded == false) {    //Enforces that this logic is called only once
     $('#Next').on('click', next);
     $('#Pause').on('click', pause);
     $('#Reset').on('click', reset);  
-    $('#PrcColor').on('input', function(){colorChange(".Process-Text", "fill", "process");
-                                          colorChange(".Process-Line", "stroke", "process");});
 
     $("body").on('keydown', function(e) {
       if(e.keyCode == 37) { // left
@@ -473,14 +471,16 @@ function drawGrid()
         .attr("x2", i*columnWidth)
         .attr("y1", startOffset + rowHeight)
         .attr("y2", startOffset + rowHeight*(maxClock+2))
-        .attr("stroke", strToColor(window.data["process_map"][i][0]))
-        .attr("stroke-width", 5);
+        .attr("stroke", visualize_config["colors"]["Cohort"])
+        .attr("stroke-width", 5)
+        .attr('type', window.data["process_map"][i][0]);
 
       svgContainer.append("text")
         .attr("class", "Process-Text")
         .attr("x", columnWidth*i)
         .attr("y", rowHeight-20)
-        .attr("fill", strToColor(window.data["process_map"][i][0]))
+        .attr('type', window.data["process_map"][i][0])
+        .attr("fill", visualize_config["colors"][window.data["process_map"][i][0]])
          .append('svg:tspan')
           .attr('x', columnWidth*i-20)
           .attr('dy', -5)
@@ -601,11 +601,6 @@ function GetVizData(data)
 {
     window.data = data;
 
-
-
-    // visualize
-    drawTimeDiagram();
-
 }
 
 function createInputDiv(message_type){
@@ -617,7 +612,11 @@ function createInputDiv(message_type){
   return input[0];
 }
 
-function initializeColorConfig(da_cmp_category){
+function initializeColorConfig(da_cmp_category, affected_elements, attr){
+    // if (!("colors" in visualize_config)){
+    //   visualize_config["colors"] = {};
+    // }
+
     // for each message
     for (var i = 0; i < window.data["vizInfo"][da_cmp_category].length; ++i){
       // store it
@@ -627,7 +626,7 @@ function initializeColorConfig(da_cmp_category){
       // check if a color config exists for the da element type, 
       // if not, add a hex color. if it does, convert it to hex. 
       if (visualize_config.colors && !(da_cmp_type in visualize_config['colors'])) {
-        visualize_config['colors'][da_cmp_type] = "1A1A1A";
+        visualize_config['colors'][da_cmp_type] = "#1A1A1A";
       } else {
         visualize_config['colors'][da_cmp_type] = chroma(visualize_config['colors'][da_cmp_type]).hex('rgb');
       }
@@ -638,33 +637,39 @@ function initializeColorConfig(da_cmp_category){
       // convert the color to hex, set elements, and add listener
       input.value = visualize_config['colors'][da_cmp_type];
       let dc_type = da_cmp_type;
-      input.addEventListener("input", function(){colorChange(".Message-Line", "stroke", dc_type);}, false);
+      input.addEventListener("input", function(){colorChange(affected_elements, attr, dc_type);}, false);
     }
 }
 
 function colorChange(id_class_type, graphic_type, da_type)
 { 
     // change preset for new color 
-    colorTypes[da_type] = event.target.value;
+    visualize_config['colors'][da_type] = event.target.value;
 
     // update existing color
-    if (da_type == "process"){
-        svgContainer.selectAll(id_class_type).attr(graphic_type, colorTypes[da_type]);
-    } else {
-        // get all SVG message lines drawn
-        svgContainer.selectAll(id_class_type)
-        // filter by whether data payload attribute contains the message name
-        .filter(function() { return d3.select(this).attr("name").indexOf(da_type) !== -1; }
-        //}
-        )
-        .attr(graphic_type, colorTypes[da_type]);
+
+    for (var i = 0; i < graphic_type.length; ++i){
+      // get all SVG graphic elements
+      svgContainer.selectAll(id_class_type[i])
+      // filter by whether data payload attribute contains the name
+      .filter(function() { return d3.select(this).attr("type").indexOf(da_type) !== -1; }
+      //}
+    )
+    .attr(graphic_type[i], visualize_config['colors'][da_type]);
     }
+        
 }
     
 
 $(function(){
 
-    initializeColorConfig("message_names");
+    // configure
+    initializeColorConfig("message_types", [".Message-Line"], ["stroke"]);
+    initializeColorConfig("process_types", [".Process-Text", ".Process-Line"], ["fill", "stroke"]);
+
+    // visualize
+    drawTimeDiagram();
+
 
     // get the data path
     var urlParams = new URLSearchParams(window.location.search);

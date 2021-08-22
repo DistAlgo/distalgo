@@ -38,12 +38,9 @@ def dump_recv_item(stream, d):
             msg['sender'] = str(item[0])
             msg['clock'] = item[1][1][0]
             msg['payload'] = str(item[1][1][1])
-            msg['name'] = str(item[1][1][1]) if isinstance(item[1][1][1], str) else ", ".join([name for name in item[1][1][1] if isinstance(name, str)])
+            msg['type'] = str(item[1][1][1]) if isinstance(item[1][1][1], str) else ", ".join([name for name in item[1][1][1] if isinstance(name, str)])
 
             mid += 1
-
-            print(msg['name'])
-            print(type(msg['name']))
             d['messages'].append(msg)
 
 
@@ -117,6 +114,7 @@ def build_clocks(trace_dir):
     data = dump_spec(trace_dir)
     process_count = len(data)
     process_info_map = {}
+    process_types = set()
     results = {}
     for obj in data:
         process_map[obj['process']] = set()
@@ -124,13 +122,14 @@ def build_clocks(trace_dir):
         m = re.match(r'<([^\:]+)\:([^\>]+)\>', obj['process'], re.M | re.I)
         process_info_map[process_idx] = [m.group(1), m.group(2), obj['process']]
         process_idx += 1
+        process_types.add(m.group(1))
 
     results['process_count'] = process_count
     results['process_map'] = process_info_map
     results['pid_map'] = pid_map
     results['messages'] = []
     results['maxClock'] = 0
-    results['vizInfo'] = {'message_names':set()}
+    results['vizInfo'] = {'message_types':set(), 'process_types':list(process_types)}
 
     for obj in data:
         for msg in obj['messages']:
@@ -152,17 +151,17 @@ def build_clocks(trace_dir):
 
             results['messages'].append({
                 'msg': msg['payload'],
-                'name': msg['name'],
+                'type': msg['type'],
                 'sender': [pid_map[msg['sender']], msg['clock']],
                 'receiver': [pid_map[p['process']], rcv_candidate]
             })
 
-            results['vizInfo']['message_names'].add(msg['name'])
+            results['vizInfo']['message_types'].add(msg['type'])
 
             results['maxClock'] = max(results['maxClock'], rcv_candidate)
 
-    results['vizInfo']['message_names'] = list(results['vizInfo']['message_names'])
-    
+    results['vizInfo']['message_types'] = list(results['vizInfo']['message_types'])
+
     return results
 
 
