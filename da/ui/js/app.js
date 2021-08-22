@@ -18,7 +18,6 @@ var listenersAdded = false;   //Indicates whether or not we have already added a
 
 // Config Vars
 var colorTypes = {"process": "#C71585"}; // C71585
-var messageTypes = [];
 
 function escapeHTML(s)
 {
@@ -104,12 +103,13 @@ function drawMessage(senderProcess, senderClock, receiverProcess, receiverClock)
                           .attr("x2", columnWidth * receiverProcess)
                           .attr("y1", startOffset + rowHeight * senderClock)
                           .attr("y2", startOffset + rowHeight * receiverClock)
-                          .attr("stroke", colorTypes[inputSanitization(window.data["messages"][messageNumber]['msg'])])//.split(",")[0]])
+                          .attr("stroke", visualize_config["colors"][window.data["messages"][messageNumber]['name']])
                           .attr("stroke-width", 2)
                           .attr("marker-end","url(#arrow)")
                           .attr("id", "line" + messageNumber)
                           .attr("class", "Message-Line")
                           .attr('data-payload', window.data["messages"][messageNumber]['msg'])
+                          .attr('name', window.data["messages"][messageNumber]['name'])
                           .on("mouseover", function(d ,i) {
                                 div.transition()
                                     .duration(200)
@@ -608,51 +608,6 @@ function GetVizData(data)
 
 }
 
-// Examples of message name types
-// ('request', 0, <P:4b806>)
-// ('vote', 'ready')
-// abort
-function inputSanitization(string){
-  // strip quotations marks and parentheses
-  var str = string.replace(/[()]/g, "");
-
-  // 'request', 0, <P:4b806>
-  // 'vote', 'ready'
-  // abort
-
-  // split on comma
-  str = (str.split(",")); 
-  // ['request', 0, <P:4b806>]
-  // ['vote', 'ready']
-  // [abort]
-
-  // one element - definitely the message name
-  // [abort]
-  if (str.length == 1){
-    return str[0];
-  } else { // else, we need to see if it's in quotation marks
-    // ['request', 0, <P:4b806>]
-    // ['vote', 'ready']
-    // for each part
-    var return_string = "";
-    var return_string_count = 0;
-    for (var i = 0; i < str.length; ++i){
-      str[i] = str[i].replace(/[ ]/i, ""); // erase initial spaces
-      if (str[i].split("'").length > 1) { // if it's in quotation marks
-        if (return_string_count == 0){ // if it's the first part of the name
-          return_string += str[0].split("'")[1];
-          return_string_count += 1;
-        }
-        else { // append comma as well
-          return_string += ", " + str[i].split("'")[1];
-        }
-      }
-    }
-    console.log(return_string);
-    return return_string;
-  }
-}
-
 function createInputDiv(message_type){
   var div = $("<div>", {id:message_type + "-msg-color-picker", "class": "color-picker"});
   var input = $("<input>", {"type":"color", "id":message_type + "MsgColor", "name":message_type, "value":"#000000"});
@@ -662,33 +617,28 @@ function createInputDiv(message_type){
   return input[0];
 }
 
-function initializeConfig(){
+function initializeColorConfig(da_cmp_category){
     // for each message
-    for (var i = 0; i < window.data["messages"].length; ++i){
-      // if it's a new message type
-      if (messageTypes.includes(inputSanitization(window.data["messages"][i]['msg'])) == false) {//.split(",")[0]) == false){
-        // store it
-        var message_type = inputSanitization(window.data["messages"][i]['msg']);//.split(",")[0];
-        messageTypes.push(message_type);
+    for (var i = 0; i < window.data["vizInfo"][da_cmp_category].length; ++i){
+      // store it
+      var da_cmp_type = window.data["vizInfo"][da_cmp_category][i];
 
-        // add it to a dictionary, along with a color
-        // if there is a pre-existing config color, use that
-        if (visualize_config && visualize_config.colors && visualize_config['colors'][message_type]) {
-          colorTypes[message_type] = visualize_config['colors'][message_type];
-        } else{
-          colorTypes[message_type] = chroma("black");
-        }
-
-        // insert a color picker div element into the UI
-        var input = createInputDiv(message_type);
-
-        // convert the color to hex, set elements, and add listener
-        var color = chroma(colorTypes[message_type]);
-        colorTypes[message_type] = color;
-        input.value = color.hex("rgb");
-        let msg_type = message_type;
-        input.addEventListener("input", function(){colorChange(".Message-Line", "stroke", msg_type);}, false);
+      // visualize_config always exists, but is not always populated
+      // check if a color config exists for the da element type, 
+      // if not, add a hex color. if it does, convert it to hex. 
+      if (visualize_config.colors && !(da_cmp_type in visualize_config['colors'])) {
+        visualize_config['colors'][da_cmp_type] = "1A1A1A";
+      } else {
+        visualize_config['colors'][da_cmp_type] = chroma(visualize_config['colors'][da_cmp_type]).hex('rgb');
       }
+
+      // insert a color picker div element into the UI
+      var input = createInputDiv(da_cmp_type);
+
+      // convert the color to hex, set elements, and add listener
+      input.value = visualize_config['colors'][da_cmp_type];
+      let dc_type = da_cmp_type;
+      input.addEventListener("input", function(){colorChange(".Message-Line", "stroke", dc_type);}, false);
     }
 }
 
@@ -704,24 +654,9 @@ function colorChange(id_class_type, graphic_type, da_type)
         // get all SVG message lines drawn
         svgContainer.selectAll(id_class_type)
         // filter by whether data payload attribute contains the message name
-        .filter(function() { 
-          // need to check for comma types - e.g. vote, ready
-          var da_type_split = da_type.split(",");
-
-          // if there is a comma - check for presence of each word individually
-          if (da_type_split.length > 1){
-            for (var i = 0; i < da_type_split.length; ++i){
-              da_type_split[i] = da_type_split[i].replace(/[ ]/i, ""); // replace space trailing commas attached to later elements
-              if (d3.select(this).attr("data-payload").indexOf(da_type_split[i]) == -1){
-                return false;
-              } 
-            }
-            return true;
-          }
-          else { // no comma, single element
-            return d3.select(this).attr("data-payload").indexOf(da_type) !== -1;  
-          }
-        })
+        .filter(function() { return d3.select(this).attr("name").indexOf(da_type) !== -1; }
+        //}
+        )
         .attr(graphic_type, colorTypes[da_type]);
     }
 }
@@ -729,7 +664,7 @@ function colorChange(id_class_type, graphic_type, da_type)
 
 $(function(){
 
-    initializeConfig();
+    initializeColorConfig("message_names");
 
     // get the data path
     var urlParams = new URLSearchParams(window.location.search);
