@@ -477,6 +477,7 @@ function drawGrid()
 
       svgContainer.append("text")
         .attr("class", "Process-Text")
+        .attr("font-family", "serif")
         .attr("x", columnWidth*i)
         .attr("y", rowHeight-20)
         .attr('type', window.data["process_map"][i][0])
@@ -660,12 +661,26 @@ function colorChange(id_class_type, graphic_type, da_type)
         
 }
     
+function initializeFontConfig(){
+  var font_select = document.querySelector('#font-select');
+  var font_size_select = document.querySelector('#font-size');
+
+  font_select.addEventListener('change', (event) => {
+    svgContainer.selectAll('text').attr("font-family", event.target.value);
+  });
+
+  font_size_select.addEventListener('change', (event) => {
+    svgContainer.selectAll('text').attr("font-size", event.target.value);
+  });
+}
 
 $(function(){
 
     // configure
     initializeColorConfig("message_types", [".Message-Line"], ["stroke"]);
     initializeColorConfig("process_types", [".Process-Text", ".Process-Line"], ["fill", "stroke"]);
+
+    initializeFontConfig();
 
     // visualize
     drawTimeDiagram();
