@@ -431,6 +431,7 @@ def entrypoint():
                 'd3_js': open(ui_root / "js" / "d3.min.js", 'r').read(),
                 'jquery_js': open(ui_root / "js"/ "jquery-3.3.1.min.js", 'r').read(),
                 'app_js': open(ui_root / "js" / "app.js", 'r').read(),
+                'chroma_js': open(ui_root / "js" / "chroma.js", 'r').read(),
 
                 # spec name
                 'specname': specname,

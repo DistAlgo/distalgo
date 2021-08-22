@@ -41,7 +41,6 @@ function strToColor(str)
     var value = (hash >> (i * 8)) & 0xFF;
     colour += ('00' + value.toString(16)).substr(-2);
   }
-  console.log(colour);
   return colour;
 }
 
@@ -111,7 +110,6 @@ function drawMessage(senderProcess, senderClock, receiverProcess, receiverClock)
                           .attr("id", "line" + messageNumber)
                           .attr("class", "Message-Line")
                           .attr('data-payload', window.data["messages"][messageNumber]['msg'])
-                          .attr('message-type', "request")
                           .on("mouseover", function(d ,i) {
                                 div.transition()
                                     .duration(200)
@@ -655,24 +653,6 @@ function inputSanitization(string){
   }
 }
 
-function rgbToHex(color_string, format)
-{
-    var colors = ((color_string.split('('))[1].split(')'))[0].split(", "); 
-    var hex = [[0, 0], [0, 0], [0, 0]];
-    var hex_string = "#";
-    for (var i = 0; i < 3; ++i){
-        hex[i][0] = Math.floor(colors[i] / 16);
-        hex[i][1] = colors[i] - 16 * hex[i][0];
-        for (var j = 0; j < hex[i].length; ++j){
-            if (hex[i][j] > 9) {
-                hex[i][j] = String.fromCharCode(65 + (5 - (15-hex[i][j])));
-            }
-            hex_string += hex[i][j];
-        }
-    }
-    return hex_string; 
-}
-
 function createInputDiv(message_type){
   var div = $("<div>", {id:message_type + "-msg-color-picker", "class": "color-picker"});
   var input = $("<input>", {"type":"color", "id":message_type + "MsgColor", "name":message_type, "value":"#000000"});
@@ -696,28 +676,16 @@ function initializeConfig(){
         if (visualize_config && visualize_config.colors && visualize_config['colors'][message_type]) {
           colorTypes[message_type] = visualize_config['colors'][message_type];
         } else{
-          colorTypes[message_type] = "#000000";
+          colorTypes[message_type] = chroma("black");
         }
 
         // insert a color picker div element into the UI
         var input = createInputDiv(message_type);
 
-        // colors currently supported are CSS Names ("PapayaWhip"), RGBA, and RGB.
-        // to set the color of the color picker, we need to convert to hex
-        var color = colorTypes[message_type];
-
-        // if the color is CSS Naming style
-        if (color.indexOf('rgb') == -1){ // not in RGB format
-            input.style.color = color;
-            color = window.getComputedStyle(input).color;
-            input.style.color = "black";
-        }
-
-        // otherwise, it's RGB/RGBA
-        // change to hex, store, and set input element
-        color = rgbToHex(color);
+        // convert the color to hex, set elements, and add listener
+        var color = chroma(colorTypes[message_type]);
         colorTypes[message_type] = color;
-        input.value = color;
+        input.value = color.hex("rgb");
         let msg_type = message_type;
         input.addEventListener("input", function(){colorChange(".Message-Line", "stroke", msg_type);}, false);
       }
