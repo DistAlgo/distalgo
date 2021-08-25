@@ -629,7 +629,7 @@ function initializeColorConfig(da_cmp_category, affected_elements, attr){
       if (visualize_config.colors && !(da_cmp_type in visualize_config['colors'])) {
         visualize_config['colors'][da_cmp_type] = "#1A1A1A";
       } else {
-        visualize_config['colors'][da_cmp_type] = chroma(visualize_config['colors'][da_cmp_type]).hex('rgb');
+        visualize_config['colors'][da_cmp_type] = d3.color(visualize_config['colors'][da_cmp_type]).hex('rgb');
       }
 
       // insert a color picker div element into the UI
