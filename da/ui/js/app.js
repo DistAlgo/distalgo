@@ -16,9 +16,6 @@ var c_row_separation = 100 + c_radius
 var c_col_separation = 150 + c_radius
 var listenersAdded = false;   //Indicates whether or not we have already added a set of listeners to the DOM body.
 
-// Config Vars
-var colorTypes = {"process": "#C71585"}; // C71585
-
 function escapeHTML(s)
 {
     return s.replace(new RegExp(">", 'g'), "&gt;").replace(new RegExp("<", 'g'), "&lt;")
@@ -471,7 +468,7 @@ function drawGrid()
         .attr("x2", i*columnWidth)
         .attr("y1", startOffset + rowHeight)
         .attr("y2", startOffset + rowHeight*(maxClock+2))
-        .attr("stroke", visualize_config["colors"]["Cohort"])
+        .attr("stroke", visualize_config["colors"][window.data["process_map"][i][0]])
         .attr("stroke-width", 5)
         .attr('type', window.data["process_map"][i][0]);
 
@@ -614,9 +611,6 @@ function createInputDiv(message_type){
 }
 
 function initializeColorConfig(da_cmp_category, affected_elements, attr){
-    // if (!("colors" in visualize_config)){
-    //   visualize_config["colors"] = {};
-    // }
 
     // for each message
     for (var i = 0; i < window.data["vizInfo"][da_cmp_category].length; ++i){
