@@ -279,7 +279,7 @@ def entrypoint():
         if isinstance(module.Node_._config_object['visualize'], dict):
             visualize_config = module.Node_._config_object['visualize']
         else:
-            visualize_config = {"colors":{}}
+            visualize_config = {"colors":{}, "font-colors":{}, "font-sizes":{}}
 
     # Start main program
     nodename = _check_nodename()
@@ -428,10 +428,12 @@ def entrypoint():
                 # css files
                 'bootstrap_css': open(ui_root / "css"/ "bootstrap.min.css", 'r').read(),
                 'style_css': open(ui_root / "css" / "style.css", 'r').read(),
+                'jquery_ui_css': open(ui_root / "css" / "jquery-ui.min.css", 'r').read(),
 
                 # js files
                 'd3_js': open(ui_root / "js" / "d3.min.js", 'r').read(),
                 'jquery_js': open(ui_root / "js"/ "jquery-3.3.1.min.js", 'r').read(),
+                'jquery_ui_js': open(ui_root / "js" / "jquery-ui.min.js", 'r').read(),
                 'app_js': open(ui_root / "js" / "app.js", 'r').read(),
 
                 # spec name
