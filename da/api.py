@@ -431,10 +431,12 @@ def entrypoint():
                 'jquery_ui_css': open(ui_root / "css" / "jquery-ui.min.css", 'r').read(),
 
                 # js files
+                'app_js': open(ui_root / "js" / "app.js", 'r').read(),
                 'd3_js': open(ui_root / "js" / "d3.min.js", 'r').read(),
                 'jquery_js': open(ui_root / "js"/ "jquery-3.3.1.min.js", 'r').read(),
                 'jquery_ui_js': open(ui_root / "js" / "jquery-ui.min.js", 'r').read(),
-                'app_js': open(ui_root / "js" / "app.js", 'r').read(),
+                'random_color_js': open(ui_root / "js" / "randomColor.min.js", 'r').read(),
+                
 
                 # spec name
                 'specname': specname,

@@ -609,6 +609,16 @@ function GetVizData(data)
 
 }
 
+function getDefaultValue(type){
+  if (type == "color"){
+    return randomColor();
+  }
+  else if (type == "select"){
+    return 12;
+  }
+
+} 
+
 function createInput(da_cmp_type, property, da_cmp_class, attr_type, vis_config_key, default_value, type){
 
   // if the user didn't specify this type of parameter
@@ -617,7 +627,7 @@ function createInput(da_cmp_type, property, da_cmp_class, attr_type, vis_config_
   }
 
   if (!(da_cmp_type in visualize_config[vis_config_key])){ // if this specific da-element is not specified by the user
-       visualize_config[vis_config_key][da_cmp_type] = default_value; // give it a default value
+       visualize_config[vis_config_key][da_cmp_type] = getDefaultValue(type); // give it a default value
   }
 
   if (type == "color") {
