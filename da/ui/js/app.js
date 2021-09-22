@@ -16,6 +16,7 @@ var c_row_separation = 100 + c_radius
 var c_col_separation = 150 + c_radius
 var listenersAdded = false;   //Indicates whether or not we have already added a set of listeners to the DOM body.
 
+
 function escapeHTML(s)
 {
     return s.replace(new RegExp(">", 'g'), "&gt;").replace(new RegExp("<", 'g'), "&lt;")
@@ -117,11 +118,15 @@ function drawMessage(senderProcess, senderClock, receiverProcess, receiverClock)
                                     .style("font-size", visualize_config["font-sizes"][d3.select(this).attr('type')] + "px")
                                     .style("left", (d3.event.pageX) + "px")
                                     .style("top", (d3.event.pageY - 28) + "px");
-                                })
+                                if ($( "#voice" ).is(":checked")) {
+                                  window.speechSynthesis.speak(new SpeechSynthesisUtterance(d3.select(this).attr('data-payload')));
+                                }                                
+                            })
                             .on("mouseout", function(d, i) {
                                 div.transition()
                                     .duration(500)
                                     .style("opacity", 0);
+                                window.speechSynthesis.cancel();
                             });
     // receiver state
     svgContainer.append("circle")
@@ -756,6 +761,8 @@ $(function(){
     // visualize
     drawTimeDiagram();
 
+
+    
 
     // get the data path
     var urlParams = new URLSearchParams(window.location.search);
