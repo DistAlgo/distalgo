@@ -36,7 +36,7 @@ import threading
 import collections
 import multiprocessing
 import os.path
-
+import traceback
 from . import common, pattern
 from .common import (builtin, internal, name_split_host, name_split_node,
                      ProcessId, get_runtime_option,
@@ -686,9 +686,13 @@ class DistProcess():
                 handler, args = self.__jobq.popleft()
             except IndexError:
                 self._log.debug("Job item stolen by another thread.")
+                print(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+
                 break
             except ValueError:
                 self._log.error("Corrupted job item!")
+                print(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+
                 continue
 
             if ((handler._labels is None or label in handler._labels) and
@@ -701,6 +705,9 @@ class DistProcess():
                     self._log.error(
                         "%r when calling handler '%s' with '%s': %s",
                         e, handler.__name__, args, e)
+                    print("exception in handler {} of replicaID {} ".format(handler,args['source']))
+                    print(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+
             else:
                 if self._keep_unmatched:
                     dbgmsg = "Skipping (%s, %r) due to label constraint."
@@ -867,8 +874,12 @@ class DistProcess():
                 self.__setup_called = True
                 self._log.debug("`setup` complete.")
             except Exception as e:
+                print(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+
                 self._log.error("Exception during setup(%r): %r", args, e)
+
                 self._log.debug("%r", e, exc_info=1)
+
                 res = False
             if hasattr(sys.stdout, 'flush'):
                 sys.stdout.flush()
@@ -1206,11 +1217,15 @@ class Router(threading.Thread):
                         hostname, port, transport)
                     self.bootstrap_peer = None
             except AuthenticationException as e:
+                self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+
                 # Abort immediately:
                 raise e
             except (CircularRoutingException, TransportException) as e:
                 self.log.debug("Bootstrap attempt to %s:%d with %s failed "
                                ": %r", hostname, port, transport, e)
+                self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+
         if self.bootstrap_peer is None:
             raise BootstrapException("Unable to contact a peer node.")
 
@@ -1250,6 +1265,8 @@ class Router(threading.Thread):
             self.mesgloop(until=(lambda: not self.running))
         except Exception as e:
             self.log.debug("Unhandled exception: %r.", e, exc_info=1)
+            self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+
         self.terminate_local_processes()
 
     def stop(self):
@@ -1296,6 +1313,7 @@ class Router(threading.Thread):
         try:
             return queue._out_loader.load()
         except EOFError as e:
+            self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
             raise TraceEndedException("No more items in send trace.") from e
 
     def _send_remote(self, src, dest, mesg, flags=0, transport=None, **params):
@@ -1326,18 +1344,24 @@ class Router(threading.Thread):
             payload = (src, dest, mesg)
         wrapper = common.BufferIOWrapper(self.local.buf)
         try:
-            pickle.dump(payload, wrapper)
+            tmp = pickle.dumps(mesg)
+            pickle.dump(payload, wrapper,2)
         except TypeError as e:
+            self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
             raise InvalidMessageException("Error pickling {}.".format(payload)) \
                 from e
         except OSError as e:
+            self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
             raise MessageTooBigException(
                 "** Outgoing message object too big to fit in buffer, dropped.")
         self.log.debug("** Forwarding %r(%d bytes) to %s with flags=%d using %s.",
                        mesg, wrapper.fptr, dest, flags, transport)
+            
+
         with memoryview(self.local.buf)[0:wrapper.fptr] as chunk:
             transport.send(chunk, dest.address_for_transport(transport),
                            **params)
+        self.local.buf=None
 
     def _dispatch(self, src, dest, payload, params=dict(), flags=0):
         if dest in self.local_procs:
@@ -1355,6 +1379,8 @@ class Router(threading.Thread):
                     queue.append((src, payload))
                 return True
             except Exception as e:
+                self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+
                 self.log.warning("Failed to deliver to local process %s: %r",
                                  dest, e)
                 return False
@@ -1371,9 +1397,12 @@ class Router(threading.Thread):
             except CircularRoutingException as e:
                 # This is most likely due to stale process ids, so don't log
                 # error, just debug:
+                self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+
                 self.log.debug("Caught %r.", e)
                 return False
             except Exception as e:
+                self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
                 self.log.error("Could not send message due to: %r", e)
                 self.log.debug("Send failed: ", exc_info=1)
                 return False
@@ -1384,6 +1413,8 @@ class Router(threading.Thread):
                 self._dispatch_table[cmd.value](src, args)
                 return True
             except Exception as e:
+                self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+
                 self.log.warning(
                     "Caught exception while processing router message from "
                     "%s(%r): %r", src, payload, e)
@@ -1410,6 +1441,8 @@ class Router(threading.Thread):
             except common.QueueEmpty:
                 pass
             except (ImportError, ValueError, pickle.UnpicklingError) as e:
+                self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+
                 self.log.warning(
                     "Dropped invalid message from %s through %s: %r",
                     remote, transport, e)
@@ -1451,6 +1484,8 @@ class ProcessContainer:
         self.seqno = cmd_seqno
         self._trace_in_fd = None
         self._trace_out_fd = None
+        self.log = logging.getLogger(__name__) \
+                          .getChild(self.__class__.__name__)
         if len(process_name) > 0:
             self.name = process_name
         self.transport_manager = transport_manager
@@ -1465,6 +1500,8 @@ class ProcessContainer:
             try:
                 self._init_replay(replay_file)
             except (Exception, TraceException) as e:
+                self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+
                 self.cleanup()
                 raise e
         else:
@@ -1483,6 +1520,8 @@ class ProcessContainer:
         try:
             os.stat(sndname)
         except OSError as e:
+            self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+
             raise TraceMismatchException(
                 'Missing corresponding send trace file {!r} for {!r}!'
                 .format(sndname, tracename)
@@ -1549,6 +1588,8 @@ class ProcessContainer:
                 cid = None
         except Exception as e:
             cid = None
+            self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+
             self._log.error("Failed to create instance (%s) of %s: %r",
                             name, pcls, e)
             if p is not None and p.is_alive():
@@ -1584,6 +1625,7 @@ class ProcessContainer:
                 cid = None
         except Exception as e:
             cid = None
+            self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
             self._log.error("Failed to create instance (%s) of %s: %r",
                             name, pcls, e)
             if p is not None and p.is_alive():
@@ -1616,6 +1658,8 @@ class ProcessContainer:
                 cid = None
         except Exception as e:
             cid = None
+            self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+
             self._log.error("Failed to create instance (%s) of %s: %r",
                             name, pcls, e)
         return cid
@@ -1693,9 +1737,12 @@ class ProcessContainer:
             self._log.debug("Caught %r, exiting gracefully.", e)
             return e.exit_code
         except RoutingException as e:
+            self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+
             self._log.debug("Caught %r.", e)
             return 2
         except TraceException as e:
+            self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
             self._log.error("%r occurred.", e)
             self._log.debug(e, exc_info=1)
             return 3
