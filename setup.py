@@ -148,7 +148,6 @@ setup(name = "pyDistAlgo",
 
       cmdclass = {
           'build_doc'   : CompileDocCommand,
-          'build'       : DABuildCommand,
           'build_py'    : DABuildPyCommand,
           'install_lib' : DAInstallCommand,
           'sdist'       : DASdistCommand,

@@ -22,6 +22,8 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+from pprint import pprint
+
 import os
 import sys
 import time
@@ -227,13 +229,13 @@ def _load_main_module():
             die("Can not access source file %s" % target)
         # XXX: this differs from normal Python script-loading semantics:
         sys.path.insert(0, source_dir)
-        module = importlib.import_module(basename)
         sys.argv = [target] + get_runtime_option('args')
+        module = importlib.import_module(basename)
     elif get_runtime_option('module') is not None:
         module_args = get_runtime_option('module')
         module_name = module_args[0]
-        module = importlib.import_module(module_name)
         sys.argv = ['__main__'] + module_args[1:]
+        module = importlib.import_module(module_name)
     else:
         module = importlib.import_module(BASE_MODULE_NAME)
     return module

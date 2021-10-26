@@ -10,7 +10,7 @@
 
 ## Python
 
-   DistAlgo requires Python version 3.5 or higher, which can be obtained
+   DistAlgo requires Python version 3.5, 3.6, or 3.7, which can be obtained
    from http://www.python.org. This document assumes that your installation
    uses the default name `python` for the Python executable.
 
@@ -68,7 +68,7 @@
 
    By default, `pip` only installs "stable" versions from the PyPI
    repository. If you would like to install or upgrade to the latest
-   version, pass the `--pre` flag to `pip install`:
+   version, pass the `--pre` flag to `pip install` (this is needed now if you use Python 3.7):
    
      pip install --pre pyDistAlgo
      pip install --upgrade --pre pyDistAlgo
