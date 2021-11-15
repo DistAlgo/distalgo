@@ -114,8 +114,8 @@ function drawMessage(senderProcess, senderClock, receiverProcess, receiverClock)
                                     .style("opacity", .9);
                                 var text = d3.select(this).attr('data-payload');
                                 div .html(text)
-                                    .style("color", visualize_config["font-colors"][d3.select(this).attr('type')])
-                                    .style("font-size", visualize_config["font-sizes"][d3.select(this).attr('type')] + "px")
+                                    .style("color", visualize_config["font-color"][d3.select(this).attr('type')])
+                                    .style("font-size", visualize_config["font-size"][d3.select(this).attr('type')] + "px")
                                     .style("left", (d3.event.pageX) + "px")
                                     .style("top", (d3.event.pageY - 28) + "px");
                                 if ($( "#voice" ).is(":checked")) {
@@ -486,7 +486,7 @@ function drawGrid()
         .attr("x", columnWidth*i)
         .attr("y", rowHeight-20)
         .attr('type', window.data["process_map"][i][0])
-        .attr("fill", visualize_config["font-colors"][window.data["process_map"][i][0]])
+        .attr("fill", visualize_config["font-color"][window.data["process_map"][i][0]])
          .append('svg:tspan')
           .attr('x', columnWidth*i-20)
           .attr('dy', -5)
@@ -515,7 +515,7 @@ function drawGrid()
                                 .attr("x", 40)
                                 .attr("y", startOffset + i *rowHeight+8)
                                 .text("clk " + (i-1))
-                                .attr("fill", visualize_config["font-colors"]["main"]);
+                                .attr("fill", visualize_config["font-color"]["main"]);
     }
   } else {
     var proc_types = {};
@@ -614,25 +614,29 @@ function GetVizData(data)
 
 }
 
-function getDefaultValue(type){
-  if (type == "color"){
-    return randomColor();
+function getDefaultValue(type, property, cmp_class, default_value){
+  if ((cmp_class == ".Message-Text") && (property == "font_color")){
+    return "#FFFFFF"
   }
-  else if (type == "select"){
-    return 12;
+  else if ((cmp_class == ".Clock-Line")){
+    return "#AAAAAA"
   }
-
+  else if ((type == "color") && (default_value == "random")) {
+    return randomColor()
+  }
+  else {
+    return default_value
+  }
 } 
 
 function createInput(da_cmp_type, property, da_cmp_class, attr_type, vis_config_key, default_value, type){
-
   // if the user didn't specify this type of parameter
   if (!(vis_config_key in visualize_config)){
     visualize_config[vis_config_key] = {}; // create a dictionary
   }
 
   if (!(da_cmp_type in visualize_config[vis_config_key])){ // if this specific da-element is not specified by the user
-       visualize_config[vis_config_key][da_cmp_type] = getDefaultValue(type); // give it a default value
+       visualize_config[vis_config_key][da_cmp_type] = getDefaultValue(type, property, da_cmp_class, default_value); // give it a default value
   }
 
   if (type == "color") {
@@ -809,28 +813,28 @@ var panel_config_json = {
       "name": "Line Color",
       "type": "-line-color",
       "vis_config_key": "colors",
-      "default_value": "#000000",
+      "default_value": "random",
       "element_type": "color"
     },
     "font_color": {
       "name": "Font Color",
       "type": "-font-color",
-      "vis_config_key": "font-colors",
+      "vis_config_key": "font-color",
       "default_value": "#000000",
       "element_type": "color"
     },
     "font_size": {
       "name": "Font Size",
       "type": "-font-size",
-      "vis_config_key": "font-sizes",
+      "vis_config_key": "font-size",
       "default_value": "12",
       "element_type": "select"
     }
   },
   "messages": {
     "table_id": "#messages-tab",
-    "class": [".Message-Line", null, null],
-    "attr_type": ["stroke", null, null]
+    "class": [".Message-Line", ".Message-Text", ".Message-Text"],
+    "attr_type": ["stroke", "fill", "font-size"]
   },
   "processes": {
     "table_id": "#processes-tab",
