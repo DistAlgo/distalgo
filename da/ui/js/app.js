@@ -614,12 +614,19 @@ function GetVizData(data)
 
 }
 
-function getDefaultValue(type, property, cmp_class, default_value){
+function getDefaultValue(type, property, cmp_class, cmp_type, default_value){
   if ((cmp_class == ".Message-Text") && (property == "font_color")){
     return "#FFFFFF"
   }
-  else if ((cmp_class == ".Clock-Line")){
-    return "#AAAAAA"
+  else if (cmp_class == ".Clock-Line"){
+    return "#CCCCCC"
+  }
+  else if (cmp_class == ".Process-Text") {
+    // process texts should be the same color as process lines
+    if (!(cmp_type in visualize_config["colors"])){
+      visualize_config["colors"][cmp_type] = getDefaultValue("color",  "line_color", ".Process-Line", cmp_type, default_value)  
+    }
+    return visualize_config["colors"][cmp_type]
   }
   else if ((type == "color") && (default_value == "random")) {
     return randomColor()
@@ -630,13 +637,29 @@ function getDefaultValue(type, property, cmp_class, default_value){
 } 
 
 function createInput(da_cmp_type, property, da_cmp_class, attr_type, vis_config_key, default_value, type){
+  if (da_cmp_type == "P"){
+    console.log(visualize_config)
+    console.log("Da Cmp Type")
+    console.log(da_cmp_type)
+    console.log("Property")
+    console.log(property)
+    console.log("da_cmp_class")
+    console.log(da_cmp_class)
+    console.log("attr_type")
+    console.log(attr_type)
+    console.log("Vis Config Key")
+    console.log(vis_config_key)
+    console.log("type")
+    console.log(type)
+  }
+  
   // if the user didn't specify this type of parameter
   if (!(vis_config_key in visualize_config)){
     visualize_config[vis_config_key] = {}; // create a dictionary
   }
 
   if (!(da_cmp_type in visualize_config[vis_config_key])){ // if this specific da-element is not specified by the user
-       visualize_config[vis_config_key][da_cmp_type] = getDefaultValue(type, property, da_cmp_class, default_value); // give it a default value
+       visualize_config[vis_config_key][da_cmp_type] = getDefaultValue(type, property, da_cmp_class, da_cmp_type, default_value); // give it a default value
   }
 
   if (type == "color") {
