@@ -680,7 +680,12 @@ function createInput(da_cmp_type, property, da_cmp_class, attr_type, vis_config_
   // set elements, and add listener
   input.value = visualize_config[vis_config_key][da_cmp_type];
   let dc_type = da_cmp_type;
-  input.addEventListener("input", function(){valueChange(da_cmp_class, attr_type, dc_type, vis_config_key);}, false);
+  if (property != "font_color"){
+    input.addEventListener("input", function(){valueChange(da_cmp_class, attr_type, dc_type, vis_config_key);}, false);  
+  }
+  if (property == "process_color"){
+    input.addEventListener("input", function(){valueChange(".Process-Text", "fill", dc_type, "font-color");}, false);
+  }
   
   // update all elements with current values
   if (da_cmp_class != null){
@@ -716,15 +721,19 @@ function createTable(panel_type, da_cmp_category){
   }
   table.append(header_row);
 
+  var property_list = (panel_type == "messages") ? msg_property_list : proc_property_list;
+
   // for each row (each property)
   for (var i = 0; i < property_list.length; ++i){
     var property = global_prop[property_list[i]];
 
-    // create a table row
-    var table_row = $("<tr>", {id:panel_type + property["type"] + "-row"});
+    if (property["name"] != "Text Color"){
+      // create a table row
+      var table_row = $("<tr>", {id:panel_type + property["type"] + "-row"});
 
-    // append the name as the first column
-    table_row.append($("<th>", {text:property["name"]}));
+      // append the name as the first column
+      table_row.append($("<th>", {text:property["name"]}));
+    }
 
     // for each subsequent column (message, process, etc.)
     for (var j = 0; j < da_elements.length; ++j){
@@ -738,9 +747,10 @@ function createTable(panel_type, da_cmp_category){
       // create color picker, passing message name, property, class and attr to manipulate, and reference to vis-config dict entry
       var input = createInput(da_cmp_type, property_list[i], tab_prop["class"][i], tab_prop["attr_type"][i], property["vis_config_key"], property["default_value"], property["element_type"]);
 
-      th.append(input);
-      table_row.append(th);
-
+      if (property["name"] != "Text Color"){
+        th.append(input);
+        table_row.append(th);
+      }
     }
 
     table.append(table_row);
@@ -782,8 +792,25 @@ $(function(){
     // Processes Panel
     createTable("processes", "process_types");
 
-    // Clock Panel
-    createTable("clock", "clock_types");
+    $("#tabs").animate({width:'toggle'},0);
+    $("#speech").fadeOut(0);
+    $("#voice").fadeOut(0);
+
+    $('#toggle_config').click(function()
+    {
+        $("#tabs").animate({width:'toggle'},500);
+        if ($("#speech").is(":visible")){
+          $("#speech").fadeOut(100);
+          $("#voice").fadeOut(100);
+          $("#toggle_config").html('Show Config');
+        }
+        else {
+          $("#speech").fadeIn(100);
+          $("#voice").fadeIn(100);
+          $("#toggle_config").html("Hide Config");;
+        }
+        
+    });
 
     // visualize
     drawTimeDiagram();
@@ -830,7 +857,8 @@ $(function(){
 
 
 var panel_config_json = {
-  "property_types": ["line_color", "font_color", "font_size"],
+  "msg_property_types": ["line_color", "font_size"],
+  "proc_property_types": ["process_color", "font_color"],
   "global": {
     "line_color": {
       "name": "Line Color",
@@ -839,15 +867,22 @@ var panel_config_json = {
       "default_value": "random",
       "element_type": "color"
     },
+    "process_color": {
+      "name": "Process Color",
+      "type": "-line-color",
+      "vis_config_key": "colors",
+      "default_value": "random",
+      "element_type": "color"
+    },
     "font_color": {
-      "name": "Font Color",
+      "name": "Text Color",
       "type": "-font-color",
       "vis_config_key": "font-color",
       "default_value": "#000000",
       "element_type": "color"
     },
     "font_size": {
-      "name": "Font Size",
+      "name": "Text Size",
       "type": "-font-size",
       "vis_config_key": "font-size",
       "default_value": "12",
@@ -856,20 +891,16 @@ var panel_config_json = {
   },
   "messages": {
     "table_id": "#messages-tab",
-    "class": [".Message-Line", ".Message-Text", ".Message-Text"],
-    "attr_type": ["stroke", "fill", "font-size"]
+    "class": [".Message-Line", ".Message-Text"],
+    "attr_type": ["stroke", "font-size"]
   },
   "processes": {
     "table_id": "#processes-tab",
-    "class": [".Process-Line", ".Process-Text", ".Process-Text"],
-    "attr_type": ["stroke", "fill", "font-size"]
-  },
-  "clock": {
-    "table_id": "#clock-tab",
-    "class": [".Clock-Line", ".Clock-Text", ".Clock-Text"],
-    "attr_type": ["stroke", "fill", "font-size"]
+    "class": [".Process-Line", ".Process-Text"],
+    "attr_type": ["stroke", "fill"]
   }
 }
 
 var global_prop = panel_config_json["global"];            // global properties
-var property_list = panel_config_json["property_types"];        // type of properties (rows in table)
+var msg_property_list = panel_config_json["msg_property_types"];        // type of properties (rows in table)
+var proc_property_list = panel_config_json["proc_property_types"];        // type of properties (rows in table)

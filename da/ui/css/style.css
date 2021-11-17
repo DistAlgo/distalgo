@@ -68,9 +68,9 @@ select {
     width: 50px;
 }
 
-.footer {
+body .footer {
   padding: 0px;
-  position: absolute;
+  position: fixed;
   bottom: 0;
   width: 100%;
   /* Set the fixed height of the footer here */
@@ -86,3 +86,11 @@ select {
   .ui-tabs-vertical .ui-tabs-nav li a { display:block; }
   .ui-tabs-vertical .ui-tabs-nav li.ui-tabs-active { padding-bottom: 0; padding-right: .1em; border-right-width: 1px; }
   .ui-tabs-vertical .ui-tabs-panel { float: right; width: 40em; float: left;}
+
+#toggle_config{
+    height:140px;
+}
+
+#speech{
+    padding-left:10px;
+}

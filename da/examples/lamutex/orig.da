@@ -60,7 +60,7 @@ def main():
             # processes
             'P': 'MediumVioletRed',
             # messages
-            'request': 'PapayaWhip',
+            'request': 'DarkGoldenRod',
             'release': 'hsl(210, 100%, 50%)',
             'ack': 'rgba(255, 0, 0, 0.1)'
         }

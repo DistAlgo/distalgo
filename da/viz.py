@@ -162,8 +162,6 @@ def build_clocks(trace_dir):
 
     results['vizInfo']['message_types'] = list(results['vizInfo']['message_types'])
 
-    results['vizInfo']['clock_types'] = ['main']
-
     return results
 
 
