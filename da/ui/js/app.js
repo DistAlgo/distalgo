@@ -24,6 +24,7 @@ function escapeHTML(s)
 
 function strToColor(str)
 {
+  console.log(str);
   if (visualize_config && visualize_config.colors && visualize_config['colors'][str]) {
       return visualize_config['colors'][str];
   }
@@ -92,8 +93,6 @@ function sortMessages()
 
 function drawMessage(senderProcess, senderClock, receiverProcess, receiverClock)
 {
-  var mtype = window.data["messages"][messageNumber]['msg'].split(',')[0];
-  mtype = mtype.substr(2, mtype.length-3)
   var startOffset = 20;
   if (mode == 1) {
     var line = svgContainer.append("line")
@@ -101,7 +100,7 @@ function drawMessage(senderProcess, senderClock, receiverProcess, receiverClock)
                           .attr("x2", columnWidth * receiverProcess)
                           .attr("y1", startOffset + rowHeight * senderClock)
                           .attr("y2", startOffset + rowHeight * receiverClock)
-                          .attr("stroke", visualize_config["colors"][window.data["messages"][messageNumber]['type']])
+                          .attr("stroke", strToColor(window.data["messages"][messageNumber]['type']))
                           .attr("stroke-width", 2)
                           .attr("marker-end","url(#arrow)")
                           .attr("id", "line" + messageNumber)
@@ -114,7 +113,6 @@ function drawMessage(senderProcess, senderClock, receiverProcess, receiverClock)
                                     .style("opacity", .9);
                                 var text = d3.select(this).attr('data-payload');
                                 div .html(text)
-                                    .style("color", visualize_config["font-color"][d3.select(this).attr('type')])
                                     .style("font-size", visualize_config["font-size"][d3.select(this).attr('type')] + "px")
                                     .style("left", (d3.event.pageX) + "px")
                                     .style("top", (d3.event.pageY - 28) + "px");
@@ -197,7 +195,7 @@ function drawMessage(senderProcess, senderClock, receiverProcess, receiverClock)
                       .attr("x2", receiverCenter[0])
                       .attr("y1", senderCenter[1])
                       .attr("y2", receiverCenter[1])
-                      .attr("stroke", strToColor(mtype))
+                      .attr("stroke", strToColor(window.data["messages"][messageNumber]['type']))
                       .attr("stroke-width", 2)
                       .attr("marker-end","url(#arrow)")
                       .attr("class", "curr_line")
@@ -500,22 +498,19 @@ function drawGrid()
     for(var i = 1; i <= maxClock; ++i) {
         // horizontal lines
         var line = svgContainer.append("line")
-                                .attr("class", "Clock-Line")
                                 .attr("type", "main")
                                 .attr("x1", columnWidth)
                                 .attr("x2", processCount*columnWidth)
                                 .attr("y1", startOffset + i *rowHeight)
                                 .attr("y2", startOffset + i* rowHeight)
-                                .attr("stroke", visualize_config["colors"]["main"])
+                                .attr("stroke", "#ccc")
                                 .attr("stroke-dasharray","5,10,5")
                                 .attr("stroke-width", 1);
         var t = svgContainer.append("text")
-                                .attr("class", "Clock-Text")
                                 .attr("type", "main")
                                 .attr("x", 40)
                                 .attr("y", startOffset + i *rowHeight+8)
-                                .text("clk " + (i-1))
-                                .attr("fill", visualize_config["font-color"]["main"]);
+                                .text("clk " + (i-1));
     }
   } else {
     var proc_types = {};
@@ -628,8 +623,9 @@ function getDefaultValue(type, property, cmp_class, cmp_type, default_value){
     }
     return visualize_config["colors"][cmp_type]
   }
-  else if ((type == "color") && (default_value == "random")) {
-    return randomColor()
+  else if (type == "color") {
+    console.log(cmp_type);
+    return strToColor(cmp_type);
   }
   else {
     return default_value
@@ -637,22 +633,6 @@ function getDefaultValue(type, property, cmp_class, cmp_type, default_value){
 } 
 
 function createInput(da_cmp_type, property, da_cmp_class, attr_type, vis_config_key, default_value, type){
-  if (da_cmp_type == "P"){
-    console.log(visualize_config)
-    console.log("Da Cmp Type")
-    console.log(da_cmp_type)
-    console.log("Property")
-    console.log(property)
-    console.log("da_cmp_class")
-    console.log(da_cmp_class)
-    console.log("attr_type")
-    console.log(attr_type)
-    console.log("Vis Config Key")
-    console.log(vis_config_key)
-    console.log("type")
-    console.log(type)
-  }
-  
   // if the user didn't specify this type of parameter
   if (!(vis_config_key in visualize_config)){
     visualize_config[vis_config_key] = {}; // create a dictionary
@@ -674,7 +654,8 @@ function createInput(da_cmp_type, property, da_cmp_class, attr_type, vis_config_
       input.append($("<option>", {"value":i, "text":i})[0]);
     }
   } else { // color picker
-    input = $("<input>", {"type":type, "id":da_cmp_type + property, "name":da_cmp_type, "value":default_value})[0];
+    console.log(visualize_config[vis_config_key][da_cmp_type]);
+    input = $("<input>", {"type":type, "id":da_cmp_type + property, "name":da_cmp_type, "value":visualize_config[vis_config_key][da_cmp_type]})[0];
   }
 
   // set elements, and add listener
@@ -773,7 +754,7 @@ function valueChange(da_class_type, attr_type, da_cmp_type, vis_config_key)
       // get all such SVG graphic elements
       svgContainer.selectAll(da_class_type)
       // filter by whether data payload attribute contains the name
-      .filter(function() { return d3.select(this).attr("type").indexOf(da_cmp_type) !== -1; })
+      .filter(function() { return d3.select(this).attr("type") === da_cmp_type; })
       .attr(attr_type, visualize_config[vis_config_key][da_cmp_type]);
     }    
       
