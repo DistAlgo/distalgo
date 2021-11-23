@@ -953,7 +953,7 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
             # 'PATTERN in DOMAIN'
             target = self.visit(node.left)
             right = self.visit(node.right)
-            gen = comprehension(target, right, target.conditions)
+            gen = pycomprehension(target, right, target.conditions)
             elem = optimize_tuple(pyTuple(node.left.ordered_freevars))
             ast = pySize(ListComp(elem, [gen])) if not Options.jb_style \
                   else pySize(SetComp(elem, [gen]))
@@ -1007,7 +1007,7 @@ class IncInterfaceGenerator(PatternComprehensionGenerator):
         else:
             target = self.visit(node.pattern)
             ifs = []
-        return comprehension(target, domain, ifs)
+        return pycomprehension(target, domain, ifs)
 
     def visit_HistoryExpr(self, node):
         return pyName(node.event.name)

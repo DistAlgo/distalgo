@@ -975,6 +975,15 @@ class SliceExpr(Expression):
     def step(self, idx):
         self.subexprs[2] = idx
 
+class ExtSliceExpr(Expression):
+    @property
+    def dims(self):
+        return self.subexprs
+
+    @dims.setter
+    def dims(self, idx):
+        self.subexprs = idx
+
 
 class StarredExpr(SimpleExpr): pass
 class EllipsisExpr(SimpleExpr): pass
@@ -1470,11 +1479,18 @@ class ListCompExpr(ComprehensionExpr): pass
 class TupleCompExpr(ComprehensionExpr): pass
 class DictCompExpr(ComprehensionExpr): pass
 
+class MinCompExpr(ComprehensionExpr): pass
+class MaxCompExpr(ComprehensionExpr): pass
+class SumCompExpr(ComprehensionExpr): pass
+class LenCompExpr(ComprehensionExpr): pass
+class PrdCompExpr(ComprehensionExpr): pass
+
 class AggregateExpr(CallExpr, QueryExpr): pass
 class MaxExpr(AggregateExpr): pass
 class MinExpr(AggregateExpr): pass
 class SizeExpr(AggregateExpr): pass
 class SumExpr(AggregateExpr): pass
+class ProdExpr(AggregateExpr): pass
 
 class ComparisonOperator(DistNode): pass
 class EqOp(ComparisonOperator): pass

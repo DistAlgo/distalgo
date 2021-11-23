@@ -34,6 +34,9 @@ from .utils import Namespace
 from .utils import CompilerMessagePrinter
 from .utils import MalformedStatementError
 from .utils import ResolverException
+from .utils import printe
+
+from pprint import pprint
 
 # DistAlgo keywords
 KW_ENTRY_POINT = "main"
@@ -58,10 +61,17 @@ KW_AGGREGATE_SIZE = "len"
 KW_AGGREGATE_MIN = "min"
 KW_AGGREGATE_MAX = "max"
 KW_AGGREGATE_SUM = "sum"
+KW_AGGREGATE_PROD = "prod"
 KW_COMP_SET = "setof"
 KW_COMP_TUPLE = "tupleof"
 KW_COMP_LIST = "listof"
 KW_COMP_DICT = "dictof"
+KW_COMP_MIN = "minof"
+KW_COMP_MAX = "maxof"
+KW_COMP_SUM = "sumof"
+KW_COMP_LEN = "lenof"
+KW_COMP_COUNT = "countof"
+KW_COMP_PROD = "prodof"
 KW_AWAIT = "await"
 KW_AWAIT_TIMEOUT = "timeout"
 KW_SEND = "send"
@@ -76,6 +86,19 @@ KW_NULL = "None"
 KW_SUCH_THAT = "has"
 KW_RESET = "reset"
 KW_INC_VERB = "_INC_"
+
+exprDict = {
+    KW_COMP_SET: dast.SetCompExpr,
+    KW_COMP_LIST: dast.ListCompExpr,
+    KW_COMP_DICT: dast.DictCompExpr,
+    KW_COMP_TUPLE: dast.TupleCompExpr,
+    KW_COMP_MIN: dast.MinCompExpr,
+    KW_COMP_MAX: dast.MaxCompExpr,
+    KW_COMP_SUM: dast.SumCompExpr,
+    KW_COMP_PROD: dast.PrdCompExpr,
+    KW_COMP_LEN: dast.LenCompExpr,
+    KW_COMP_COUNT: dast.LenCompExpr
+}
 
 ##########################
 # Helper functions:
@@ -268,9 +291,11 @@ AggregateMap = {
     KW_AGGREGATE_MAX  : dast.MaxExpr,
     KW_AGGREGATE_MIN  : dast.MinExpr,
     KW_AGGREGATE_SIZE : dast.SizeExpr,
-    KW_AGGREGATE_SUM  : dast.SumExpr
+    KW_AGGREGATE_SUM  : dast.SumExpr,
+    # KW_AGGREGATE_PROD  : dast.ProdExpr,
 }
-ComprehensionTypes = {KW_COMP_SET, KW_COMP_TUPLE, KW_COMP_DICT, KW_COMP_LIST}
+ComprehensionTypes = {KW_COMP_SET, KW_COMP_TUPLE, KW_COMP_DICT, KW_COMP_LIST, 
+                      KW_COMP_MAX, KW_COMP_MIN, KW_COMP_SUM, KW_COMP_LEN, KW_COMP_COUNT, KW_COMP_PROD}
 EventKeywords = {KW_EVENT_DESTINATION, KW_EVENT_SOURCE, KW_EVENT_LABEL,
                  KW_EVENT_TIMESTAMP}
 Quantifiers = {KW_UNIVERSAL_QUANT, KW_EXISTENTIAL_QUANT}
@@ -1195,9 +1220,13 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
             elif isinstance(e, Await):
                 stmtobj = self.create_stmt(dast.AwaitStmt, node)
                 self.current_context = Read(stmtobj)
-                branch = dast.Branch(stmtobj, node,
-                                     condition=self.visit(e.value))
-                stmtobj.branches.append(branch)
+                # if await condition e.value is call to timeout with 1 argument
+                if expr_check(KW_AWAIT_TIMEOUT, 1, 1, e.value):
+                    stmtobj.timeout = self.visit(e.value.args[0])
+                else:
+                    branch = dast.Branch(stmtobj, node,
+                                         condition=self.visit(e.value))
+                    stmtobj.branches.append(branch)
 
             elif expr_check(KW_SEND, 1, 1, e, keywords={KW_SEND_TO},
                             optional_keywords=None):
@@ -1251,13 +1280,12 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
             elif type(e) is Yield:
                 stmtobj = self.create_stmt(dast.YieldStmt, node)
                 self.current_context = Read(stmtobj)
-                stmtobj.value = self.visit(e.value)
+                stmtobj.value = None if e.value is None else self.visit(e.value)
             elif type(e) is YieldFrom:
                 # 'yield' should be a statement, handle it here:
                 stmtobj = self.create_stmt(dast.YieldFromStmt, node)
                 self.current_context = Read(stmtobj)
-                stmtobj.value = self.visit(e.value)
-
+                stmtobj.value = None if e.value is None else self.visit(e.value)
             else:
                 stmtobj = self.create_stmt(dast.SimpleStmt, node)
                 self.current_context = Read(stmtobj)
@@ -1819,14 +1847,7 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
         return expr
 
     def parse_comprehension(self, node):
-        if node.func.id == KW_COMP_SET:
-            expr_type = dast.SetCompExpr
-        elif node.func.id == KW_COMP_LIST:
-            expr_type = dast.ListCompExpr
-        elif node.func.id == KW_COMP_DICT:
-            expr_type = dast.DictCompExpr
-        elif node.func.id == KW_COMP_TUPLE:
-            expr_type = dast.TupleCompExpr
+        expr_type = exprDict[node.func.id]
 
         expr = self.create_expr(expr_type, node)
         self.enter_query()
@@ -1866,8 +1887,9 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
                            first_arg)
             else:
                 kv = dast.KeyValue(expr)
-                kv.key = self.visit(node.key)
-                kv.value = self.visit(node.value)
+                key,val = first_arg.elts
+                kv.key = self.visit(key)
+                kv.value = self.visit(val)
                 expr.elem = kv
         else:
             expr.elem = self.visit(first_arg)
@@ -1889,14 +1911,7 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
             self.error(msg, expr)
 
     def parse_aggregates(self, node):
-        if node.func.id == KW_AGGREGATE_SUM:
-            expr_type = dast.SumExpr
-        elif node.func.id == KW_AGGREGATE_SIZE:
-            expr_type = dast.SizeExpr
-        elif node.func.id == KW_AGGREGATE_MIN:
-            expr_type = dast.MinExpr
-        elif node.func.id == KW_AGGREGATE_MAX:
-            expr_type = dast.MaxExpr
+        expr_type = AggregateMap[node.func.id]
 
         expr = self.create_expr(expr_type, node)
         self.current_context = Read(expr)
@@ -2230,47 +2245,61 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
         return e
 
     def visit_Compare(self, node):
-        if len(node.ops) > 1:
-            self.error("Explicit parenthesis required in comparison expression",
-                       node)
-            return None
-        outer = None
-        # We make all negation explicit:
-        if type(node.ops[0]) in NegatedOperators:
-            outer = self.create_expr(dast.LogicalExpr, node)
-            outer.operator = dast.NotOp
+        result = []
 
-        expr = self.create_expr(dast.ComparisonExpr, node)
+        for i in range(len(node.ops)):
+            if i == 0:
+                left = node.left
+            else:
+                left = right
+            op = node.ops[i]
+            right = node.comparators[i]
 
-        if self.get_option('enable_membertest_pattern', default=False):
-            # DistAlgo: overload "in" to allow pattern matching
-            if isinstance(node.ops[0], In) or \
-                   isinstance(node.ops[0], NotIn):
-                # Backward compatibility: only assume pattern if containing free
-                # var
-                pf = PatternFinder()
-                pf.visit(node.left)
-                if pf.found:
-                    expr.left = self.parse_pattern_expr(node.left)
-        if expr.left is None:
-            expr.left = self.visit(node.left)
-        self.current_context = Read(expr.left)
-        expr.right = self.visit(node.comparators[0])
-        if (isinstance(expr.right, dast.HistoryExpr) and
-                expr.right.event is not None):
-            # Must replace short pattern format with full pattern here:
-            expr.left = self.pattern_from_event(expr.right.event)
+            outer = None
+            # We make all negation explicit:
+            if type(op) in NegatedOperators:
+                outer = self.create_expr(dast.LogicalExpr, node)
+                outer.operator = dast.NotOp
 
-        if outer is not None:
-            expr.comparator = NegatedOperators[type(node.ops[0])]
-            outer.subexprs.append(expr)
-            self.pop_state()
-            self.pop_state()
-            return outer
+            expr = self.create_expr(dast.ComparisonExpr, node)
+
+            if self.get_option('enable_membertest_pattern', default=False):
+                # DistAlgo: overload "in" to allow pattern matching
+                if isinstance(op, In) or \
+                       isinstance(op, NotIn):
+                    # Backward compatibility: only assume pattern if containing free
+                    # var
+                    pf = PatternFinder()
+                    pf.visit(left)
+                    if pf.found:
+                        expr.left = self.parse_pattern_expr(left)
+            if expr.left is None:
+                expr.left = self.visit(left)
+            self.current_context = Read(expr.left)
+            expr.right = self.visit(right)
+            if (isinstance(expr.right, dast.HistoryExpr) and
+                    expr.right.event is not None):
+                # Must replace short pattern format with full pattern here:
+                expr.left = self.pattern_from_event(expr.right.event)
+
+            if outer is not None:
+                expr.comparator = NegatedOperators[type(op)]
+                outer.subexprs.append(expr)
+                self.pop_state()
+                self.pop_state()
+                result.append(outer)
+            else:
+                expr.comparator = OperatorMap[type(op)]
+                self.pop_state()
+                result.append(expr)
+
+        if len(result) == 1:
+            return result[0]
         else:
-            expr.comparator = OperatorMap[type(node.ops[0])]
+            e = self.create_expr(dast.LogicalExpr, node, {"op": dast.AndOp})
+            e.subexprs = result
             self.pop_state()
-            return expr
+            return e
 
     def visit_UnaryOp(self, node):
         if type(node.op) is Not:
@@ -2311,8 +2340,12 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
         return expr
 
     def visit_ExtSlice(self, node):
-        self.warn("ExtSlice in subscript not supported.", node)
-        return self.context_expr(dast.PythonExpr, node, nopush=True)
+        # self.warn("ExtSlice in subscript not supported.", node)
+        expr = self.create_expr(dast.ExtSliceExpr, node)
+        dims = [self.visit(d) for d in node.dims]
+        expr.dims = dims
+        self.pop_state()
+        return expr
 
     def visit_Yield(self, node):
         # Should not get here: 'yield' statements should have been handles by
