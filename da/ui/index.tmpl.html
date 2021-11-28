@@ -4,9 +4,10 @@
 <head>
   <meta charset="UTF-8">
   <title>$specname</title>
+  <script>$jquery_js</script>
+  <script>$bootstrap_js</script>
   <style>$bootstrap_css</style>
   <style>$style_css</style>
-  <style>$jquery_ui_css</style>
   </head>
 
 <body>
@@ -36,29 +37,40 @@
       <button class="btn btn-light" id="Pause"><svg width="16" height="16" viewBox="0 0 1792 1792" xmlns="http://www.w3.org/2000/svg"><path d="M1664 192v1408q0 26-19 45t-45 19h-512q-26 0-45-19t-19-45v-1408q0-26 19-45t45-19h512q26 0 45 19t19 45zm-896 0v1408q0 26-19 45t-45 19h-512q-26 0-45-19t-19-45v-1408q0-26 19-45t45-19h512q26 0 45 19t19 45z"/></svg></button>
       <button class="btn btn-light" id="Prev"><svg width="16" height="16" viewBox="0 0 1792 1792" xmlns="http://www.w3.org/2000/svg"><path d="M1747 141q19-19 32-13t13 32v1472q0 26-13 32t-32-13l-710-710q-9-9-13-19v710q0 26-13 32t-32-13l-710-710q-9-9-13-19v678q0 26-19 45t-45 19h-128q-26 0-45-19t-19-45v-1408q0-26 19-45t45-19h128q26 0 45 19t19 45v678q4-10 13-19l710-710q19-19 32-13t13 32v710q4-10 13-19z"/></svg></button>
       <button class="btn btn-light" id="Next"><svg width="16" height="16" viewBox="0 0 1792 1792" xmlns="http://www.w3.org/2000/svg"><path d="M45 1651q-19 19-32 13t-13-32v-1472q0-26 13-32t32 13l710 710q9 9 13 19v-710q0-26 13-32t32 13l710 710q9 9 13 19v-678q0-26 19-45t45-19h128q26 0 45 19t19 45v1408q0 26-19 45t-45 19h-128q-26 0-45-19t-19-45v-678q-4 10-13 19l-710 710q-19 19-32 13t-13-32v-710q-4 10-13 19z"/></svg></button>
-      <button id="toggle_config">Show Config</button>
-      <div id="tabs">
-        <ol>
-          <li><a href="#messages-tab">Messages</a></li>
-          <li><a href="#processes-tab">Processes</a></li>
-        </ol>
-        <div class="properties" id="messages-tab"></div>
-        <div class="properties" id="processes-tab"></div>
-      </div>
-      <div>
-        <label id="speech">Speech Synthesis</label>
-        <input type="checkbox" id="voice" name="voice">
+      <button class="btn btn-primary" type="button" id="toggle_config">Show Config</button>
+      <div class="collapse collapse-horizontal" id="config_panel">
+          <button class="btn btn-secondary" type="button" id="message_config" data-bs-toggle="modal" data-bs-target="#MessageModal">Configure Messages</button>
+          <button class="btn btn-secondary" id="process_config" data-bs-toggle="modal" data-bs-target="#ProcessModal">Configure Processes</button>
+          <label id="speech">Speech Synthesis</label>
+          <input type="checkbox" id="voice" name="voice">
       </div>
     </div>
   </div>
   </div>
 </div>
-  <script>visualize_config = $visualize_config;</script>
-  <script>$d3_js</script>
-  <script>$jquery_js</script>
-  <script>$jquery_ui_js</script>
-  <script>$app_js</script>
-  <script>$tracedata</script>
+<div id="messages-dialog" title="Message Configuration" open=false>
+</div>
+<div id="processes-dialog" title="Process Configuration" open=false>
+</div>
+<script>visualize_config = $visualize_config;</script>
+<script>$d3_js</script>
+<script>$app_js</script>
+<script>$tracedata</script>
+
+<div class="modal fade" id="ModalTemplate" tabindex="-1" role="dialog" aria-labelledby="ModalTemplate" aria-hidden="true">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="ModalTemplateLabel"></h5>
+        <button type="button" class="close" data-bs-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body" id="ModalBody"></div>
+      <div class="modal-footer"></div>
+    </div>
+  </div>
+</div>
 </body>
 
 </html>

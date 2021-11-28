@@ -15,7 +15,7 @@ var c_radius = 50
 var c_row_separation = 100 + c_radius
 var c_col_separation = 150 + c_radius
 var listenersAdded = false;   //Indicates whether or not we have already added a set of listeners to the DOM body.
-
+var window_width = $(window).width();
 
 function escapeHTML(s)
 {
@@ -24,7 +24,6 @@ function escapeHTML(s)
 
 function strToColor(str)
 {
-  console.log(str);
   if (visualize_config && visualize_config.colors && visualize_config['colors'][str]) {
       return visualize_config['colors'][str];
   }
@@ -113,7 +112,7 @@ function drawMessage(senderProcess, senderClock, receiverProcess, receiverClock)
                                     .style("opacity", .9);
                                 var text = d3.select(this).attr('data-payload');
                                 div .html(text)
-                                    .style("font-size", visualize_config["font-size"][d3.select(this).attr('type')] + "px")
+                                    .style("font-size", visualize_config["text-size"][d3.select(this).attr('type')] + "px")
                                     .style("left", (d3.event.pageX) + "px")
                                     .style("top", (d3.event.pageY - 28) + "px");
                                 if ($( "#voice" ).is(":checked")) {
@@ -484,7 +483,7 @@ function drawGrid()
         .attr("x", columnWidth*i)
         .attr("y", rowHeight-20)
         .attr('type', window.data["process_map"][i][0])
-        .attr("fill", visualize_config["font-color"][window.data["process_map"][i][0]])
+        .attr("fill", visualize_config["colors"][window.data["process_map"][i][0]])
          .append('svg:tspan')
           .attr('x', columnWidth*i-20)
           .attr('dy', -5)
@@ -609,195 +608,132 @@ function GetVizData(data)
 
 }
 
-function getDefaultValue(type, property, cmp_class, cmp_type, default_value){
-  if ((cmp_class == ".Message-Text") && (property == "font_color")){
-    return "#FFFFFF"
-  }
-  else if (cmp_class == ".Clock-Line"){
-    return "#CCCCCC"
-  }
-  else if (cmp_class == ".Process-Text") {
-    // process texts should be the same color as process lines
-    if (!(cmp_type in visualize_config["colors"])){
-      visualize_config["colors"][cmp_type] = getDefaultValue("color",  "line_color", ".Process-Line", cmp_type, default_value)  
-    }
-    return visualize_config["colors"][cmp_type]
-  }
-  else if (type == "color") {
-    console.log(cmp_type);
-    return strToColor(cmp_type);
-  }
-  else {
-    return default_value
-  }
-} 
+function setD3Attr(config, d3_class, attr_type, name, vis_config_key)
+{
+  // if d3_class is not Null, this is a permanently drawn graphical object
+    if (d3_class != null) {
+      // get all such SVG graphic elements
+      svgContainer.selectAll(d3_class)
+      // filter by whether data payload attribute contains the name
+      .filter(function() { return d3.select(this).attr("type") === name; })
+      .attr(attr_type, config[name]);
+  } 
+}
 
-function createInput(da_cmp_type, property, da_cmp_class, attr_type, vis_config_key, default_value, type){
+function valueChange(d3_class, attr_type, name, vis_config_key)
+{ 
+    let config = visualize_config[vis_config_key];
+    
+    // update config dict
+    config[name] = event.target.value;
+
+    // update existing D3 elements
+    setD3Attr(config, d3_class, attr_type, name, vis_config_key);  
+}
+
+function createInput(name, attr_values){
+  var d3_class = attr_values["class"];  // class attached to relevant D3 element
+  var attr_type = attr_values["d3_attr_type"]; // attribute to modify of D3 element
+  var default_value = attr_values["default_value"]; // for D3 element
+  var input_type = attr_values["element_type"]; 
+  var vis_config_key = attr_values["vis_config_key"];
+
   // if the user didn't specify this type of parameter
   if (!(vis_config_key in visualize_config)){
-    visualize_config[vis_config_key] = {}; // create a dictionary
+    visualize_config[vis_config_key] = {}; // create a dict for that property
   }
+  let config = visualize_config[vis_config_key]; 
 
-  if (!(da_cmp_type in visualize_config[vis_config_key])){ // if this specific da-element is not specified by the user
-       visualize_config[vis_config_key][da_cmp_type] = getDefaultValue(type, property, da_cmp_class, da_cmp_type, default_value); // give it a default value
+  if (!(name in config)){ // if this da-element is not specified by the user
+    config[name] = (input_type == "color") ? strToColor(name) : default_value;
   }
-
-  if (type == "color") {
-      // user specified color - make sure the color is Hex
-      visualize_config[vis_config_key][da_cmp_type] = d3.color(visualize_config[vis_config_key][da_cmp_type]).hex('rgb');
-  }
-
-  var input;
-  if (type == "select"){
-    input = $("<select>", {"id":da_cmp_type + property, "name":da_cmp_type, "value":default_value})[0];
-    for (var i = 8; i < 24; i = i + 2){
-      input.append($("<option>", {"value":i, "text":i})[0]);
-    }
-  } else { // color picker
-    console.log(visualize_config[vis_config_key][da_cmp_type]);
-    input = $("<input>", {"type":type, "id":da_cmp_type + property, "name":da_cmp_type, "value":visualize_config[vis_config_key][da_cmp_type]})[0];
-  }
-
-  // set elements, and add listener
-  input.value = visualize_config[vis_config_key][da_cmp_type];
-  let dc_type = da_cmp_type;
-  if (property != "font_color"){
-    input.addEventListener("input", function(){valueChange(da_cmp_class, attr_type, dc_type, vis_config_key);}, false);  
-  }
-  if (property == "process_color"){
-    input.addEventListener("input", function(){valueChange(".Process-Text", "fill", dc_type, "font-color");}, false);
+  else { // if specified, and a color, convert to hex format
+    if (input_type == "color") { config[name] = d3.color(config[name]).hex('rgb'); }
   }
   
-  // update all elements with current values
-  if (da_cmp_class != null){
-      // get all such SVG graphic elements
-      svgContainer.selectAll(da_cmp_class)
-      // filter by whether data payload attribute contains the name
-      .filter(function() { return d3.select(this).attr("type").indexOf(dc_type) !== -1; })
-      .attr(attr_type, visualize_config[vis_config_key][dc_type]);      
+  // create input
+  var input;
+  if (input_type == "select"){ // dropdown
+    input = $("<select>")[0];
+    for (var i = 8; i < 24; i = i + 2){ input.append($("<option>", {"value":i, "text":i})[0]); }
+    input.value = default_value;
+  } 
+  else { // color picker
+    input = $("<input>", {"type":"color", "name":name, "value":config[name]})[0];
   }
+
+  // add input listeners
+  let da_name = name;
+  input.addEventListener("input", function(){valueChange(d3_class, attr_type, da_name, vis_config_key);}, false);  
+
+  if (d3_class == ".Process-Line"){ // change Process Text as well
+    input.addEventListener("input", function(){valueChange(".Process-Text", "fill", da_name, "colors");}, false);
+  }
+  
+  // update all D3 elements with current values
+  setD3Attr(config, d3_class, attr_type, name, vis_config_key);
 
   return input;
 }
 
-function createTable(panel_type, da_cmp_category){
-  var tab_prop = panel_config_json[panel_type];             // tab-specific properties
+function createTable(panel_type, da_cmp_list){
+  var tab_prop = panel_config_json[panel_type]; // tab-specific properties
 
   // get the list of messages/processes
-  var da_elements = window.data["vizInfo"][da_cmp_category];
+  var da_elements = window.data["vizInfo"][da_cmp_list];
 
   // create the properties table
-  var table = $("<table>");
+  var table = $("<table>", {"class": "table"}); // 
 
-  // create a header row
-  var header_row = $("<tr>", {id:panel_type + "-header-row"});
-  
-  // empty first cell
-  header_row.append($("<th>", {text:""}));
+  // create a header row with an empty first cell
+
+  var header_row = $("<tr>", {id:panel_type + "-header-row"}).append($("<th>", {text:""}));
   
   // list names of messages/processes
-  for (var j = 0; j < da_elements.length; ++j){
-    var header_title = da_elements[j];
-    header_row.append($("<th>", {text:header_title}));
-  }
+  for (let name of da_elements) { header_row.append($("<th>", {text:name})); }
+
   table.append(header_row);
 
-  var property_list = (panel_type == "messages") ? msg_property_list : proc_property_list;
-
   // for each row (each property)
-  for (var i = 0; i < property_list.length; ++i){
-    var property = global_prop[property_list[i]];
+  for (let [attr_name, attr_values] of Object.entries(tab_prop["attr"])){
+    var table_row = $("<tr>").append($("<th>", {text:attr_name}));
 
-    if (property["name"] != "Text Color"){
-      // create a table row
-      var table_row = $("<tr>", {id:panel_type + property["type"] + "-row"});
-
-      // append the name as the first column
-      table_row.append($("<th>", {text:property["name"]}));
-    }
-
-    // for each subsequent column (message, process, etc.)
-    for (var j = 0; j < da_elements.length; ++j){
-
-      // store it
-      var da_cmp_type = da_elements[j];
-
-      // create a cell with the appropriate type of input
-      var th = $("<th>");
-      // var input;
-      // create color picker, passing message name, property, class and attr to manipulate, and reference to vis-config dict entry
-      var input = createInput(da_cmp_type, property_list[i], tab_prop["class"][i], tab_prop["attr_type"][i], property["vis_config_key"], property["default_value"], property["element_type"]);
-
-      if (property["name"] != "Text Color"){
-        th.append(input);
-        table_row.append(th);
-      }
-    }
+    // create input for each subsequent column (message, process, etc.)
+    for (let name of da_elements) { table_row.append($("<th>").append(createInput(name, attr_values))); }
 
     table.append(table_row);
   }
 
   // append the table to the tab
-  $(tab_prop["table_id"]).append(table);
-  
+  $(tab_prop["modal_id"]).append($("<div>", {"class": "table-responsive"}).append(table));
 }
 
-function valueChange(da_class_type, attr_type, da_cmp_type, vis_config_key)
-{ 
-    // change preset for new value 
-    visualize_config[vis_config_key][da_cmp_type] = event.target.value;
-
-    // update existing values
-
-    // if da_class_type is not Null, this is a permanently drawn graphical object
-    if (da_class_type != null){
-      // get all such SVG graphic elements
-      svgContainer.selectAll(da_class_type)
-      // filter by whether data payload attribute contains the name
-      .filter(function() { return d3.select(this).attr("type") === da_cmp_type; })
-      .attr(attr_type, visualize_config[vis_config_key][da_cmp_type]);
-    }    
-      
+function add_dialog(div_type) {
+  var dialog = $("#ModalTemplate").clone().attr({"id": div_type + "Modal", "aria-labelledby": div_type + "Modal"});
+  dialog.find("#ModalTemplateLabel").attr("id", div_type + "ModalLabel").html(div_type + " Configuration");
+  dialog.find("#ModalBody").attr("id", div_type + "ModalBody");
+  $('body').append(dialog);
 }
 
 
 $(function(){
 
-    // configure properties tabs panel in jQuery UI
-    $( "#tabs" ).tabs().addClass( "ui-tabs-vertical ui-helper-clearfix" );
-    $( "#tabs li" ).removeClass( "ui-corner-top" ).addClass( "ui-corner-left" );
-
     // Messages Panel
+    add_dialog("Message");
     createTable("messages", "message_types");
 
     // Processes Panel
+    add_dialog("Process");
     createTable("processes", "process_types");
 
-    $("#tabs").animate({width:'toggle'},0);
-    $("#speech").fadeOut(0);
-    $("#voice").fadeOut(0);
-
-    $('#toggle_config').click(function()
-    {
-        $("#tabs").animate({width:'toggle'},500);
-        if ($("#speech").is(":visible")){
-          $("#speech").fadeOut(100);
-          $("#voice").fadeOut(100);
-          $("#toggle_config").html('Show Config');
-        }
-        else {
-          $("#speech").fadeIn(100);
-          $("#voice").fadeIn(100);
-          $("#toggle_config").html("Hide Config");;
-        }
-        
+    // Config Button
+    $('#toggle_config').click(function(){ 
+      $("#config_panel").collapse("toggle");
+      $("#toggle_config").html($("#toggle_config").html() == "Show Config" ? "Hide Config" : "Show Config");
     });
 
     // visualize
-    drawTimeDiagram();
-
-
-    
+    drawTimeDiagram();  
 
     // get the data path
     var urlParams = new URLSearchParams(window.location.search);
@@ -838,50 +774,37 @@ $(function(){
 
 
 var panel_config_json = {
-  "msg_property_types": ["line_color", "font_size"],
-  "proc_property_types": ["process_color", "font_color"],
-  "global": {
-    "line_color": {
-      "name": "Line Color",
-      "type": "-line-color",
-      "vis_config_key": "colors",
-      "default_value": "random",
-      "element_type": "color"
-    },
-    "process_color": {
-      "name": "Process Color",
-      "type": "-line-color",
-      "vis_config_key": "colors",
-      "default_value": "random",
-      "element_type": "color"
-    },
-    "font_color": {
-      "name": "Text Color",
-      "type": "-font-color",
-      "vis_config_key": "font-color",
-      "default_value": "#000000",
-      "element_type": "color"
-    },
-    "font_size": {
-      "name": "Text Size",
-      "type": "-font-size",
-      "vis_config_key": "font-size",
-      "default_value": "12",
-      "element_type": "select"
+  "messages": {
+    "modal_id": "#MessageModalBody",
+    "attr": {
+      "Line Color": {
+        "class": ".Message-Line",
+        "d3_attr_type": "stroke",
+        "vis_config_key": "colors",
+        "default_value": null,
+        "element_type": "color"
+      },
+      "Text Size": {
+        "class": null,
+        "d3_attr_type": "font-size",
+        "vis_config_key": "text-size",
+        "default_value": "12",
+        "element_type": "select"
+      }
     }
   },
-  "messages": {
-    "table_id": "#messages-tab",
-    "class": [".Message-Line", ".Message-Text"],
-    "attr_type": ["stroke", "font-size"]
-  },
   "processes": {
-    "table_id": "#processes-tab",
-    "class": [".Process-Line", ".Process-Text"],
-    "attr_type": ["stroke", "fill"]
+    "modal_id": "#ProcessModalBody",
+    "attr": {
+      "Process Color": {
+        "class": ".Process-Line",
+        "d3_attr_type": "stroke", 
+        "vis_config_key": "colors",
+        "default_value": null,
+        "element_type": "color"
+      }
+    }
   }
 }
 
 var global_prop = panel_config_json["global"];            // global properties
-var msg_property_list = panel_config_json["msg_property_types"];        // type of properties (rows in table)
-var proc_property_list = panel_config_json["proc_property_types"];        // type of properties (rows in table)

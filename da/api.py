@@ -430,13 +430,12 @@ def entrypoint():
                 # css files
                 'bootstrap_css': open(ui_root / "css"/ "bootstrap.min.css", 'r').read(),
                 'style_css': open(ui_root / "css" / "style.css", 'r').read(),
-                'jquery_ui_css': open(ui_root / "css" / "jquery-ui.min.css", 'r').read(),
 
                 # js files
                 'app_js': open(ui_root / "js" / "app.js", 'r').read(),
+                'bootstrap_js': open(ui_root / "js" / "bootstrap.bundle.min.js", 'r').read(),
                 'd3_js': open(ui_root / "js" / "d3.min.js", 'r').read(),
-                'jquery_js': open(ui_root / "js"/ "jquery-3.3.1.min.js", 'r').read(),
-                'jquery_ui_js': open(ui_root / "js" / "jquery-ui.min.js", 'r').read(),                
+                'jquery_js': open(ui_root / "js"/ "jquery-3.3.1.min.js", 'r').read(),              
 
                 # spec name
                 'specname': specname,

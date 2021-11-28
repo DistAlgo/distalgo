@@ -38,7 +38,7 @@ def dump_recv_item(stream, d):
             msg['sender'] = str(item[0])
             msg['clock'] = item[1][1][0]
             msg['payload'] = str(item[1][1][1])
-            msg['type'] = str(item[1][1][1]) if isinstance(item[1][1][1], str) else ", ".join([name for name in item[1][1][1] if isinstance(name, str)])
+            msg['type'] = item[1][1][1] if isinstance(item[1][1][1], str) else ", ".join([name for name in item[1][1][1] if isinstance(name, str)])
 
             mid += 1
             d['messages'].append(msg)
