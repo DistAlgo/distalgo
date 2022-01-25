@@ -1422,6 +1422,8 @@ class Router(threading.Thread):
 
 def _is_spawning_semantics():
     """True if we are on spawning semantics."""
+    if sys.version_info >= (3, 8) and sys.platform == 'darwin':
+        return False
     return sys.platform == 'win32' or \
         multiprocessing.get_start_method(allow_none=True) == 'spawn'
 

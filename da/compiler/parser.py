@@ -2198,7 +2198,15 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
         else:
             raise NotImplementedError("Unrecognized NameConstant %s." % repr(node.value))
 
+    # Changed in version 3.9: Simple indices are represented by their value, extended slices are represented as tuples.
     def visit_Tuple(self, node):
+        if sys.version_info >= (3, 9) and isinstance(self.current_parent, dast.SubscriptExpr):
+            expr = self.create_expr(dast.ExtSliceExpr, node)
+            dims = [self.visit(d) for d in node.elts]
+            expr.dims = dims
+            self.pop_state()
+            return expr
+        
         expr = self.create_expr(dast.TupleExpr, node)
         for item in node.elts:
             expr.subexprs.append(self.visit(item))
@@ -2370,9 +2378,22 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
         return self.create_expr(dast.EllipsisExpr, node, nopush=True)
 
     def visit_Constant(self, node):
-        # As of 3.6, Python compiler doesn't actually generate this kind of
-        # node, this is only used for code optimization (see PEP 511)
-        return self.create_expr(dast.ConstantExpr, node, {'value': node.value})
+        if sys.version_info < (3, 8):
+            # As of 3.6, Python compiler doesn't actually generate this kind of
+            # node, this is only used for code optimization (see PEP 511)
+            return self.create_expr(dast.ConstantExpr, node, {'value': node.value}, nopush=True)
+        else:
+            # since Python 3.8, ast classes Num, Str, Bytes, NameConstant and Ellipsis 
+            # are considered deprecated and will be removed in future Python versions. 
+            # Constant should be used instead.
+            if node.value == True:
+                return self.create_expr(dast.TrueExpr, node, nopush=True)
+            elif node.value == False:
+                return self.create_expr(dast.FalseExpr, node, nopush=True)
+            elif node.value == None:
+                return self.create_expr(dast.NoneExpr, node, nopush=True)
+            else:
+                return self.create_expr(dast.ConstantExpr, node, {'value': node.value}, nopush=True)
 
     def generator_visit(self, node):
         if isinstance(node, SetComp):
