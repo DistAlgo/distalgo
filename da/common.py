@@ -39,9 +39,9 @@ from inspect import Parameter
 from functools import wraps
 
 MAJOR_VERSION = 1
-MINOR_VERSION = 1
+MINOR_VERSION = 2
 PATCH_VERSION = 0
-PRERELEASE_VERSION = "b15"
+PRERELEASE_VERSION = "b2"
 
 __version__ = "{}.{}.{}{}".format(MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION,
                                    PRERELEASE_VERSION)
@@ -724,8 +724,8 @@ class WaitableQueue:
         self._num_waiting = 0
         if trace_files is not None:
             self._in_file, self._out_file = trace_files
-            self._in_dumper = ObjectDumper(self._in_file)
-            self._out_dumper = ObjectDumper(self._out_file)
+            self._in_dumper = ObjectDumper(self._in_file, protocol=3)
+            self._out_dumper = ObjectDumper(self._out_file, protocol=3)
             self.__pop = self.pop
             self.pop = self._pop_and_record
         else:

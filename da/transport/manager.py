@@ -51,10 +51,15 @@ class TransportManager:
             self.__class__.log = logger.getChild(self.__class__.__name__)
 
     def __getstate__(self):
-        return (self.initialized, self.started, self.authkey)
+        return (self.queue, 
+                self.mesgloop,
+                self.transports, 
+                self.initialized, 
+                self.started, 
+                self.authkey)
 
     def __setstate__(self, state):
-        self.initialized, self.started, self.authkey = state
+        self.queue, self.mesgloop, self.transports, self.initialized, self.started, self.authkey = state
         if self.__class__.log is None:
             self.__class__.log = logger.getChild(self.__class__.__name__)
 

@@ -23,6 +23,7 @@
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 import sys
+import builtins
 from ast import *
 from itertools import chain
 from . import dast, symtab
@@ -109,13 +110,21 @@ def pyName(name, ctx=None):
     return Name(name, Load() if ctx is None else ctx)
 
 def pyNone():
-    return NameConstant(None)
+    if sys.version_info < (3, 8):
+        return NameConstant(None)
+    else:
+        return Constant(None)
 
 def pyTrue():
-    return NameConstant(True)
+    if sys.version_info < (3, 8):
+        return NameConstant(True)
+    else:
+        return Constant(True)
 
 def pyFalse():
-    return NameConstant(False)
+    if sys.version_info < (3, 8):
+        return NameConstant(False)
+    return Constant(False)
 
 def pyNot(expr):
     ast = UnaryOp(Not(), expr)
@@ -213,15 +222,20 @@ def pyClassDef(name, bases=[], keywords=[], starargs=None,
 
 def pyFunctionDef(name, args=[], kwarg=None, body=[], decorator_list=[],
                   returns=None):
-    arglist = arguments(args=[arg(n, None) for n in args],
-                        vararg=None,
-                        varargannotation=None,
-                        kwonlyargs=[],
-                        kwarg=(arg(arg=kwarg, annotation=None)
-                               if kwarg is not None else None),
-                        kwargannotation=None,
-                        defaults=[],
-                        kw_defaults=[])
+    argdict = {
+        'args': [arg(n, None) for n in args],
+        'vararg': None,
+        'varargannotation': None,
+        'kwonlyargs': [],
+        'kwarg': (arg(arg=kwarg, annotation=None)
+                if kwarg is not None else None),
+        'kwargannotation': None,
+        'defaults': [],
+        'kw_defaults': []
+    }
+    if sys.version_info >= (3 ,8):
+        argdict['posonlyargs'] = []
+    arglist = arguments(**argdict)
     ast = FunctionDef(name, arglist, list(body), list(decorator_list), returns)
     return ast
 
@@ -255,6 +269,9 @@ def propagate_fields(node):
     """
     if hasattr(node, '_fields'):
         for f in node._fields:
+            # Since Python 3.8
+            if f == 'type_comment' and getattr(node,f,None) is None:
+                continue
             propagate_attributes(getattr(node, f), node)
     return node
 
@@ -474,7 +491,10 @@ class PythonGenerator(NodeVisitor):
         fromImportList = [ImportFrom(t[0], [alias(t[1], t[2] if len(t)>2 else None)], 0) for t in self.fromImportSet]
         # print(importList,fromImportList)
 
-        return [Module(importList+fromImportList+body)]
+        if sys.version_info >= (3 ,8):
+            return [Module(importList+fromImportList+body, type_ignores=[])]
+        else:
+            return [Module(importList+fromImportList+body)]
 
     def generate_config(self, node):
         return Assign([pyName(CONFIG_OBJECT_NAME, Store())],
@@ -536,7 +556,10 @@ class PythonGenerator(NodeVisitor):
 
     def visit_Arguments(self, node):
         """Generates the argument lists for functions and lambdas."""
-        self.current_context = Param
+        if sys.version_info < (3, 9):
+            self.current_context = Param
+        else:
+            self.current_context = Load
         args = [arg(ident.name, None) for ident in node.args]
         kwonlyargs = [arg(ident.name, None) for ident in node.kwonlyargs]
         kw_defaults = [self.visit(expr) for expr in node.kw_defaults]
@@ -546,13 +569,18 @@ class PythonGenerator(NodeVisitor):
         kwarg = arg(node.kwarg.name, None) \
                 if node.kwarg is not None else None
         self.current_context = Load
-        return arguments(
-            args=args,
-            vararg=vararg,
-            kwonlyargs=kwonlyargs,
-            kwarg=kwarg,
-            defaults=defaults,
-            kw_defaults=kw_defaults)
+        argdict = {
+            'args': args,
+            'vararg': vararg,
+            'kwonlyargs': kwonlyargs,
+            'kwarg': kwarg,
+            'defaults': defaults,
+            'kw_defaults': kw_defaults
+        }
+        # Since Python 3.8
+        if sys.version_info >= (3, 8):
+            argdict['posonlyargs'] = []
+        return arguments(**argdict)
 
     def visit_Process(self, node):
         printd("Compiling process %s" % node.name)
@@ -654,14 +682,20 @@ class PythonGenerator(NodeVisitor):
         if isinstance(node.index, dast.SliceExpr) or isinstance(node.index, dast.ExtSliceExpr):
             idx = self.visit(node.index)
         else:
-            idx = Index(self.visit(node.index))
-            propagate_attributes([idx.value], idx)
+            if sys.version_info < (3, 9):
+                idx = Index(self.visit(node.index))
+                propagate_attributes([idx.value], idx)
+            else:
+                idx = self.visit(node.index)
         self.current_context = ctx
         return pySubscr(val, idx, ctx())
 
     def visit_ExtSliceExpr(self,node):
         dims = [self.visit(d) for d in node.dims]
-        ast = ExtSlice(dims)
+        if sys.version_info < (3, 9):
+            ast = ExtSlice(dims)
+        else:
+            ast = Tuple(dims, Load())
         return propagate_attributes(dims, ast)
 
     def visit_PythonExpr(self, node):
@@ -683,15 +717,22 @@ class PythonGenerator(NodeVisitor):
         return propagate_attributes([val], ast)
 
     def visit_EllipsisExpr(self, node):
-        return Ellipsis()
+        if sys.version_info < (3, 8):
+            return Ellipsis()
+        else:
+            return Constant(builtins.Ellipsis)
 
     def visit_ConstantExpr(self, node):
-        if isinstance(node.value, str):
-            return Str(node.value)
-        elif isinstance(node.value, bytes):
-            return Bytes(node.value)
+        if sys.version_info < (3, 8):
+            if isinstance(node.value, str):
+                return Str(node.value)
+            elif isinstance(node.value, bytes):
+                return Bytes(node.value)
+            else:
+                return Num(node.value)
         else:
-            return Num(node.value)
+            # Since Python 3.8
+            return Constant(node.value)
 
     def visit_SelfExpr(self, node):
         return pyAttr("self", "_id")
