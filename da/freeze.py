@@ -13,6 +13,8 @@ copy works.
 import types
 import weakref
 from copyreg import dispatch_table
+import traceback
+import logging
 
 __all__ = ['frozendict', 'frozenlist', 'deepfreeze']
 
@@ -25,6 +27,8 @@ class frozendict(dict):
     """
 
     def _blocked_attribute(obj):
+        self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+
         raise AttributeError("A frozendict cannot be modified.")
     _blocked_attribute = property(_blocked_attribute)
 
@@ -37,12 +41,14 @@ class frozendict(dict):
         return new
 
     def __init__(self, *args, **kws):
-        pass
+        self.log = logging.getLogger(__name__) \
+                          .getChild(self.__class__.__name__)
 
     def __hash__(self):
         try:
             return self._cached_hash
         except AttributeError:
+            self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
             h = self._cached_hash = hash(tuple(sorted(self.items())))
             return h
 
@@ -54,6 +60,7 @@ class frozendict(dict):
         if not hasattr(self, '_cached_hash'):
             return super().__setitem__(key, val)
         else:
+            self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
             raise AttributeError("Attempting to update frozendict after "
                                  "hash value has been read.")
 
@@ -66,6 +73,7 @@ class frozenlist(list):
     """
 
     def _blocked_attribute(obj):
+        self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
         raise AttributeError("A frozenlist cannot be modified.")
     _blocked_attribute = property(_blocked_attribute)
 
@@ -78,13 +86,15 @@ class frozenlist(list):
         return new
 
     def __init__(self, *args, **kws):
-        pass
+        self.log = logging.getLogger(__name__) \
+                          .getChild(self.__class__.__name__)
 
     def __hash__(self):
         try:
             return self._cached_hash
         except AttributeError:
             h = self._cached_hash = hash(tuple(sorted(self)))
+            self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
             return h
 
     def __repr__(self):
@@ -95,9 +105,12 @@ class frozenlist(list):
         if not hasattr(self, '_cached_hash'):
             return super().append(elem)
         else:
+            self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
             raise AttributeError("Attempting to modify frozenlist after "
                                  "hash value has been read.")
 
+
+log = logging.getLogger(__name__)
 
 def deepfreeze(x, memo=None, _nil=[]):
     """Deep freeze operation on arbitrary Python objects.
@@ -122,7 +135,8 @@ def deepfreeze(x, memo=None, _nil=[]):
     else:
         try:
             issc = issubclass(cls, type)
-        except TypeError: # cls is not a class (old Boost; see SF #502085)
+        except TypeError as e: # cls is not a class (old Boost; see SF #502085)
+            log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
             issc = 0
         if issc:
             y = _deepfreeze_atomic(x, memo)
@@ -143,6 +157,7 @@ def deepfreeze(x, memo=None, _nil=[]):
                         if reductor:
                             rv = reductor()
                         else:
+                            
                             raise Error(
                                 "un(deep)copyable object of type %s" % cls)
                 if isinstance(rv, str):
@@ -209,7 +224,8 @@ def _deepfreeze_tuple(x, memo, deepfreeze=deepfreeze):
     # check for it, in case the tuple contains recursive mutable structures.
     try:
         return memo[id(x)]
-    except KeyError:
+    except KeyError as e:
+        log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
         pass
     for k, j in zip(x, y):
         if k is not j:
@@ -247,8 +263,10 @@ def _keep_alive(x, memo):
     """
     try:
         memo[id(memo)].append(x)
-    except KeyError:
+    except KeyError as e:
         # aha, this is the first one :-)
+        log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+
         memo[id(memo)]=[x]
 
 def _reconstruct(x, memo, func, args,
