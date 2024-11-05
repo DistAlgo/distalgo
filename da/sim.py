@@ -468,6 +468,11 @@ class DistProcess():
                     flags=ChannelCaps.RELIABLEFIFO)
 
     @builtin
+    def logical_time(self):
+        """Returns the current value of the logical clock."""
+        return self._logical_clock
+
+    @builtin
     def logical_clock(self):
         """Returns the current value of the logical clock.
 
