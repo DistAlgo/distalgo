@@ -1388,7 +1388,7 @@ class PythonGenerator(NodeVisitor):
             if item.asname is None:
                 names.append(alias(item.name, None))
             else:
-                names.append(alias(item.name, item.asname.name))
+                names.append(alias(item.name, item.asname))
         return [ImportFrom(node.module, names, node.level)]
 
     def visit_AssertStmt(self, node):
