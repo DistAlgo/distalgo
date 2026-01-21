@@ -28,7 +28,7 @@ import random
 import socket
 import logging
 import threading
-
+import traceback
 from .base import *
 from .manager import transport
 from .mesgloop import SelectorLoop
@@ -107,6 +107,7 @@ class SocketTransport(Transport):
                         self.port = random.randint(min_port, max_port)
                     retry += 1
                 else:
+                    self._log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
                     raise BindingException(
                         "Failed to bind to an available port.") from e
         self._log.debug("Transport initialized at address %s", address)
@@ -196,6 +197,8 @@ class UdpTransport(SocketTransport):
             if self.conn is not None:
                 self.conn.close()
             self.conn = None
+            self._log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+
             raise e
 
     def start(self, queue, mesgloop=None):
@@ -268,6 +271,8 @@ class UdpTransport(SocketTransport):
                     # to return `EPERM` if it's sending too fast:
                     self._log.debug("Packet to %s dropped by kernel, "
                                     "reduce send rate.", target)
+                    self._log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+
                     cnt += 1
                     if cnt >= retries:
                         raise TransportException("Packet blocked by OS.") from e
@@ -305,10 +310,14 @@ class UdpTransport(SocketTransport):
                     self._verify_packet(chunk, remote)
                     self.queue.append((self, chunk, remote))
                 except TransportException as e:
+                    self._log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+
                     self._log.warning("Packet from %s dropped due to: %r",
                                       remote, e)
         except (socket.error, AttributeError) as e:
             self._log.debug("Terminating receive loop due to %r", e)
+            self._log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+
 
 
 # TCP Implementation:
@@ -376,6 +385,7 @@ class TcpTransport(SocketTransport):
             if self.conn is not None:
                 self.conn.close()
             self.conn = None
+            self._log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
             raise e
 
     def start(self, queue, mesgloop=None):
@@ -509,6 +519,8 @@ class TcpTransport(SocketTransport):
             return conn
         except TransportException as e:
             conn.close()
+            self._log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+
             raise e
 
     def _cleanup(self, conn, remote):
@@ -550,15 +562,19 @@ class TcpTransport(SocketTransport):
                     return
                 except ConnectionRefusedError as e:
                     if (not retry_refused_connections) or retry > retries:
+                        self._log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
                         raise TransportException(
                             'connection refused by {}'.format(target)) from e
                 except (socket.error, socket.timeout) as e:
                     self._log.debug("Sending to %s failed on %dth try: %r",
                                     target, retry, e)
+                    self._log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+
                     if conn is not None:
                         conn.close()
                         conn = None
-                except:
+                except Exception as e:
+                    self._log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
                     self._log.debug("Sending to %s failed on %dth try: %r",
                                     target, retry, sys.exc_info()[0])
 
@@ -598,10 +614,12 @@ class TcpTransport(SocketTransport):
         try:
             callback(conn, aux)
         except TransportException as e:
+            self._log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
             self._log.warning("Exception when handling %s: %r",
                               aux.peername, e)
             self._cleanup(conn, aux.peername)
         except socket.error as e:
+            self._log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
             self._log.debug(
                 "socket.error when receiving from %s: %r",
                 aux.peername, e)

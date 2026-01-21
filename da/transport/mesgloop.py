@@ -26,6 +26,7 @@ import logging
 import socket
 import selectors
 import threading
+import traceback
 
 __all__ = ["SelectorLoop"]
 
@@ -48,6 +49,8 @@ class SelectorLoop(object):
         self.notifier, self.event = None, None
         # Background thread:
         self.worker = None
+        self.log = logging.getLogger(__name__) \
+                          .getChild(self.__class__.__name__)
 
     def _handle_event(self, sock, _):
         # Just drain the event socket buffer:
@@ -75,6 +78,7 @@ class SelectorLoop(object):
             # trigger any cleanup routines from the caller
             self._log.debug("Registering invalid connection %s: %r",
                             conn, e, exc_info=1)
+            self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
             callback(conn, data)
 
     def deregister(self, conn):
@@ -89,7 +93,7 @@ class SelectorLoop(object):
         if self.notifier:
             try:
                 self.notifier.send(b'x')
-            except (AttributeError, OSError):
+            except (AttributeError, OSError) as e:
                 # socket already closed, just ignore
                 pass
 
@@ -135,6 +139,8 @@ class SelectorLoop(object):
         except Exception as e:
             self._log.error("Message loop terminated abnormally: %r", e)
             self._log.debug("Uncaught exception %r", e, exc_info=1)
+            self.log.error(''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)))
+
         finally:
             if self.notifier:
                 try:
