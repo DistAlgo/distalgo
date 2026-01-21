@@ -186,7 +186,7 @@ def extract_label(node):
     else:
         return None
 
-def daast_from_file(filename, args):
+def daast_from_file(filename, args=None):
     """Generates DistAlgo AST from source file.
 
     'filename' is the filename of source file. Optional argument 'args' is a
@@ -561,9 +561,14 @@ class Parser(NodeVisitor, CompilerMessagePrinter):
         self.cmdline_args = options
         self.module_args = Namespace()
         from .symtab import Resolver
-        self.resolver = Resolver(filename, options,
-                                 _package if _package else options.module_name,
-                                 _parent=self)
+        if _package:
+           module_name = _package
+        elif options and hasattr(options, 'module_name'):
+            module_name = getattr(options, 'module_name')
+        else:
+            module_name = '__main__'
+
+        self.resolver = Resolver(filename, options, module_name, _parent=self)
 
     def get_option(self, option, default=None):
         if hasattr(self.cmdline_args, option):
