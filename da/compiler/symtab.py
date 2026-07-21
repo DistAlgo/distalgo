@@ -89,7 +89,7 @@ class Resolver(CompilerMessagePrinter):
         modules[name] = mod
         return mod
 
-    def find_process_definiton(self, expr):
+    def find_process_definition(self, expr):
         if isinstance(expr, dast.NameExpr):
             name = expr.value
             if not isinstance(name, dast.NamedVar):
